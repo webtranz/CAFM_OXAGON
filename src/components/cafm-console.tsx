@@ -90,9 +90,6 @@ const moduleGroups = [
     icon: Building2,
     items: [
       { id: "assets", label: "Assets Management", icon: Building2 },
-      { id: "teams", label: "Divisions", icon: Users },
-      { id: "teams", label: "Main Categories", icon: Boxes },
-      { id: "teams", label: "Sub Categories", icon: Boxes },
       { id: "bulk", label: "Bulk Upload Assets", icon: Upload },
       { id: "assets", label: "Asset Inventory Allocation", icon: ClipboardCheck },
     ],
