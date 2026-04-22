@@ -50,4 +50,13 @@ export const fallbackData = {
     { id: "al1", source: "BMS", assetTag: "CHL-RYD-01-002", severity: "HIGH", message: "Chiller vibration exceeds baseline by 18%", status: "TRIAGED", detectedAt: new Date() },
     { id: "al2", source: "Energy Meter", assetTag: "MDB-RYD-03-001", severity: "MEDIUM", message: "Peak demand forecast breach in 48 hours", status: "NEW", detectedAt: new Date() },
   ],
+  teams: [
+    { id: "t1", code: "MEP", name: "MEP Response Team", type: "Hard Services", supervisor: "Adeel Khan", phone: "+966 500000001", email: "mep@example.com", shift: "24/7", coverage: "All towers", services: [] },
+  ],
+  services: [
+    { id: "s1", code: "HVAC-REQ", name: "HVAC Complaint", category: "HVAC", type: "Reactive", priority: "HIGH", slaHours: 12, team: { name: "MEP Response Team" } },
+  ],
+  categories: [
+    { id: "c1", code: "HVAC", name: "HVAC Equipment", type: "MEP", defaultLifeYrs: 15, statutory: false, description: "Cooling and ventilation assets" },
+  ],
 };

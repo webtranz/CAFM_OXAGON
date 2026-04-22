@@ -14,6 +14,8 @@ import {
   MapPinned,
   PackagePlus,
   Plus,
+  Upload,
+  Users,
   RadioTower,
   Search,
   ShieldCheck,
@@ -47,6 +49,9 @@ type ConsoleData = {
   inventory: any[];
   inspections: any[];
   alerts: any[];
+  teams: any[];
+  services: any[];
+  categories: any[];
 };
 
 const modules = [
@@ -58,6 +63,8 @@ const modules = [
   { id: "inventory", label: "Inventory", icon: Boxes },
   { id: "hse", label: "HSE", icon: ShieldCheck },
   { id: "iot", label: "IoT", icon: RadioTower },
+  { id: "teams", label: "Teams", icon: Users },
+  { id: "bulk", label: "Bulk Upload", icon: Upload },
 ];
 
 const healthColors = ["#35a852", "#0f8b8d", "#ffd166", "#f45d48"];
@@ -138,6 +145,18 @@ export function CafmConsole({ data }: { data: ConsoleData }) {
     const result = await response.json();
     setToast(response.ok ? `${successLabel} saved.` : result.message ?? "Action failed.");
     if (response.ok) await refreshData();
+    setSaving(false);
+  }
+
+  async function bulkUpload(formData: FormData) {
+    setSaving(true);
+    const response = await fetch("/api/bulk-upload", {
+      method: "POST",
+      body: formData,
+    });
+    const result = await response.json();
+    setToast(result.message ?? (response.ok ? "Bulk upload complete." : "Bulk upload failed."));
+    await refreshData();
     setSaving(false);
   }
 
@@ -264,6 +283,18 @@ export function CafmConsole({ data }: { data: ConsoleData }) {
           {active === "inventory" && <Inventory inventory={records.inventory} saving={saving} submitInventory={(formData) => postRecord("/api/inventory", formData, "Inventory item")} />}
           {active === "hse" && <Hse inspections={records.inspections} saving={saving} submitInspection={(formData) => postRecord("/api/inspections", formData, "Inspection")} />}
           {active === "iot" && <Iot alerts={records.alerts} saving={saving} acknowledgeAlert={(id) => patchRecord(`/api/iot-alerts/${id}`, {}, "IoT alert acknowledged.")} />}
+          {active === "teams" && (
+            <TeamsServices
+              teams={records.teams}
+              services={records.services}
+              categories={records.categories}
+              saving={saving}
+              submitTeam={(formData) => postRecord("/api/teams", formData, "Team")}
+              submitService={(formData) => postRecord("/api/services", formData, "Service")}
+              submitCategory={(formData) => postRecord("/api/asset-categories", formData, "Asset category")}
+            />
+          )}
+          {active === "bulk" && <BulkUpload saving={saving} onSubmit={bulkUpload} />}
         </section>
       </section>
     </main>
@@ -396,6 +427,7 @@ function Assets({
       </Panel>
       <div className="space-y-5">
         {selectedAsset && <AssetIdentity asset={selectedAsset} />}
+        {selectedAsset && <AssetHistoryPanel asset={selectedAsset} />}
         <ActionForm
           title="Register Asset"
           onSubmit={submitAsset}
@@ -407,6 +439,26 @@ function Assets({
         )}
       </div>
     </section>
+  );
+}
+
+function AssetHistoryPanel({ asset }: { asset: any }) {
+  return (
+    <Panel title="Asset History" icon={CalendarCheck}>
+      <div className="grid gap-2">
+        {(asset.history ?? []).length === 0 && <p className="text-sm text-slate-500">No history recorded yet.</p>}
+        {(asset.history ?? []).map((event: any) => (
+          <div key={event.id} className="rounded-lg bg-slate-50 p-3">
+            <div className="flex items-center justify-between gap-2">
+              <p className="font-black">{event.title}</p>
+              <span className="text-xs text-slate-500">{new Date(event.createdAt).toLocaleDateString()}</span>
+            </div>
+            <p className="mt-1 text-sm text-slate-600">{event.details}</p>
+            <p className="mt-1 text-xs font-bold text-lagoon">{event.eventType} / {event.actor}</p>
+          </div>
+        ))}
+      </div>
+    </Panel>
   );
 }
 
@@ -662,6 +714,101 @@ function Iot({ alerts, acknowledgeAlert, saving }: { alerts: any[]; acknowledgeA
   );
 }
 
+function TeamsServices({
+  teams,
+  services,
+  categories,
+  saving,
+  submitTeam,
+  submitService,
+  submitCategory,
+}: {
+  teams: any[];
+  services: any[];
+  categories: any[];
+  saving: boolean;
+  submitTeam: (formData: FormData) => void;
+  submitService: (formData: FormData) => void;
+  submitCategory: (formData: FormData) => void;
+}) {
+  return (
+    <section className="grid gap-5 xl:grid-cols-[1fr_420px]">
+      <div className="space-y-5">
+        <Panel title="Service Teams" icon={Users}>
+          <DataTable rows={teams} columns={[["code", "Code"], ["name", "Team"], ["type", "Type"], ["supervisor", "Supervisor"], ["shift", "Shift"], ["coverage", "Coverage"]]} />
+        </Panel>
+        <Panel title="Services Catalog" icon={ClipboardCheck}>
+          <DataTable rows={services} columns={[["code", "Code"], ["name", "Service"], ["category", "Category"], ["type", "Type"], ["priority", "Priority"], ["slaHours", "SLA hrs"]]} />
+        </Panel>
+        <Panel title="Asset Categories" icon={Boxes}>
+          <DataTable rows={categories} columns={[["code", "Code"], ["name", "Category"], ["type", "Type"], ["defaultLifeYrs", "Life yrs"], ["statutory", "Statutory"]]} />
+        </Panel>
+      </div>
+      <div className="space-y-5">
+        <ActionForm title="Add Service Team" onSubmit={submitTeam} fields={["code", "name", "type", "supervisor", "phone", "email", "shift", "coverage"]} saving={saving} />
+        <ActionForm title="Add Service" onSubmit={submitService} fields={["code", "name", "category", "type", "priority", "slaHours", "teamCode", "description"]} saving={saving} />
+        <ActionForm title="Add Asset Category" onSubmit={submitCategory} fields={["code", "name", "type", "defaultLifeYrs", "statutory", "description"]} saving={saving} />
+      </div>
+    </section>
+  );
+}
+
+function BulkUpload({ saving, onSubmit }: { saving: boolean; onSubmit: (formData: FormData) => void }) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await onSubmit(new FormData(event.currentTarget));
+    event.currentTarget.reset();
+  }
+
+  return (
+    <section className="grid gap-5 xl:grid-cols-[1fr_420px]">
+      <Panel title="Bulk Upload Center" icon={Upload}>
+        <form onSubmit={handleSubmit} className="grid gap-4">
+          <label className="grid gap-1 text-sm font-bold text-slate-600">
+            Module
+            <select name="module" required className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon">
+              <option value="assets">Assets</option>
+              <option value="categories">Asset Categories</option>
+              <option value="inventory">Inventory</option>
+              <option value="requests">Service Requests</option>
+              <option value="workOrders">Work Orders</option>
+              <option value="inspections">Inspections</option>
+              <option value="teams">Teams</option>
+              <option value="services">Services</option>
+            </select>
+          </label>
+          <label className="grid gap-1 text-sm font-bold text-slate-600">
+            CSV File
+            <input name="file" type="file" accept=".csv,text/csv" required className="rounded-lg border border-slate-200 bg-white p-3" />
+          </label>
+          <button disabled={saving} className="h-11 rounded-lg bg-ink font-black text-white disabled:bg-slate-400">
+            {saving ? "Uploading..." : "Upload CSV"}
+          </button>
+        </form>
+      </Panel>
+      <Panel title="CSV Templates" icon={ClipboardCheck}>
+        <div className="grid gap-3 text-sm">
+          <Template title="Assets" value="tag,name,category,system,criticality,status,serialNumber,manufacturer,model,floor,room,warrantyExpiry,contractRef,documentationUrl,purchaseCost,salvageValue,depreciationRate,conditionScore" />
+          <Template title="Teams" value="code,name,type,supervisor,phone,email,shift,coverage" />
+          <Template title="Services" value="code,name,category,type,priority,slaHours,teamCode,description" />
+          <Template title="Inventory" value="sku,name,category,unit,onHand,reorderPoint,unitCost,vendor,location" />
+          <Template title="Requests" value="ticketNo,title,category,requester,channel,priority,status,location,slaHours,description" />
+          <Template title="Work Orders" value="woNo,title,type,priority,status,assetTag,dueHours,estimatedHours,cost,jobPlan,safetyNotes" />
+        </div>
+      </Panel>
+    </section>
+  );
+}
+
+function Template({ title, value }: { title: string; value: string }) {
+  return (
+    <div className="rounded-lg bg-slate-50 p-3">
+      <p className="font-black">{title}</p>
+      <code className="mt-2 block break-words text-xs text-slate-600">{value}</code>
+    </div>
+  );
+}
+
 function Panel({ title, icon: Icon, children }: { title: string; icon: any; children: React.ReactNode }) {
   return (
     <section className="rounded-lg border border-white/80 bg-white p-5 shadow-lift">
@@ -741,6 +888,11 @@ function ActionForm({ title, fields, onSubmit, saving }: { title: string; fields
               <textarea name={field} required className="min-h-24 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />
             ) : field === "warrantyExpiry" ? (
               <input name={field} type="date" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
+            ) : field === "statutory" ? (
+              <select name={field} className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon">
+                <option value="false">false</option>
+                <option value="true">true</option>
+              </select>
             ) : field === "priority" || field === "criticality" ? (
               <select name={field} required className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon">
                 <option>LOW</option>

@@ -22,6 +22,49 @@ async function main() {
     ),
   );
 
+  const mepTeam = await prisma.team.upsert({
+    where: { code: "MEP" },
+    update: {},
+    create: {
+      code: "MEP",
+      name: "MEP Response Team",
+      type: "Hard Services",
+      supervisor: "Adeel Khan",
+      phone: "+966 500000001",
+      email: "mep@brightworks.local",
+      shift: "24/7",
+      coverage: "All towers and plant rooms",
+    },
+  });
+
+  await prisma.assetCategory.upsert({
+    where: { code: "HVAC" },
+    update: {},
+    create: {
+      code: "HVAC",
+      name: "HVAC Equipment",
+      type: "MEP",
+      defaultLifeYrs: 15,
+      statutory: false,
+      description: "Cooling, heating and ventilation equipment.",
+    },
+  });
+
+  await prisma.serviceCatalog.upsert({
+    where: { code: "HVAC-REQ" },
+    update: {},
+    create: {
+      code: "HVAC-REQ",
+      name: "HVAC Complaint",
+      category: "HVAC",
+      type: "Reactive",
+      priority: "HIGH",
+      slaHours: 12,
+      teamId: mepTeam.id,
+      description: "Temperature, ventilation and indoor air quality requests.",
+    },
+  });
+
   const site = await prisma.site.upsert({
     where: { id: "site-riyadh-kafd" },
     update: {},
@@ -101,6 +144,23 @@ async function main() {
           qrCode: `CAFM-ASSET:${tag}`,
           siteId: site.id,
           buildingId: towerA.id,
+        },
+      }),
+    ),
+  );
+
+  await Promise.all(
+    assets.map((asset) =>
+      prisma.assetHistory.upsert({
+        where: { id: `hist-${asset.tag}` },
+        update: {},
+        create: {
+          id: `hist-${asset.tag}`,
+          assetId: asset.id,
+          eventType: "COMMISSIONED",
+          title: "Asset commissioned",
+          details: `${asset.tag} registered with baseline condition score ${asset.conditionScore}.`,
+          actor: "System",
         },
       }),
     ),

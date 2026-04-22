@@ -44,9 +44,52 @@ model User {
   email        String      @unique
   role         String
   department   String
+  teamId       String?
   passwordHash String
+  team         Team?       @relation(fields: [teamId], references: [id])
   workOrders   WorkOrder[]
   createdAt    DateTime    @default(now())
+}
+
+model Team {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  name        String
+  type        String
+  supervisor  String
+  phone       String
+  email       String
+  shift       String
+  coverage    String
+  users       User[]
+  services    ServiceCatalog[]
+  createdAt   DateTime @default(now())
+}
+
+model ServiceCatalog {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  name        String
+  category    String
+  type        String
+  priority    Priority
+  slaHours    Int
+  teamId      String?
+  description String
+  active      Boolean  @default(true)
+  team        Team?    @relation(fields: [teamId], references: [id])
+  createdAt   DateTime @default(now())
+}
+
+model AssetCategory {
+  id             String   @id @default(cuid())
+  code           String   @unique
+  name           String
+  type           String
+  defaultLifeYrs Int
+  statutory      Boolean  @default(false)
+  description    String
+  createdAt      DateTime @default(now())
 }
 
 model Site {
@@ -113,8 +156,20 @@ model Asset {
   building        Building?    @relation(fields: [buildingId], references: [id])
   workOrders      WorkOrder[]
   meters          Meter[]
+  history         AssetHistory[]
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
+}
+
+model AssetHistory {
+  id        String   @id @default(cuid())
+  assetId   String
+  eventType String
+  title     String
+  details   String
+  actor     String
+  asset     Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
 }
 
 model ServiceRequest {
