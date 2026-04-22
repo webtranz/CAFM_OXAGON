@@ -26,3 +26,5 @@ npm run dev
 ## Dokploy
 
 Deploy with the included `Dockerfile` and `docker-compose.yml`. Set `DATABASE_URL` and `NEXT_PUBLIC_APP_NAME` in Dokploy if you use an external PostgreSQL service.
+
+If `DATABASE_URL` is not set, the container still starts in demo mode with fallback data. To enable persistence, add a PostgreSQL database in Dokploy and set `DATABASE_URL` to the internal connection string.

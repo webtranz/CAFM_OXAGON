@@ -22,5 +22,7 @@ COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/prisma ./prisma
+COPY --from=builder /app/scripts ./scripts
+RUN chmod +x ./scripts/start.sh
 EXPOSE 3000
-CMD ["sh", "-c", "./node_modules/.bin/prisma db push && ./node_modules/.bin/prisma db seed && node server.js"]
+CMD ["./scripts/start.sh"]
