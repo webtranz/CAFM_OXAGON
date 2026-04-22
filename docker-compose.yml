@@ -1,0 +1,28 @@
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgresql://cafm:cafm_password@db:5432/cafm?schema=public
+      NEXT_PUBLIC_APP_NAME: BrightWorks CAFM
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: cafm
+      POSTGRES_USER: cafm
+      POSTGRES_PASSWORD: cafm_password
+    volumes:
+      - cafm_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cafm -d cafm"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+volumes:
+  cafm_postgres:

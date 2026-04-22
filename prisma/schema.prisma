@@ -1,0 +1,256 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum WorkStatus {
+  NEW
+  TRIAGED
+  ASSIGNED
+  IN_PROGRESS
+  ON_HOLD
+  COMPLETED
+  CLOSED
+}
+
+enum AssetStatus {
+  ACTIVE
+  STANDBY
+  DOWN
+  RETIRED
+}
+
+enum RiskLevel {
+  LOW
+  MODERATE
+  HIGH
+  EXTREME
+}
+
+model User {
+  id           String      @id @default(cuid())
+  name         String
+  email        String      @unique
+  role         String
+  department   String
+  passwordHash String
+  workOrders   WorkOrder[]
+  createdAt    DateTime    @default(now())
+}
+
+model Site {
+  id        String     @id @default(cuid())
+  name      String
+  city      String
+  country   String
+  type      String
+  areaSqm   Int
+  buildings Building[]
+  assets    Asset[]
+}
+
+model Building {
+  id        String  @id @default(cuid())
+  name      String
+  code      String  @unique
+  siteId    String
+  floors    Int
+  areaSqm   Int
+  site      Site    @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  spaces    Space[]
+  assets    Asset[]
+}
+
+model Space {
+  id         String   @id @default(cuid())
+  name       String
+  floor      String
+  type       String
+  capacity   Int
+  areaSqm    Int
+  occupancy  Int
+  buildingId String
+  building   Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+}
+
+model Asset {
+  id              String       @id @default(cuid())
+  tag             String       @unique
+  name            String
+  category        String
+  system          String
+  criticality     Priority
+  status          AssetStatus  @default(ACTIVE)
+  manufacturer    String
+  model           String
+  installDate     DateTime
+  replacementDate DateTime
+  purchaseCost    Decimal      @db.Decimal(12, 2)
+  conditionScore  Int
+  siteId          String
+  buildingId      String?
+  site            Site         @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  building        Building?    @relation(fields: [buildingId], references: [id])
+  workOrders      WorkOrder[]
+  meters          Meter[]
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+}
+
+model ServiceRequest {
+  id          String     @id @default(cuid())
+  ticketNo    String     @unique
+  title       String
+  category    String
+  requester   String
+  channel     String
+  priority    Priority
+  status      WorkStatus @default(NEW)
+  location    String
+  slaHours    Int
+  dueAt       DateTime
+  description String
+  workOrder   WorkOrder?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+}
+
+model WorkOrder {
+  id               String          @id @default(cuid())
+  woNo             String          @unique
+  title            String
+  type             String
+  priority         Priority
+  status           WorkStatus      @default(NEW)
+  assetId          String?
+  requestId        String?         @unique
+  assignedToId     String?
+  plannedStart     DateTime
+  dueAt            DateTime
+  estimatedHours   Decimal         @db.Decimal(6, 2)
+  actualHours      Decimal?        @db.Decimal(6, 2)
+  cost             Decimal         @db.Decimal(12, 2)
+  jobPlan          String
+  safetyNotes      String
+  asset            Asset?          @relation(fields: [assetId], references: [id])
+  request          ServiceRequest? @relation(fields: [requestId], references: [id])
+  assignedTo       User?           @relation(fields: [assignedToId], references: [id])
+  inventoryIssues  InventoryIssue[]
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+}
+
+model PreventiveMaintenance {
+  id           String   @id @default(cuid())
+  code         String   @unique
+  name         String
+  assetTag     String
+  frequency    String
+  nextDue      DateTime
+  durationHrs  Decimal  @db.Decimal(6, 2)
+  checklist    String
+  active       Boolean  @default(true)
+}
+
+model InventoryItem {
+  id             String           @id @default(cuid())
+  sku            String           @unique
+  name           String
+  category       String
+  unit           String
+  onHand         Int
+  reorderPoint   Int
+  unitCost       Decimal          @db.Decimal(10, 2)
+  vendor         String
+  location       String
+  issues         InventoryIssue[]
+}
+
+model InventoryIssue {
+  id        String        @id @default(cuid())
+  itemId    String
+  workId    String
+  quantity  Int
+  item      InventoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  workOrder WorkOrder     @relation(fields: [workId], references: [id], onDelete: Cascade)
+  issuedAt  DateTime      @default(now())
+}
+
+model Vendor {
+  id        String   @id @default(cuid())
+  name      String
+  category  String
+  rating    Decimal  @db.Decimal(3, 2)
+  contact   String
+  email     String
+  phone     String
+  contracts Contract[]
+}
+
+model Contract {
+  id          String   @id @default(cuid())
+  title       String
+  vendorId    String
+  type        String
+  startDate   DateTime
+  endDate     DateTime
+  value       Decimal  @db.Decimal(14, 2)
+  slaTarget   String
+  vendor      Vendor   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+}
+
+model Inspection {
+  id          String    @id @default(cuid())
+  code        String    @unique
+  title       String
+  area        String
+  inspector   String
+  risk        RiskLevel
+  score       Int
+  status      WorkStatus
+  dueAt       DateTime
+  findings    String
+}
+
+model HseIncident {
+  id          String    @id @default(cuid())
+  refNo       String    @unique
+  title       String
+  area        String
+  severity    RiskLevel
+  status      WorkStatus
+  reportedAt  DateTime  @default(now())
+  correctiveAction String
+}
+
+model Meter {
+  id        String   @id @default(cuid())
+  name      String
+  type      String
+  unit      String
+  reading   Decimal  @db.Decimal(14, 2)
+  assetId   String?
+  asset     Asset?   @relation(fields: [assetId], references: [id])
+  readAt    DateTime @default(now())
+}
+
+model IotAlert {
+  id          String    @id @default(cuid())
+  source      String
+  assetTag    String
+  severity    Priority
+  message     String
+  status      WorkStatus
+  detectedAt  DateTime  @default(now())
+}
