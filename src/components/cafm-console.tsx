@@ -562,7 +562,10 @@ function Assets({
           <Search size={18} className="text-slate-400" />
           <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by tag, asset, category or system" className="w-full outline-none" />
         </div>
-        <div className="grid gap-3">
+      <div className="grid gap-3">
+          <div className="rounded-lg bg-lagoon/5 p-3 text-sm font-black text-lagoon">
+            Showing {assets.length} uploaded / registered assets
+          </div>
           {assets.map((asset) => (
             <button
               key={asset.id}
@@ -582,6 +585,9 @@ function Assets({
                 <span>BLDG: {asset.buildingCode ?? asset.building?.name ?? "-"}</span>
                 <span>Floor: {asset.floor ?? "-"}</span>
                 <span>Room: {asset.room ?? "-"}</span>
+                <span>Dept: {asset.departmentCode ?? "-"}</span>
+                <span>Parent: {asset.parentAsset ?? "-"}</span>
+                <span>Health: {asset.conditionScore}%</span>
               </div>
             </button>
           ))}
@@ -718,8 +724,12 @@ function AssetIdentity({ asset }: { asset: any }) {
           <span>Serial: {asset.serialNumber ?? "-"}</span>
           <span>Site / Zone / Building: {asset.siteCode ?? "-"} / {asset.zone ?? "-"} / {asset.buildingCode ?? "-"}</span>
           <span>Asset group: {asset.assetGroup ?? "-"}</span>
+          <span>Description: {asset.assetDescription ?? asset.name ?? "-"}</span>
+          <span>Additional description: {asset.additionalDescription ?? "-"}</span>
           <span>Parent asset: {asset.parentAsset ?? "-"}</span>
           <span>Department: {asset.departmentCode ?? "-"}</span>
+          <span>Floor / Room: {asset.floor ?? "-"} / {asset.room ?? "-"}</span>
+          <span>Remarks: {asset.remarks ?? "-"}</span>
           <span>Warranty: {asset.warrantyExpiry ? new Date(asset.warrantyExpiry).toLocaleDateString() : "-"}</span>
           <span>Contract: {asset.contractRef ?? "-"}</span>
           <span>Book value: ${bookValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>

@@ -10,8 +10,8 @@ export async function getOperatingData() {
     const [sites, assets, requests, workOrders, inventory, inspections, alerts, teams, services, categories, ppms, users, permissions, departments, employees, rolePermissions] = await Promise.all([
       prisma.site.findMany({ take: 6, orderBy: { name: "asc" } }),
       prisma.asset.findMany({
-        take: 12,
-        orderBy: [{ criticality: "desc" }, { conditionScore: "asc" }],
+        take: 1000,
+        orderBy: [{ tag: "asc" }],
         include: {
           site: { select: { name: true } },
           building: { select: { name: true, code: true } },
