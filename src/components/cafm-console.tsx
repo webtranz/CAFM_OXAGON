@@ -126,16 +126,11 @@ const moduleGroups = [
     label: "Services",
     icon: ClipboardCheck,
     items: [
+      { id: "teams", label: "Department Codes", icon: MapPinned },
+      { id: "teams", label: "Create Team Code", icon: Users },
+      { id: "teams", label: "Service Teams", icon: Users },
       { id: "teams", label: "Services Catalog", icon: ClipboardCheck },
       { id: "bulk", label: "Bulk Upload Services", icon: Upload },
-    ],
-  },
-  {
-    label: "Service Teams",
-    icon: Users,
-    items: [
-      { id: "teams", label: "Service Teams", icon: Users },
-      { id: "bulk", label: "Bulk Upload Teams", icon: Upload },
     ],
   },
   {
@@ -941,11 +936,39 @@ function TeamsServices({
       </div>
       <div className="space-y-5">
         <ActionForm title="Create Department Code" onSubmit={submitDepartment} fields={["code", "name", "siteLocation", "description"]} saving={saving} />
+        <TeamCodeForm departments={departments} onSubmit={submitTeam} saving={saving} />
         <TeamForm departments={departments} onSubmit={submitTeam} saving={saving} />
         <ServiceForm teams={teams} departments={departments} onSubmit={submitService} saving={saving} />
         <ActionForm title="Add Asset Category" onSubmit={submitCategory} fields={["code", "name", "type", "defaultLifeYrs", "statutory", "description"]} saving={saving} />
       </div>
     </section>
+  );
+}
+
+function TeamCodeForm({ departments, onSubmit, saving }: { departments: any[]; onSubmit: (formData: FormData) => void; saving: boolean }) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    await onSubmit(new FormData(form));
+    form.reset();
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="rounded-lg border border-white/80 bg-white p-5 shadow-lift">
+      <h3 className="text-xl font-black">Create Team Code</h3>
+      <div className="mt-4 grid gap-3">
+        <input name="teamName" required placeholder="Team name" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
+        <select name="departmentCode" required className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon">
+          <option value="">Select department code</option>
+          {departments.map((department) => (
+            <option key={department.id} value={department.code}>{department.code} - {department.name}</option>
+          ))}
+        </select>
+        <input name="departmentName" required placeholder="Department name" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
+        <input name="teamCode" required placeholder="Team code manual entry" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
+        <button disabled={saving} className="h-11 rounded-lg bg-ink font-black text-white disabled:bg-slate-400">{saving ? "Saving..." : "Create Team Code"}</button>
+      </div>
+    </form>
   );
 }
 
