@@ -571,16 +571,17 @@ function Assets({
             >
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
-                  <p className="font-black">{asset.tag} | {asset.name}</p>
-                  <p className="text-sm text-slate-500">{asset.category} / {asset.system}</p>
+                  <p className="font-black">{asset.tag} | {asset.assetDescription ?? asset.name}</p>
+                  <p className="text-sm text-slate-500">{asset.assetGroup ?? asset.category} / {asset.system}</p>
                 </div>
                 <span className="rounded-lg bg-slate-100 px-2 py-1 text-xs font-black">{asset.status}</span>
               </div>
               <div className="grid gap-2 text-sm text-slate-600 md:grid-cols-4">
-                <span>Building: {asset.building?.name ?? "Unassigned"}</span>
+                <span>Site: {asset.siteCode ?? "-"}</span>
+                <span>Zone: {asset.zone ?? "-"}</span>
+                <span>BLDG: {asset.buildingCode ?? asset.building?.name ?? "-"}</span>
                 <span>Floor: {asset.floor ?? "-"}</span>
                 <span>Room: {asset.room ?? "-"}</span>
-                <span>Health: {asset.conditionScore}%</span>
               </div>
             </button>
           ))}
@@ -589,17 +590,86 @@ function Assets({
       <div className="space-y-5">
         {selectedAsset && <AssetIdentity asset={selectedAsset} />}
         {selectedAsset && <AssetHistoryPanel asset={selectedAsset} />}
-        <ActionForm
-          title="Register Asset"
-          onSubmit={submitAsset}
-          fields={["siteCode", "zone", "buildingCode", "floor", "room", "assetGroup", "tag", "assetDescription", "additionalDescription", "parentAsset", "departmentCode", "remarks", "name", "category", "system", "criticality", "serialNumber", "manufacturer", "model", "warrantyExpiry", "contractRef", "documentationUrl", "purchaseCost", "salvageValue", "depreciationRate", "conditionScore"]}
-          saving={saving}
-        />
+        <AssetCreateForm onSubmit={submitAsset} saving={saving} />
         {selectedAsset && (
           <AssetEditForm asset={selectedAsset} saving={saving} onSubmit={(formData) => updateAsset(selectedAsset.id, formData)} />
         )}
       </div>
     </section>
+  );
+}
+
+function AssetCreateForm({ onSubmit, saving }: { onSubmit: (formData: FormData) => void; saving: boolean }) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+    const assetNumber = String(formData.get("tag") ?? "").trim();
+    const assetDescription = String(formData.get("assetDescription") ?? "").trim();
+    const assetGroup = String(formData.get("assetGroup") ?? "").trim();
+
+    formData.set("name", assetDescription || assetNumber);
+    formData.set("category", assetGroup || "HVAC");
+    formData.set("system", assetDescription || assetGroup || "HVAC");
+    formData.set("criticality", "MEDIUM");
+    formData.set("conditionScore", "85");
+
+    await onSubmit(formData);
+    form.reset();
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="rounded-lg border border-white/80 bg-white p-5 shadow-lift">
+      <div className="mb-4 flex items-start gap-3">
+        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-sun/50 text-amber-700">
+          <PackagePlus size={20} />
+        </div>
+        <div>
+          <h3 className="text-xl font-black">Register Asset</h3>
+          <p className="text-sm font-bold text-slate-500">HVAC Asset Register template fields</p>
+        </div>
+      </div>
+      <div className="grid gap-3">
+        <div className="grid gap-3 sm:grid-cols-3">
+          <AssetTextField label="SITE" name="siteCode" required />
+          <AssetTextField label="ZONE" name="zone" required />
+          <AssetTextField label="BLDG" name="buildingCode" required />
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <AssetTextField label="FLOOR" name="floor" required />
+          <AssetTextField label="ROOM" name="room" required />
+        </div>
+        <AssetTextField label="Asset Group" name="assetGroup" required />
+        <AssetTextField label="ASSET NUMBER" name="tag" required />
+        <AssetTextField label="Asset Description" name="assetDescription" required />
+        <AssetTextField label="Additional description" name="additionalDescription" />
+        <AssetTextField label="Parent Asset" name="parentAsset" />
+        <AssetTextField label="Department" name="departmentCode" required />
+        <label className="grid gap-1 text-sm font-bold text-slate-600">
+          Remarks
+          <textarea name="remarks" className="min-h-24 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />
+        </label>
+        <button disabled={saving} className="mt-2 flex h-11 items-center justify-center gap-2 rounded-lg bg-ink px-4 font-black text-white disabled:cursor-not-allowed disabled:bg-slate-400">
+          <Plus size={18} />
+          {saving ? "Saving..." : "Save Asset"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function AssetTextField({ label, name, required = false, defaultValue = "", type = "text" }: { label: string; name: string; required?: boolean; defaultValue?: string; type?: string }) {
+  return (
+    <label className="grid gap-1 text-sm font-bold text-slate-600">
+      {label}
+      <input
+        name={name}
+        type={type}
+        required={required}
+        defaultValue={defaultValue}
+        className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon"
+      />
+    </label>
   );
 }
 
@@ -672,53 +742,90 @@ function AssetEditForm({ asset, saving, onSubmit }: { asset: any; saving: boolea
   return (
     <form onSubmit={handleSubmit} className="rounded-lg border border-white/80 bg-white p-5 shadow-lift">
       <h3 className="text-xl font-black">Admin Edit Asset</h3>
-      <div className="mt-4 grid gap-3">
-        <input name="tag" defaultValue={textValue(asset.tag)} className={fieldClass} required />
-        <input name="name" defaultValue={textValue(asset.name)} className={fieldClass} required />
-        <input name="category" defaultValue={textValue(asset.category)} className={fieldClass} required />
-        <input name="system" defaultValue={textValue(asset.system)} className={fieldClass} required />
-        <div className="grid grid-cols-3 gap-3">
-          <input name="siteCode" defaultValue={textValue(asset.siteCode)} className={fieldClass} placeholder="SITE" />
-          <input name="zone" defaultValue={textValue(asset.zone)} className={fieldClass} placeholder="ZONE" />
-          <input name="buildingCode" defaultValue={textValue(asset.buildingCode)} className={fieldClass} placeholder="BLDG" />
+      <p className="mt-1 text-sm font-bold text-slate-500">Same structure as the HVAC asset register template.</p>
+      <div className="mt-4 grid gap-4">
+        <div>
+          <p className="mb-3 text-xs font-black uppercase text-lagoon">HVAC Asset Register Fields</p>
+          <div className="grid gap-3">
+            <div className="grid grid-cols-3 gap-3">
+              <EditField label="SITE" name="siteCode" defaultValue={textValue(asset.siteCode)} />
+              <EditField label="ZONE" name="zone" defaultValue={textValue(asset.zone)} />
+              <EditField label="BLDG" name="buildingCode" defaultValue={textValue(asset.buildingCode)} />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <EditField label="FLOOR" name="floor" defaultValue={textValue(asset.floor)} />
+              <EditField label="ROOM" name="room" defaultValue={textValue(asset.room)} />
+            </div>
+            <EditField label="Asset Group" name="assetGroup" defaultValue={textValue(asset.assetGroup)} />
+            <EditField label="ASSET NUMBER" name="tag" defaultValue={textValue(asset.tag)} required />
+            <EditField label="Asset Description" name="assetDescription" defaultValue={textValue(asset.assetDescription)} />
+            <EditField label="Additional description" name="additionalDescription" defaultValue={textValue(asset.additionalDescription)} />
+            <EditField label="Parent Asset" name="parentAsset" defaultValue={textValue(asset.parentAsset)} />
+            <EditField label="Department" name="departmentCode" defaultValue={textValue(asset.departmentCode)} />
+            <label className="grid gap-1 text-sm font-bold text-slate-600">
+              Remarks
+              <textarea name="remarks" defaultValue={textValue(asset.remarks)} className="min-h-24 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />
+            </label>
+          </div>
         </div>
-        <input name="assetGroup" defaultValue={textValue(asset.assetGroup)} className={fieldClass} placeholder="Asset Group" />
-        <input name="assetDescription" defaultValue={textValue(asset.assetDescription)} className={fieldClass} placeholder="Asset Description" />
-        <input name="additionalDescription" defaultValue={textValue(asset.additionalDescription)} className={fieldClass} placeholder="Additional description" />
-        <input name="parentAsset" defaultValue={textValue(asset.parentAsset)} className={fieldClass} placeholder="Parent Asset" />
-        <input name="departmentCode" defaultValue={textValue(asset.departmentCode)} className={fieldClass} placeholder="Department" />
-        <input name="remarks" defaultValue={textValue(asset.remarks)} className={fieldClass} placeholder="Remarks" />
-        <select name="criticality" defaultValue={asset.criticality} className={fieldClass}>
-          <option>LOW</option>
-          <option>MEDIUM</option>
-          <option>HIGH</option>
-          <option>CRITICAL</option>
-        </select>
-        <select name="status" defaultValue={asset.status} className={fieldClass}>
-          <option>ACTIVE</option>
-          <option>STANDBY</option>
-          <option>DOWN</option>
-          <option>RETIRED</option>
-        </select>
-        <input name="serialNumber" defaultValue={textValue(asset.serialNumber)} className={fieldClass} placeholder="Serial number" />
-        <input name="manufacturer" defaultValue={textValue(asset.manufacturer)} className={fieldClass} placeholder="Manufacturer" />
-        <input name="model" defaultValue={textValue(asset.model)} className={fieldClass} placeholder="Model" />
-        <div className="grid grid-cols-2 gap-3">
-          <input name="floor" defaultValue={textValue(asset.floor)} className={fieldClass} placeholder="Floor" />
-          <input name="room" defaultValue={textValue(asset.room)} className={fieldClass} placeholder="Room" />
+        <div>
+          <p className="mb-3 text-xs font-black uppercase text-lagoon">Additional CAFM Fields</p>
+          <div className="grid gap-3">
+            <EditField label="System display name" name="name" defaultValue={textValue(asset.name)} required />
+            <EditField label="Category" name="category" defaultValue={textValue(asset.category)} required />
+            <EditField label="System" name="system" defaultValue={textValue(asset.system)} required />
+            <label className="grid gap-1 text-sm font-bold text-slate-600">
+              Criticality
+              <select name="criticality" defaultValue={asset.criticality} className={fieldClass}>
+                <option>LOW</option>
+                <option>MEDIUM</option>
+                <option>HIGH</option>
+                <option>CRITICAL</option>
+              </select>
+            </label>
+            <label className="grid gap-1 text-sm font-bold text-slate-600">
+              Status
+              <select name="status" defaultValue={asset.status} className={fieldClass}>
+                <option>ACTIVE</option>
+                <option>STANDBY</option>
+                <option>DOWN</option>
+                <option>RETIRED</option>
+              </select>
+            </label>
+            <EditField label="Serial number" name="serialNumber" defaultValue={textValue(asset.serialNumber)} />
+            <EditField label="Manufacturer" name="manufacturer" defaultValue={textValue(asset.manufacturer)} />
+            <EditField label="Model" name="model" defaultValue={textValue(asset.model)} />
+            <EditField label="Warranty expiry" name="warrantyExpiry" type="date" defaultValue={dateValue(asset.warrantyExpiry)} />
+            <EditField label="Contract reference" name="contractRef" defaultValue={textValue(asset.contractRef)} />
+            <EditField label="Documentation URL" name="documentationUrl" defaultValue={textValue(asset.documentationUrl)} />
+            <div className="grid grid-cols-3 gap-3">
+              <EditField label="Cost" name="purchaseCost" type="number" defaultValue={textValue(asset.purchaseCost)} />
+              <EditField label="Salvage" name="salvageValue" type="number" defaultValue={textValue(asset.salvageValue)} />
+              <EditField label="Dep. %" name="depreciationRate" type="number" defaultValue={textValue(asset.depreciationRate)} />
+            </div>
+            <EditField label="Condition score" name="conditionScore" type="number" defaultValue={textValue(asset.conditionScore)} />
+          </div>
         </div>
-        <input name="warrantyExpiry" type="date" defaultValue={dateValue(asset.warrantyExpiry)} className={fieldClass} />
-        <input name="contractRef" defaultValue={textValue(asset.contractRef)} className={fieldClass} placeholder="Contract reference" />
-        <input name="documentationUrl" defaultValue={textValue(asset.documentationUrl)} className={fieldClass} placeholder="Documentation URL" />
-        <div className="grid grid-cols-3 gap-3">
-          <input name="purchaseCost" type="number" defaultValue={textValue(asset.purchaseCost)} className={fieldClass} placeholder="Cost" />
-          <input name="salvageValue" type="number" defaultValue={textValue(asset.salvageValue)} className={fieldClass} placeholder="Salvage" />
-          <input name="depreciationRate" type="number" defaultValue={textValue(asset.depreciationRate)} className={fieldClass} placeholder="Dep. %" />
-        </div>
-        <input name="conditionScore" type="number" min="0" max="100" defaultValue={textValue(asset.conditionScore)} className={fieldClass} />
         <button disabled={saving} className="h-11 rounded-lg bg-coral font-black text-white disabled:bg-slate-400">Save Admin Changes</button>
       </div>
     </form>
+  );
+}
+
+function EditField({ label, name, defaultValue, required = false, type = "text" }: { label: string; name: string; defaultValue: string; required?: boolean; type?: string }) {
+  return (
+    <label className="grid gap-1 text-sm font-bold text-slate-600">
+      {label}
+      <input
+        name={name}
+        type={type}
+        required={required}
+        min={type === "number" && name === "conditionScore" ? 0 : undefined}
+        max={type === "number" && name === "conditionScore" ? 100 : undefined}
+        defaultValue={defaultValue}
+        className="h-10 rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-lagoon"
+      />
+    </label>
   );
 }
 
