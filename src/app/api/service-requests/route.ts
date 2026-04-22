@@ -12,6 +12,7 @@ const schema = z.object({
   requester: z.string().min(2),
   priority: z.enum(["LOW", "MEDIUM", "HIGH", "CRITICAL"]),
   location: z.string().min(2),
+  attachmentUrls: z.string().optional(),
   description: z.string().min(3),
 });
 
@@ -45,7 +46,7 @@ export async function POST(request: Request) {
         ticketNo: `SR-${String(count + 24001).padStart(5, "0")}`,
         slaHours,
         dueAt: addHours(new Date(), slaHours),
-        status: input.priority === "CRITICAL" ? "TRIAGED" : "NEW",
+        status: "OPEN",
       },
     });
 

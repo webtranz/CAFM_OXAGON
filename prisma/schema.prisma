@@ -15,12 +15,19 @@ enum Priority {
 }
 
 enum WorkStatus {
+  OPEN
   NEW
   TRIAGED
+  APPROVED
+  REJECTED
+  PENDING_ASSIGNMENT
   ASSIGNED
+  ACCEPTED
   IN_PROGRESS
   ON_HOLD
   COMPLETED
+  VERIFIED
+  REOPENED
   CLOSED
 }
 
@@ -246,6 +253,10 @@ model ServiceRequest {
   priority    Priority
   status      WorkStatus @default(NEW)
   location    String
+  attachmentUrls String?
+  rejectionReason String?
+  reviewedAt  DateTime?
+  approvedAt  DateTime?
   slaHours    Int
   dueAt       DateTime
   description String
@@ -271,6 +282,11 @@ model WorkOrder {
   assetsUsed       String?
   inventoryUsed    String?
   supervisorRequest String?
+  workNotes        String?
+  materialRequest  String?
+  rejectionReason  String?
+  supervisorDecision String?
+  verifiedAt       DateTime?
   priority         Priority
   status           WorkStatus      @default(NEW)
   assetId          String?

@@ -12,8 +12,10 @@ const schema = z.object({
   assignedTeamCode: z.string().optional(),
   requester: z.string().min(2),
   priority: z.enum(["LOW", "MEDIUM", "HIGH", "CRITICAL"]),
-  status: z.enum(["NEW", "TRIAGED", "ASSIGNED", "IN_PROGRESS", "ON_HOLD", "COMPLETED", "CLOSED"]),
+  status: z.enum(["OPEN", "NEW", "TRIAGED", "APPROVED", "REJECTED", "PENDING_ASSIGNMENT", "ASSIGNED", "ACCEPTED", "IN_PROGRESS", "ON_HOLD", "COMPLETED", "VERIFIED", "REOPENED", "CLOSED"]),
   location: z.string().min(2),
+  attachmentUrls: z.string().optional(),
+  rejectionReason: z.string().optional(),
   description: z.string().min(3),
 });
 
@@ -45,6 +47,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         assignedSupervisorEmail: supervisor?.email || null,
         slaHours,
         dueAt: addHours(new Date(), slaHours),
+        reviewedAt: ["TRIAGED", "APPROVED", "REJECTED"].includes(input.status) ? new Date() : undefined,
+        approvedAt: input.status === "APPROVED" ? new Date() : undefined,
       },
     });
 

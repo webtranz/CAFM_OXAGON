@@ -189,6 +189,8 @@ async function importRequest(row: Row) {
       priority: priority(row.priority),
       status: workStatus(row.status, "NEW"),
       location: row.location || "Unassigned",
+      attachmentUrls: row.attachmentUrls || "",
+      rejectionReason: row.rejectionReason || "",
       slaHours,
       dueAt: addHours(new Date(), slaHours),
       description: row.description || row.title || "Bulk uploaded request",
@@ -218,6 +220,12 @@ async function importWorkOrder(row: Row) {
       cost: number(row.cost, 0),
       jobPlan: row.jobPlan || "Review, execute, document and close.",
       safetyNotes: row.safetyNotes || "Verify PPE and permits before work starts.",
+      workNotes: row.workNotes || "",
+      materialRequest: row.materialRequest || "",
+      photoUrls: row.photoUrls || "",
+      assetsUsed: row.assetsUsed || "",
+      inventoryUsed: row.inventoryUsed || "",
+      supervisorDecision: row.supervisorDecision || "",
     },
   });
 }

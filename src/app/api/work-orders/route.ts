@@ -46,7 +46,7 @@ export async function POST(request: Request) {
         assignedTeamCode: input.assignedTeamCode || team?.code || null,
         jobPlanCode: input.jobPlanCode || null,
         priority: input.priority,
-        status: "ASSIGNED",
+        status: input.assignedToEmail || input.assignedTeamCode ? "ASSIGNED" : "PENDING_ASSIGNMENT",
         assetId: asset?.id,
         assignedToId: assignedUser?.id || technician?.id,
         plannedStart: new Date(),

@@ -935,8 +935,12 @@ function WorkOrders({
               <span className="text-sm font-bold">{work.woNo}</span>
               <div className="flex gap-2">
                 <button disabled={saving} onClick={() => setEditing(work)} className="rounded-lg bg-slate-700 px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Edit</button>
+                <button disabled={saving} onClick={() => updateWorkStatus(work.id, "ACCEPTED")} className="rounded-lg bg-emerald-700 px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Accept</button>
+                <button disabled={saving} onClick={() => updateWorkStatus(work.id, "REJECTED")} className="rounded-lg bg-amber-600 px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Reject</button>
                 <button disabled={saving} onClick={() => updateWorkStatus(work.id, "IN_PROGRESS")} className="rounded-lg bg-lagoon px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Start</button>
+                <button disabled={saving} onClick={() => updateWorkStatus(work.id, "ON_HOLD")} className="rounded-lg bg-slate-500 px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Hold</button>
                 <button disabled={saving} onClick={() => updateWorkStatus(work.id, "COMPLETED")} className="rounded-lg bg-leaf px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Complete</button>
+                <button disabled={saving} onClick={() => updateWorkStatus(work.id, "CLOSED")} className="rounded-lg bg-ink px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Close</button>
                 <button disabled={saving} onClick={() => deleteWorkOrder(work.id)} className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Delete</button>
               </div>
             </div>
@@ -1001,7 +1005,9 @@ function Helpdesk({
               <span className="text-sm font-bold">{request.ticketNo} / {request.title}</span>
               <div className="flex gap-2">
                 <button disabled={saving} onClick={() => setEditing(request)} className="rounded-lg bg-lagoon px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Edit</button>
+                <button disabled={saving} onClick={() => updateRequest(request.id, requestFormData(request, "TRIAGED"))} className="rounded-lg bg-slate-700 px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Review</button>
                 <button disabled={saving || request.workOrder} onClick={() => convertRequest(request.id)} className="rounded-lg bg-ink px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Create WO</button>
+                <button disabled={saving} onClick={() => updateRequest(request.id, requestFormData(request, "REJECTED", "Rejected by supervisor/helpdesk"))} className="rounded-lg bg-amber-600 px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Reject</button>
                 <button disabled={saving} onClick={() => deleteRequest(request.id)} className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Delete</button>
               </div>
             </div>
@@ -1014,6 +1020,23 @@ function Helpdesk({
       </div>
     </section>
   );
+}
+
+function requestFormData(request: any, status: string, rejectionReason = "") {
+  const formData = new FormData();
+  formData.set("title", request.title ?? "");
+  formData.set("category", request.category ?? "General");
+  formData.set("departmentCode", request.departmentCode ?? "");
+  formData.set("serviceCode", request.serviceCode ?? "");
+  formData.set("assignedTeamCode", request.assignedTeamCode ?? "");
+  formData.set("requester", request.requester ?? "Requester");
+  formData.set("priority", request.priority ?? "MEDIUM");
+  formData.set("status", status);
+  formData.set("location", request.location ?? "Unassigned");
+  formData.set("attachmentUrls", request.attachmentUrls ?? "");
+  formData.set("rejectionReason", rejectionReason || request.rejectionReason || "");
+  formData.set("description", request.description ?? request.title ?? "Request reviewed.");
+  return formData;
 }
 
 function ServiceRequestForm({ title, request, services, departments, teams, locations, onSubmit, saving }: { title: string; request?: any; services: any[]; departments: any[]; teams: any[]; locations: any[]; onSubmit: (formData: FormData) => void; saving: boolean }) {
@@ -1050,15 +1073,17 @@ function ServiceRequestForm({ title, request, services, departments, teams, loca
         </select>
         {request && (
           <select name="status" defaultValue={request.status} required className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon">
-            <option>NEW</option><option>TRIAGED</option><option>ASSIGNED</option><option>IN_PROGRESS</option><option>ON_HOLD</option><option>COMPLETED</option><option>CLOSED</option>
+            <option>OPEN</option><option>TRIAGED</option><option>APPROVED</option><option>REJECTED</option><option>ASSIGNED</option><option>CLOSED</option>
           </select>
         )}
-        {!request && <input type="hidden" name="status" value="NEW" />}
+        {!request && <input type="hidden" name="status" value="OPEN" />}
         <select name="location" defaultValue={request?.location ?? ""} required className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon">
           <option value="">Select location</option>
           {locationOptions.map((location) => <option key={location}>{location}</option>)}
         </select>
         <textarea name="description" defaultValue={request?.description ?? ""} required placeholder="Description" className="min-h-24 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />
+        <textarea name="attachmentUrls" defaultValue={request?.attachmentUrls ?? ""} placeholder="Attachment links / proof URLs" className="min-h-20 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />
+        {request && <textarea name="rejectionReason" defaultValue={request?.rejectionReason ?? ""} placeholder="Reject / close reason" className="min-h-20 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />}
         <button disabled={saving} className="h-11 rounded-lg bg-ink font-black text-white disabled:bg-slate-400">{saving ? "Saving..." : "Save Request"}</button>
       </div>
     </form>
@@ -1112,7 +1137,7 @@ function WorkOrderForm({ title, work, data, onSubmit, saving }: { title: string;
         <select name="priority" defaultValue={work?.priority ?? "MEDIUM"} required className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon">
           <option>LOW</option><option>MEDIUM</option><option>HIGH</option><option>CRITICAL</option>
         </select>
-        {work && <select name="status" defaultValue={work.status} className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon"><option>NEW</option><option>TRIAGED</option><option>ASSIGNED</option><option>IN_PROGRESS</option><option>ON_HOLD</option><option>COMPLETED</option><option>CLOSED</option></select>}
+        {work && <select name="status" defaultValue={work.status} className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon"><option>PENDING_ASSIGNMENT</option><option>ASSIGNED</option><option>ACCEPTED</option><option>REJECTED</option><option>IN_PROGRESS</option><option>ON_HOLD</option><option>COMPLETED</option><option>VERIFIED</option><option>REOPENED</option><option>CLOSED</option></select>}
         <textarea name="jobPlan" defaultValue={work?.jobPlan ?? ""} required placeholder="Job plan / work steps" className="min-h-24 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />
         <textarea name="safetyNotes" defaultValue={work?.safetyNotes ?? ""} placeholder="Safety notes" className="min-h-20 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />
         {work && (
@@ -1124,7 +1149,16 @@ function WorkOrderForm({ title, work, data, onSubmit, saving }: { title: string;
             <textarea name="photoUrls" defaultValue={work.photoUrls ?? ""} placeholder="Picture links / uploaded evidence URLs" className="min-h-20 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />
             <textarea name="assetsUsed" defaultValue={work.assetsUsed ?? ""} placeholder="Assets added or used" className="min-h-20 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />
             <textarea name="inventoryUsed" defaultValue={work.inventoryUsed ?? ""} placeholder="Inventory/spares used" className="min-h-20 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />
+            <textarea name="workNotes" defaultValue={work.workNotes ?? ""} placeholder="Work notes / execution log" className="min-h-20 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />
+            <textarea name="materialRequest" defaultValue={work.materialRequest ?? ""} placeholder="Material request to supervisor" className="min-h-20 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />
+            <textarea name="rejectionReason" defaultValue={work.rejectionReason ?? ""} placeholder="Technician reject reason, if rejected" className="min-h-20 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />
             <textarea name="supervisorRequest" defaultValue={work.supervisorRequest ?? ""} placeholder="Request from supervisor / support needed" className="min-h-20 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />
+          </div>
+        )}
+        {work && (
+          <div className="grid gap-3 rounded-lg bg-emerald-50 p-3">
+            <p className="text-sm font-black text-emerald-800">Supervisor Verification</p>
+            <textarea name="supervisorDecision" defaultValue={work.supervisorDecision ?? ""} placeholder="Approve, reject, reopen or reassign decision notes" className="min-h-20 rounded-lg border border-emerald-100 p-3 outline-none focus:border-lagoon" />
           </div>
         )}
         {work && <div className="grid grid-cols-2 gap-3"><input name="estimatedHours" type="number" defaultValue={work.estimatedHours ?? ""} className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" /><input name="cost" type="number" defaultValue={work.cost ?? ""} className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" /></div>}
@@ -1638,7 +1672,7 @@ function RoleForm({ onSubmit, saving }: { onSubmit: (formData: FormData) => void
 }
 
 function roleOptions(roles: any[]) {
-  const defaults = ["Admin", "Supervisor", "Service Team", "Helpdesk", "Reception", "Resident"];
+  const defaults = ["Admin", "Supervisor", "Service Team", "Technician", "Helpdesk", "Reception", "Resident", "Requester"];
   return Array.from(new Set([...defaults, ...roles.map((role) => role.name)]));
 }
 

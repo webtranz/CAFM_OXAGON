@@ -13,7 +13,7 @@ const schema = z.object({
   assignedToEmail: z.string().optional(),
   jobPlanCode: z.string().optional(),
   priority: z.enum(["LOW", "MEDIUM", "HIGH", "CRITICAL"]).optional(),
-  status: z.enum(["NEW", "TRIAGED", "ASSIGNED", "IN_PROGRESS", "ON_HOLD", "COMPLETED", "CLOSED"]).optional(),
+  status: z.enum(["OPEN", "NEW", "TRIAGED", "APPROVED", "REJECTED", "PENDING_ASSIGNMENT", "ASSIGNED", "ACCEPTED", "IN_PROGRESS", "ON_HOLD", "COMPLETED", "VERIFIED", "REOPENED", "CLOSED"]).optional(),
   assetTag: z.string().optional(),
   jobPlan: z.string().min(3).optional(),
   safetyNotes: z.string().optional(),
@@ -26,6 +26,10 @@ const schema = z.object({
   assetsUsed: z.string().optional(),
   inventoryUsed: z.string().optional(),
   supervisorRequest: z.string().optional(),
+  workNotes: z.string().optional(),
+  materialRequest: z.string().optional(),
+  rejectionReason: z.string().optional(),
+  supervisorDecision: z.string().optional(),
 });
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -61,9 +65,18 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         assetsUsed: input.assetsUsed,
         inventoryUsed: input.inventoryUsed,
         supervisorRequest: input.supervisorRequest,
-        actualHours: input.status && ["COMPLETED", "CLOSED"].includes(input.status) ? 4 : undefined,
+        workNotes: input.workNotes,
+        materialRequest: input.materialRequest,
+        rejectionReason: input.rejectionReason,
+        supervisorDecision: input.supervisorDecision,
+        verifiedAt: input.status === "VERIFIED" || input.status === "CLOSED" ? new Date() : undefined,
+        actualHours: input.status && ["COMPLETED", "VERIFIED", "CLOSED"].includes(input.status) ? 4 : undefined,
       },
     });
+
+    if (updated.requestId && input.status === "CLOSED") {
+      await prisma.serviceRequest.update({ where: { id: updated.requestId }, data: { status: "CLOSED" } });
+    }
 
     return NextResponse.json(updated);
   } catch (error) {

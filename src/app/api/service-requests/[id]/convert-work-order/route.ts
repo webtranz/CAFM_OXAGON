@@ -27,9 +27,9 @@ export async function POST(_: Request, { params }: { params: Promise<{ id: strin
         serviceCode: request.serviceCode,
         assignedTeamCode: request.assignedTeamCode,
         priority: request.priority,
-        status: "ASSIGNED",
+        status: "PENDING_ASSIGNMENT",
         requestId: request.id,
-        assignedToId: technician?.id,
+        assignedToId: null,
         plannedStart: new Date(),
         dueAt: addHours(new Date(), dueHours[request.priority]),
         estimatedHours: request.priority === "CRITICAL" ? 2 : 4,
@@ -39,7 +39,7 @@ export async function POST(_: Request, { params }: { params: Promise<{ id: strin
       },
     });
 
-    await prisma.serviceRequest.update({ where: { id }, data: { status: "ASSIGNED" } });
+    await prisma.serviceRequest.update({ where: { id }, data: { status: "APPROVED", approvedAt: new Date(), reviewedAt: new Date() } });
     return NextResponse.json(workOrder, { status: 201 });
   } catch (error) {
     return apiError(error, "Unable to convert request to work order");

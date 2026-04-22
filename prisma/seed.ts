@@ -25,9 +25,11 @@ async function main() {
     ["Admin", "Full system administration and configuration"],
     ["Supervisor", "Department supervision, request conversion and work assignment"],
     ["Service Team", "Assigned work execution, status, time, photos and material usage"],
+    ["Technician", "Execute assigned tasks only"],
     ["Helpdesk", "Request intake, triage and communication"],
     ["Reception", "Front-desk resident and visitor service request intake"],
     ["Resident", "Resident portal request submission and request tracking"],
+    ["Requester", "Create and track service requests"],
   ] as const;
 
   for (const [name, description] of standardRoles) {
@@ -43,7 +45,10 @@ async function main() {
     ["work.manage", "Manage Work Orders", "Work", "Create and update work orders"],
     ["work.execute", "Execute Work Orders", "Work", "Update status, time, photos, assets and inventory used"],
     ["requests.manage", "Manage Service Requests", "Helpdesk", "Create, edit, assign and convert requests to work orders"],
+    ["requests.approve", "Approve or Reject Requests", "Helpdesk", "Supervisor/helpdesk review, validate, approve or reject service requests"],
     ["requests.view", "View Service Requests", "Helpdesk", "View assigned service requests"],
+    ["work.assign", "Assign Work Orders", "Work", "Assign work orders to technicians or teams"],
+    ["work.verify", "Verify Completed Work", "Work", "Approve, reject, reopen or close completed work"],
     ["ppm.manage", "Manage PPM", "Maintenance", "Create planned preventive maintenance schedules"],
     ["users.manage", "Manage Users", "Administration", "Create users and assign roles"],
     ["roles.manage", "Manage Roles", "Administration", "Create custom roles and permission sets"],
@@ -66,11 +71,13 @@ async function main() {
   }
 
   const defaultRolePermissions: Record<string, string[]> = {
-    Supervisor: ["work.manage", "work.execute", "requests.manage", "requests.view", "reports.view"],
+    Supervisor: ["work.manage", "work.assign", "work.verify", "work.execute", "requests.manage", "requests.approve", "requests.view", "reports.view"],
     "Service Team": ["work.execute", "requests.view"],
-    Helpdesk: ["requests.manage", "requests.view", "reports.view"],
+    Technician: ["work.execute", "requests.view"],
+    Helpdesk: ["requests.manage", "requests.approve", "requests.view", "reports.view"],
     Reception: ["reception.manage", "requests.manage", "requests.view"],
     Resident: ["resident.portal", "requests.view"],
+    Requester: ["resident.portal", "requests.view"],
   };
 
   for (const [role, codes] of Object.entries(defaultRolePermissions)) {
