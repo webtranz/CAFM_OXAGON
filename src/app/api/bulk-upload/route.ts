@@ -187,18 +187,18 @@ async function importWorkOrder(row: Row) {
 
 async function importTeam(row: Row) {
   await prisma.team.upsert({
-    where: { code: required(row, "code") },
+    where: { code: row.departmentCode || required(row, "code") },
     update: teamPayload(row),
-    create: { code: required(row, "code"), ...teamPayload(row) },
+    create: { code: row.departmentCode || required(row, "code"), ...teamPayload(row) },
   });
 }
 
 async function importService(row: Row) {
   const team = row.teamCode ? await prisma.team.findUnique({ where: { code: row.teamCode } }) : null;
   await prisma.serviceCatalog.upsert({
-    where: { code: required(row, "code") },
+    where: { code: row.departmentCode || required(row, "code") },
     update: servicePayload(row, team?.id),
-    create: { code: required(row, "code"), ...servicePayload(row, team?.id) },
+    create: { code: row.departmentCode || required(row, "code"), ...servicePayload(row, team?.id) },
   });
 }
 
@@ -230,24 +230,24 @@ async function importInspection(row: Row) {
 function teamPayload(row: Row) {
   return {
     name: required(row, "name"),
-    type: row.type || "Service Team",
-    supervisor: row.supervisor || "Unassigned",
+    type: row.service || row.type || "Service Team",
+    supervisor: row.companyIdNumber || row.supervisor || "Unassigned",
     phone: row.phone || "",
     email: row.email || "",
     shift: row.shift || "General",
-    coverage: row.coverage || "Site-wide",
+    coverage: row.service || row.coverage || "Site-wide",
   };
 }
 
 function servicePayload(row: Row, teamId?: string) {
   return {
-    name: required(row, "name"),
-    category: row.category || "General",
-    type: row.type || "Service",
+    name: row.departmentName || required(row, "name"),
+    category: row.departmentName || row.category || "General",
+    type: row.type || "Department Service",
     priority: priority(row.priority),
     slaHours: integer(row.slaHours, 24),
     teamId,
-    description: row.description || "",
+    description: row.description || `Department ${row.departmentCode || row.code || ""}`,
   };
 }
 

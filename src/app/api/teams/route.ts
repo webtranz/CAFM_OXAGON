@@ -4,14 +4,12 @@ import { apiError } from "@/lib/api-response";
 import { prisma } from "@/lib/prisma";
 
 const schema = z.object({
-  code: z.string().min(2),
   name: z.string().min(2),
-  type: z.string().min(2),
-  supervisor: z.string().min(2),
+  companyIdNumber: z.string().min(1),
+  departmentCode: z.string().min(1),
+  service: z.string().min(2),
   phone: z.string().optional(),
   email: z.string().email().optional().or(z.literal("")),
-  shift: z.string().optional(),
-  coverage: z.string().optional(),
 });
 
 export async function GET() {
@@ -21,26 +19,27 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const input = schema.parse(await request.json());
+    const code = input.departmentCode;
     const created = await prisma.team.upsert({
-      where: { code: input.code },
+      where: { code },
       update: {
         name: input.name,
-        type: input.type,
-        supervisor: input.supervisor,
+        type: input.service,
+        supervisor: input.companyIdNumber,
         phone: input.phone || "",
         email: input.email || "",
-        shift: input.shift || "General",
-        coverage: input.coverage || "Site-wide",
+        shift: "General",
+        coverage: input.service,
       },
       create: {
-        code: input.code,
+        code,
         name: input.name,
-        type: input.type,
-        supervisor: input.supervisor,
+        type: input.service,
+        supervisor: input.companyIdNumber,
         phone: input.phone || "",
         email: input.email || "",
-        shift: input.shift || "General",
-        coverage: input.coverage || "Site-wide",
+        shift: "General",
+        coverage: input.service,
       },
     });
     return NextResponse.json(created, { status: 201 });

@@ -80,6 +80,7 @@ const moduleGroups = [
       { id: "assets", label: "Assets", icon: Building2 },
       { id: "teams", label: "Teams & Services", icon: Users },
       { id: "bulk", label: "Bulk Upload", icon: Upload },
+      { id: "templates", label: "Templates", icon: ClipboardCheck },
     ],
   },
   {
@@ -98,6 +99,15 @@ const statToneClasses: Record<string, string> = {
   lagoon: "text-lagoon",
   sun: "text-amber-600",
 };
+
+function cleanMessage(message: string) {
+  return message
+    .replaceAll("\n", " ")
+    .replaceAll("{", "")
+    .replaceAll("}", "")
+    .replaceAll('"', "")
+    .slice(0, 260);
+}
 
 export function CafmConsole({ data, user }: { data: ConsoleData; user: { name: string; email: string; role: string } }) {
   const [records, setRecords] = useState(data);
@@ -139,7 +149,7 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { name: s
       body: JSON.stringify(payload),
     });
     const result = await response.json();
-    setToast(response.ok ? `Service request ${result.ticketNo} created and saved.` : result.message ?? "Service request failed.");
+    setToast(response.ok ? `Service request ${result.ticketNo} created and saved.` : cleanMessage(result.message ?? "Service request failed."));
     if (response.ok) await refreshData();
     setSaving(false);
   }
@@ -153,7 +163,7 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { name: s
       body: JSON.stringify(payload),
     });
     const result = await response.json();
-    setToast(response.ok ? `Work order ${result.woNo} created and saved.` : result.message ?? "Work order failed.");
+    setToast(response.ok ? `Work order ${result.woNo} created and saved.` : cleanMessage(result.message ?? "Work order failed."));
     if (response.ok) await refreshData();
     setSaving(false);
   }
@@ -167,7 +177,7 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { name: s
       body: JSON.stringify(payload),
     });
     const result = await response.json();
-    setToast(response.ok ? `${successLabel} saved.` : result.message ?? "Action failed.");
+    setToast(response.ok ? `${successLabel} saved.` : cleanMessage(result.message ?? "Action failed."));
     if (response.ok) await refreshData();
     setSaving(false);
   }
@@ -179,7 +189,7 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { name: s
       body: formData,
     });
     const result = await response.json();
-    setToast(result.message ?? (response.ok ? "Bulk upload complete." : "Bulk upload failed."));
+    setToast(cleanMessage(result.message ?? (response.ok ? "Bulk upload complete." : "Bulk upload failed.")));
     await refreshData();
     setSaving(false);
   }
@@ -192,13 +202,22 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { name: s
       body: JSON.stringify(body),
     });
     const result = await response.json();
-    setToast(response.ok ? successLabel : result.message ?? "Action failed.");
+    setToast(response.ok ? successLabel : cleanMessage(result.message ?? "Action failed."));
     if (response.ok) await refreshData();
     setSaving(false);
   }
 
   async function updateAsset(id: string, formData: FormData) {
     await patchRecord(`/api/assets/${id}`, Object.fromEntries(formData.entries()) as Record<string, string>, "Asset updated by admin.");
+  }
+
+  async function deleteRecord(path: string, successLabel: string) {
+    setSaving(true);
+    const response = await fetch(path, { method: "DELETE" });
+    const result = await response.json();
+    setToast(response.ok ? successLabel : cleanMessage(result.message ?? "Delete failed."));
+    if (response.ok) await refreshData();
+    setSaving(false);
   }
 
   async function logout() {
@@ -335,7 +354,20 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { name: s
             />
           )}
           {active === "bulk" && <BulkUpload saving={saving} onSubmit={bulkUpload} />}
-          {active === "users" && <UsersRoles users={records.users} permissions={records.permissions} saving={saving} submitUser={(formData) => postRecord("/api/users", formData, "User")} />}
+          {active === "templates" && <Templates />}
+          {active === "users" && (
+            <UsersRoles
+              users={records.users}
+              teams={records.teams}
+              permissions={records.permissions}
+              saving={saving}
+              submitUser={(formData) => postRecord("/api/users", formData, "User")}
+              updateUser={(id, formData) => patchRecord(`/api/users/${id}`, Object.fromEntries(formData.entries()) as Record<string, string>, "User updated.")}
+              deleteUser={(id) => deleteRecord(`/api/users/${id}`, "User deleted.")}
+              refreshData={refreshData}
+              setToast={(message) => setToast(cleanMessage(message))}
+            />
+          )}
           {active === "reports" && <Reports />}
         </section>
       </section>
@@ -782,11 +814,37 @@ function TeamsServices({
         </Panel>
       </div>
       <div className="space-y-5">
-        <ActionForm title="Add Service Team" onSubmit={submitTeam} fields={["code", "name", "type", "supervisor", "phone", "email", "shift", "coverage"]} saving={saving} />
-        <ActionForm title="Add Service" onSubmit={submitService} fields={["code", "name", "category", "type", "priority", "slaHours", "teamCode", "description"]} saving={saving} />
+        <ActionForm title="Add Service Team" onSubmit={submitTeam} fields={["name", "companyIdNumber", "departmentCode", "service", "email", "phone"]} saving={saving} />
+        <ServiceForm teams={teams} onSubmit={submitService} saving={saving} />
         <ActionForm title="Add Asset Category" onSubmit={submitCategory} fields={["code", "name", "type", "defaultLifeYrs", "statutory", "description"]} saving={saving} />
       </div>
     </section>
+  );
+}
+
+function ServiceForm({ teams, onSubmit, saving }: { teams: any[]; onSubmit: (formData: FormData) => void; saving: boolean }) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    await onSubmit(new FormData(form));
+    form.reset();
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="rounded-lg border border-white/80 bg-white p-5 shadow-lift">
+      <h3 className="text-xl font-black">Add Service</h3>
+      <div className="mt-4 grid gap-3">
+        <input name="departmentName" required placeholder="Department name" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
+        <input name="departmentCode" required placeholder="Department code" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
+        <select name="teamCode" required className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon">
+          <option value="">Select team code</option>
+          {teams.map((team) => (
+            <option key={team.id} value={team.code}>{team.code} - {team.name}</option>
+          ))}
+        </select>
+        <button disabled={saving} className="h-11 rounded-lg bg-ink font-black text-white disabled:bg-slate-400">{saving ? "Saving..." : "Submit"}</button>
+      </div>
+    </form>
   );
 }
 
@@ -798,7 +856,7 @@ function BulkUpload({ saving, onSubmit }: { saving: boolean; onSubmit: (formData
   }
 
   return (
-    <section className="grid gap-5 xl:grid-cols-[1fr_420px]">
+    <section className="grid gap-5">
       <Panel title="Bulk Upload Center" icon={Upload}>
         <form onSubmit={handleSubmit} className="grid gap-4">
           <label className="grid gap-1 text-sm font-bold text-slate-600">
@@ -823,33 +881,122 @@ function BulkUpload({ saving, onSubmit }: { saving: boolean; onSubmit: (formData
           </button>
         </form>
       </Panel>
-      <Panel title="CSV Templates" icon={ClipboardCheck}>
-        <div className="grid gap-3 text-sm">
-          <Template title="Assets" value="tag,name,category,system,criticality,status,serialNumber,manufacturer,model,floor,room,warrantyExpiry,contractRef,documentationUrl,purchaseCost,salvageValue,depreciationRate,conditionScore" />
-          <Template title="Teams" value="code,name,type,supervisor,phone,email,shift,coverage" />
-          <Template title="Services" value="code,name,category,type,priority,slaHours,teamCode,description" />
-          <Template title="Inventory" value="sku,name,category,unit,onHand,reorderPoint,unitCost,vendor,location" />
-          <Template title="Requests" value="ticketNo,title,category,requester,channel,priority,status,location,slaHours,description" />
-          <Template title="Work Orders" value="woNo,title,type,priority,status,assetTag,dueHours,estimatedHours,cost,jobPlan,safetyNotes" />
-        </div>
-      </Panel>
     </section>
   );
 }
 
-function UsersRoles({ users, permissions, submitUser, saving }: { users: any[]; permissions: any[]; submitUser: (formData: FormData) => void; saving: boolean }) {
+function Templates() {
+  return (
+    <Panel title="Bulk Upload Templates" icon={ClipboardCheck}>
+      <div className="grid gap-3 text-sm lg:grid-cols-2">
+        <Template title="Assets" value="tag,name,category,system,criticality,status,serialNumber,manufacturer,model,floor,room,warrantyExpiry,contractRef,documentationUrl,purchaseCost,salvageValue,depreciationRate,conditionScore" />
+        <Template title="Teams" value="name,companyIdNumber,departmentCode,service,email,phone" />
+        <Template title="Services" value="departmentName,departmentCode,teamCode" />
+        <Template title="Inventory" value="sku,name,category,unit,onHand,reorderPoint,unitCost,vendor,location" />
+        <Template title="Requests" value="ticketNo,title,category,requester,channel,priority,status,location,slaHours,description" />
+        <Template title="Work Orders" value="woNo,title,type,priority,status,assetTag,dueHours,estimatedHours,cost,jobPlan,safetyNotes" />
+        <Template title="Inspections" value="code,title,area,inspector,risk,score,status,dueAt,findings" />
+      </div>
+    </Panel>
+  );
+}
+
+function UsersRoles({
+  users,
+  teams,
+  permissions,
+  submitUser,
+  updateUser,
+  deleteUser,
+  saving,
+  setToast,
+}: {
+  users: any[];
+  teams: any[];
+  permissions: any[];
+  submitUser: (formData: FormData) => void;
+  updateUser: (id: string, formData: FormData) => void;
+  deleteUser: (id: string) => void;
+  refreshData: () => void;
+  saving: boolean;
+  setToast: (message: string) => void;
+}) {
+  const [editingUser, setEditingUser] = useState<any | null>(null);
+
   return (
     <section className="grid gap-5 xl:grid-cols-[1fr_420px]">
       <div className="space-y-5">
         <Panel title="Users" icon={Users}>
-          <DataTable rows={users} columns={[["name", "Name"], ["email", "Email"], ["role", "Role"], ["department", "Department"], ["active", "Active"]]} />
+          <div className="grid gap-2">
+            {users.map((user) => (
+              <div key={user.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-slate-50 p-3">
+                <div>
+                  <p className="font-black">{user.name}</p>
+                  <p className="text-sm text-slate-600">{user.email} / {user.role} / {user.department}</p>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => setEditingUser(user)} className="rounded-lg bg-lagoon px-3 py-2 text-xs font-black text-white">Edit</button>
+                  <button
+                    onClick={() => user.email === "admin@cafm.local" ? setToast("Initial admin user cannot be deleted.") : deleteUser(user.id)}
+                    className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
         </Panel>
         <Panel title="Permissions Matrix" icon={ShieldCheck}>
           <DataTable rows={permissions} columns={[["module", "Module"], ["code", "Code"], ["name", "Permission"], ["description", "Description"]]} />
         </Panel>
       </div>
-      <ActionForm title="Create User" onSubmit={submitUser} fields={["name", "email", "password", "role", "department", "teamCode"]} saving={saving} />
+      <div className="space-y-5">
+        <UserForm title="Create User" teams={teams} onSubmit={submitUser} saving={saving} />
+        {editingUser && <UserForm title="Edit User" user={editingUser} teams={teams} onSubmit={(formData) => updateUser(editingUser.id, formData)} saving={saving} />}
+      </div>
     </section>
+  );
+}
+
+function UserForm({ title, user, teams, onSubmit, saving }: { title: string; user?: any; teams: any[]; onSubmit: (formData: FormData) => void; saving: boolean }) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await onSubmit(new FormData(event.currentTarget));
+    if (!user) event.currentTarget.reset();
+  }
+
+  const cls = "h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon";
+
+  return (
+    <form onSubmit={handleSubmit} className="rounded-lg border border-white/80 bg-white p-5 shadow-lift">
+      <h3 className="text-xl font-black">{title}</h3>
+      <div className="mt-4 grid gap-3">
+        <input name="name" defaultValue={user?.name ?? ""} required placeholder="Name" className={cls} />
+        <input name="email" defaultValue={user?.email ?? ""} required type="email" placeholder="Email" className={cls} />
+        <input name="password" required={!user} type="password" placeholder={user ? "New password optional" : "Password"} className={cls} />
+        <select name="role" defaultValue={user?.role ?? "Technician"} required className={cls}>
+          <option>Admin</option>
+          <option>Facility Manager</option>
+          <option>Supervisor</option>
+          <option>Technician</option>
+          <option>Helpdesk</option>
+          <option>Viewer</option>
+        </select>
+        <input name="department" defaultValue={user?.department ?? ""} required placeholder="Department" className={cls} />
+        <select name="teamCode" defaultValue={user?.team?.code ?? ""} className={cls}>
+          <option value="">No team</option>
+          {teams.map((team) => (
+            <option key={team.id} value={team.code}>{team.code} - {team.name}</option>
+          ))}
+        </select>
+        <select name="active" defaultValue={String(user?.active ?? true)} className={cls}>
+          <option value="true">Active</option>
+          <option value="false">Inactive</option>
+        </select>
+        <button disabled={saving} className="h-11 rounded-lg bg-ink font-black text-white disabled:bg-slate-400">{saving ? "Saving..." : "Save"}</button>
+      </div>
+    </form>
   );
 }
 

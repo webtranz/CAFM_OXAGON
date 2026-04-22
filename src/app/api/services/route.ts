@@ -4,14 +4,9 @@ import { apiError } from "@/lib/api-response";
 import { prisma } from "@/lib/prisma";
 
 const schema = z.object({
-  code: z.string().min(2),
-  name: z.string().min(2),
-  category: z.string().min(2),
-  type: z.string().min(2),
-  priority: z.enum(["LOW", "MEDIUM", "HIGH", "CRITICAL"]),
-  slaHours: z.coerce.number().int().min(1),
-  teamCode: z.string().optional(),
-  description: z.string().optional(),
+  departmentName: z.string().min(2),
+  departmentCode: z.string().min(1),
+  teamCode: z.string().min(1),
 });
 
 export async function GET() {
@@ -21,27 +16,28 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const input = schema.parse(await request.json());
-    const team = input.teamCode ? await prisma.team.findUnique({ where: { code: input.teamCode } }) : null;
+    const team = await prisma.team.findUnique({ where: { code: input.teamCode } });
+    const code = input.departmentCode;
     const created = await prisma.serviceCatalog.upsert({
-      where: { code: input.code },
+      where: { code },
       update: {
-        name: input.name,
-        category: input.category,
-        type: input.type,
-        priority: input.priority,
-        slaHours: input.slaHours,
+        name: input.departmentName,
+        category: input.departmentName,
+        type: "Department Service",
+        priority: "MEDIUM",
+        slaHours: 24,
         teamId: team?.id,
-        description: input.description || "",
+        description: `Department ${input.departmentName} linked to team ${input.teamCode}`,
       },
       create: {
-        code: input.code,
-        name: input.name,
-        category: input.category,
-        type: input.type,
-        priority: input.priority,
-        slaHours: input.slaHours,
+        code,
+        name: input.departmentName,
+        category: input.departmentName,
+        type: "Department Service",
+        priority: "MEDIUM",
+        slaHours: 24,
         teamId: team?.id,
-        description: input.description || "",
+        description: `Department ${input.departmentName} linked to team ${input.teamCode}`,
       },
     });
     return NextResponse.json(created, { status: 201 });
