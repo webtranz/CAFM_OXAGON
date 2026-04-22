@@ -10,6 +10,7 @@ import {
   ClipboardCheck,
   Gauge,
   HardHat,
+  ChevronDown,
   LayoutDashboard,
   LogOut,
   MapPinned,
@@ -60,34 +61,103 @@ type ConsoleData = {
 
 const moduleGroups = [
   {
-    label: "Command Center",
+    label: "Dashboard",
+    icon: LayoutDashboard,
     items: [{ id: "command", label: "Dashboard", icon: LayoutDashboard }],
   },
   {
-    label: "Facility Operations",
+    label: "Tickets",
+    icon: TicketCheck,
     items: [
-      { id: "helpdesk", label: "Helpdesk", icon: TicketCheck },
+      { id: "helpdesk", label: "Service Requests", icon: TicketCheck },
       { id: "work", label: "Work Orders", icon: Wrench },
       { id: "ppm", label: "PPM Planner", icon: CalendarCheck },
+    ],
+  },
+  {
+    label: "Facility Bookings",
+    icon: MapPinned,
+    items: [
+      { id: "command", label: "Facility Report", icon: Gauge },
+      { id: "reports", label: "Bookings Report", icon: ClipboardCheck },
+    ],
+  },
+  {
+    label: "Assets Management",
+    icon: Building2,
+    items: [
+      { id: "assets", label: "Assets Management", icon: Building2 },
+      { id: "teams", label: "Divisions", icon: Users },
+      { id: "teams", label: "Main Categories", icon: Boxes },
+      { id: "teams", label: "Sub Categories", icon: Boxes },
+      { id: "bulk", label: "Bulk Upload Assets", icon: Upload },
+      { id: "assets", label: "Asset Inventory Allocation", icon: ClipboardCheck },
+    ],
+  },
+  {
+    label: "Inventory Management",
+    icon: Boxes,
+    items: [
       { id: "inventory", label: "Inventory", icon: Boxes },
+      { id: "bulk", label: "Bulk Upload Inventory", icon: Upload },
+      { id: "reports", label: "Inventory Reports", icon: ClipboardCheck },
+    ],
+  },
+  {
+    label: "Safety",
+    icon: ShieldCheck,
+    items: [
       { id: "hse", label: "HSE", icon: ShieldCheck },
       { id: "iot", label: "IoT / BMS", icon: RadioTower },
     ],
   },
   {
-    label: "Asset & Services",
+    label: "Human Resources",
+    icon: Users,
     items: [
-      { id: "assets", label: "Assets", icon: Building2 },
-      { id: "teams", label: "Teams & Services", icon: Users },
-      { id: "bulk", label: "Bulk Upload", icon: Upload },
-      { id: "templates", label: "Templates", icon: ClipboardCheck },
+      { id: "users", label: "Users", icon: Users },
+      { id: "users", label: "Roles & Permissions", icon: ShieldCheck },
     ],
   },
   {
-    label: "Administration",
+    label: "Services",
+    icon: ClipboardCheck,
     items: [
-      { id: "users", label: "Users & Roles", icon: Users },
-      { id: "reports", label: "Reports", icon: ClipboardCheck },
+      { id: "teams", label: "Services Catalog", icon: ClipboardCheck },
+      { id: "bulk", label: "Bulk Upload Services", icon: Upload },
+    ],
+  },
+  {
+    label: "Service Teams",
+    icon: Users,
+    items: [
+      { id: "teams", label: "Service Teams", icon: Users },
+      { id: "bulk", label: "Bulk Upload Teams", icon: Upload },
+    ],
+  },
+  {
+    label: "Users Management",
+    icon: Users,
+    items: [
+      { id: "users", label: "Users Management", icon: Users },
+      { id: "users", label: "Permissions", icon: ShieldCheck },
+    ],
+  },
+  {
+    label: "Utilities",
+    icon: Upload,
+    items: [
+      { id: "bulk", label: "Bulk Upload Center", icon: Upload },
+      { id: "templates", label: "Bulk Upload Templates", icon: ClipboardCheck },
+      { id: "reports", label: "CSV / Excel / PDF Reports", icon: ClipboardCheck },
+    ],
+  },
+  {
+    label: "Activity Logs",
+    icon: Activity,
+    items: [
+      { id: "reports", label: "Reports Preview", icon: ClipboardCheck },
+      { id: "command", label: "System Activity", icon: Activity },
     ],
   },
 ];
@@ -226,16 +296,16 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { name: s
   }
 
   return (
-    <main className="min-h-screen p-4 text-ink sm:p-6 lg:p-8">
-      <section className="mx-auto grid max-w-[1540px] grid-cols-1 gap-5 lg:grid-cols-[260px_1fr]">
-        <aside className="rounded-lg border border-white/70 bg-white/82 p-4 shadow-lift backdrop-blur">
-          <div className="flex items-center gap-3">
-            <div className="grid h-12 w-12 place-items-center rounded-lg bg-lagoon text-white">
+    <main className="min-h-screen text-ink">
+      <section className="grid min-h-screen grid-cols-1 lg:grid-cols-[300px_1fr]">
+        <aside className="border-r border-slate-200 bg-white p-4">
+          <div className="flex items-center gap-3 px-1">
+            <div className="grid h-11 w-11 place-items-center rounded-lg bg-lagoon text-white">
               <Sparkles size={24} />
             </div>
             <div>
-              <h1 className="text-xl font-black">BrightWorks CAFM</h1>
-              <p className="text-sm text-slate-500">Enterprise facility command</p>
+              <h1 className="text-lg font-black leading-tight">BrightWorks CAFM</h1>
+              <p className="text-xs text-slate-500">Enterprise facility command</p>
             </div>
           </div>
 
@@ -253,22 +323,28 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { name: s
             </button>
           </div>
 
-          <nav className="mt-5 grid gap-3">
+          <nav className="mt-5 grid gap-1">
             {moduleGroups.map((group) => (
-              <details key={group.label} open className="rounded-lg bg-slate-50 p-2">
-                <summary className="cursor-pointer px-2 py-1 text-xs font-black uppercase text-slate-500">{group.label}</summary>
-                <div className="mt-2 grid gap-1">
+              <details key={group.label} open={group.label === "Dashboard" || group.label === "Assets Management"} className="group">
+                <summary className="flex h-11 cursor-pointer list-none items-center justify-between rounded-lg px-3 text-sm font-black text-slate-700 hover:bg-slate-50">
+                  <span className="flex items-center gap-3">
+                    <group.icon size={18} className="text-slate-600" />
+                    {group.label}
+                  </span>
+                  <ChevronDown size={15} className="text-slate-400 transition group-open:rotate-180" />
+                </summary>
+                <div className="ml-4 mt-1 grid border-l border-slate-100 pl-3">
                   {group.items.map((item) => {
                     const Icon = item.icon;
                     return (
                       <button
-                        key={item.id}
+                        key={`${group.label}-${item.label}`}
                         onClick={() => setActive(item.id)}
-                        className={`flex h-10 items-center gap-3 rounded-lg px-3 text-left text-sm font-bold transition ${
-                          active === item.id ? "bg-ink text-white shadow-lg" : "bg-white text-slate-700 hover:bg-slate-100"
+                        className={`flex h-9 items-center gap-2 rounded-lg px-2 text-left text-sm transition ${
+                          active === item.id ? "bg-indigo-50 font-black text-indigo-700" : "text-slate-600 hover:bg-slate-50 hover:text-ink"
                         }`}
                       >
-                        <Icon size={16} />
+                        <Icon size={13} />
                         {item.label}
                       </button>
                     );
@@ -278,7 +354,7 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { name: s
             ))}
           </nav>
 
-          <div className="mt-5 rounded-lg bg-sun/35 p-3">
+          <div className="mt-5 rounded-lg bg-slate-50 p-3">
             <p className="text-sm font-black">{user.name}</p>
             <p className="mt-1 text-xs text-slate-700">{user.role} / {user.email}</p>
             <button onClick={logout} className="mt-3 flex h-9 items-center gap-2 rounded-lg bg-white px-3 text-xs font-black text-coral shadow-sm">
@@ -288,13 +364,13 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { name: s
           </div>
         </aside>
 
-        <section className="space-y-5">
-          <header className="rounded-lg border border-white/70 bg-white/86 p-5 shadow-lift backdrop-blur">
+        <section className="space-y-5 p-4 sm:p-6 lg:p-8">
+          <header className="rounded-lg bg-gradient-to-r from-fuchsia-600 to-indigo-600 p-5 text-white shadow-lift">
             <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
               <div>
-                <p className="text-sm font-black uppercase tracking-wider text-lagoon">International level CAFM suite</p>
+                <p className="text-sm font-black uppercase tracking-wider text-white/80">International level CAFM suite</p>
                 <h2 className="mt-1 text-3xl font-black sm:text-4xl">One-stop facility operations system</h2>
-                <p className="mt-2 max-w-3xl text-slate-600">
+                <p className="mt-2 max-w-3xl text-white/80">
                   Built for high-volume portfolios: assets, work orders, SLAs, PPM, inspections, inventory, vendors, contracts, HSE, energy and IoT.
                 </p>
               </div>
