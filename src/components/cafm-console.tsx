@@ -11,6 +11,7 @@ import {
   Gauge,
   HardHat,
   LayoutDashboard,
+  LogOut,
   MapPinned,
   PackagePlus,
   Plus,
@@ -52,19 +53,42 @@ type ConsoleData = {
   teams: any[];
   services: any[];
   categories: any[];
+  ppms: any[];
+  users: any[];
+  permissions: any[];
 };
 
-const modules = [
-  { id: "command", label: "Command", icon: LayoutDashboard },
-  { id: "assets", label: "Assets", icon: Building2 },
-  { id: "work", label: "Work", icon: Wrench },
-  { id: "helpdesk", label: "Helpdesk", icon: TicketCheck },
-  { id: "ppm", label: "PPM", icon: CalendarCheck },
-  { id: "inventory", label: "Inventory", icon: Boxes },
-  { id: "hse", label: "HSE", icon: ShieldCheck },
-  { id: "iot", label: "IoT", icon: RadioTower },
-  { id: "teams", label: "Teams", icon: Users },
-  { id: "bulk", label: "Bulk Upload", icon: Upload },
+const moduleGroups = [
+  {
+    label: "Command Center",
+    items: [{ id: "command", label: "Dashboard", icon: LayoutDashboard }],
+  },
+  {
+    label: "Facility Operations",
+    items: [
+      { id: "helpdesk", label: "Helpdesk", icon: TicketCheck },
+      { id: "work", label: "Work Orders", icon: Wrench },
+      { id: "ppm", label: "PPM Planner", icon: CalendarCheck },
+      { id: "inventory", label: "Inventory", icon: Boxes },
+      { id: "hse", label: "HSE", icon: ShieldCheck },
+      { id: "iot", label: "IoT / BMS", icon: RadioTower },
+    ],
+  },
+  {
+    label: "Asset & Services",
+    items: [
+      { id: "assets", label: "Assets", icon: Building2 },
+      { id: "teams", label: "Teams & Services", icon: Users },
+      { id: "bulk", label: "Bulk Upload", icon: Upload },
+    ],
+  },
+  {
+    label: "Administration",
+    items: [
+      { id: "users", label: "Users & Roles", icon: Users },
+      { id: "reports", label: "Reports", icon: ClipboardCheck },
+    ],
+  },
 ];
 
 const healthColors = ["#35a852", "#0f8b8d", "#ffd166", "#f45d48"];
@@ -75,7 +99,7 @@ const statToneClasses: Record<string, string> = {
   sun: "text-amber-600",
 };
 
-export function CafmConsole({ data }: { data: ConsoleData }) {
+export function CafmConsole({ data, user }: { data: ConsoleData; user: { name: string; email: string; role: string } }) {
   const [records, setRecords] = useState(data);
   const [active, setActive] = useState("command");
   const [query, setQuery] = useState("");
@@ -177,6 +201,11 @@ export function CafmConsole({ data }: { data: ConsoleData }) {
     await patchRecord(`/api/assets/${id}`, Object.fromEntries(formData.entries()) as Record<string, string>, "Asset updated by admin.");
   }
 
+  async function logout() {
+    await fetch("/api/logout", { method: "POST" });
+    window.location.href = "/login";
+  }
+
   return (
     <main className="min-h-screen p-4 text-ink sm:p-6 lg:p-8">
       <section className="mx-auto grid max-w-[1540px] grid-cols-1 gap-5 lg:grid-cols-[260px_1fr]">
@@ -205,27 +234,38 @@ export function CafmConsole({ data }: { data: ConsoleData }) {
             </button>
           </div>
 
-          <nav className="mt-5 grid gap-2">
-            {modules.map((item) => {
-              const Icon = item.icon;
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => setActive(item.id)}
-                  className={`flex h-11 items-center gap-3 rounded-lg px-3 text-left font-bold transition ${
-                    active === item.id ? "bg-ink text-white shadow-lg" : "bg-slate-50 text-slate-700 hover:bg-slate-100"
-                  }`}
-                >
-                  <Icon size={18} />
-                  {item.label}
-                </button>
-              );
-            })}
+          <nav className="mt-5 grid gap-3">
+            {moduleGroups.map((group) => (
+              <details key={group.label} open className="rounded-lg bg-slate-50 p-2">
+                <summary className="cursor-pointer px-2 py-1 text-xs font-black uppercase text-slate-500">{group.label}</summary>
+                <div className="mt-2 grid gap-1">
+                  {group.items.map((item) => {
+                    const Icon = item.icon;
+                    return (
+                      <button
+                        key={item.id}
+                        onClick={() => setActive(item.id)}
+                        className={`flex h-10 items-center gap-3 rounded-lg px-3 text-left text-sm font-bold transition ${
+                          active === item.id ? "bg-ink text-white shadow-lg" : "bg-white text-slate-700 hover:bg-slate-100"
+                        }`}
+                      >
+                        <Icon size={16} />
+                        {item.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </details>
+            ))}
           </nav>
 
           <div className="mt-5 rounded-lg bg-sun/35 p-3">
-            <p className="text-sm font-black">Mobile ready</p>
-            <p className="mt-1 text-sm text-slate-700">Technicians can receive jobs, scan assets, issue spares and close checklists from the field.</p>
+            <p className="text-sm font-black">{user.name}</p>
+            <p className="mt-1 text-xs text-slate-700">{user.role} / {user.email}</p>
+            <button onClick={logout} className="mt-3 flex h-9 items-center gap-2 rounded-lg bg-white px-3 text-xs font-black text-coral shadow-sm">
+              <LogOut size={14} />
+              Logout
+            </button>
           </div>
         </aside>
 
@@ -279,7 +319,7 @@ export function CafmConsole({ data }: { data: ConsoleData }) {
           )}
           {active === "work" && <WorkOrders data={records} submitWorkOrder={submitWorkOrder} saving={saving} updateWorkOrder={(id, status) => patchRecord(`/api/work-orders/${id}`, { status }, `Work order marked ${status}.`)} />}
           {active === "helpdesk" && <Helpdesk requests={records.requests} submitRequest={submitRequest} saving={saving} />}
-          {active === "ppm" && <Ppm />}
+          {active === "ppm" && <Ppm ppms={records.ppms} saving={saving} submitPpm={(formData) => postRecord("/api/ppm", formData, "PPM")} />}
           {active === "inventory" && <Inventory inventory={records.inventory} saving={saving} submitInventory={(formData) => postRecord("/api/inventory", formData, "Inventory item")} />}
           {active === "hse" && <Hse inspections={records.inspections} saving={saving} submitInspection={(formData) => postRecord("/api/inspections", formData, "Inspection")} />}
           {active === "iot" && <Iot alerts={records.alerts} saving={saving} acknowledgeAlert={(id) => patchRecord(`/api/iot-alerts/${id}`, {}, "IoT alert acknowledged.")} />}
@@ -295,6 +335,8 @@ export function CafmConsole({ data }: { data: ConsoleData }) {
             />
           )}
           {active === "bulk" && <BulkUpload saving={saving} onSubmit={bulkUpload} />}
+          {active === "users" && <UsersRoles users={records.users} permissions={records.permissions} saving={saving} submitUser={(formData) => postRecord("/api/users", formData, "User")} />}
+          {active === "reports" && <Reports />}
         </section>
       </section>
     </main>
@@ -600,19 +642,14 @@ function Helpdesk({ requests, submitRequest, saving }: { requests: any[]; submit
   );
 }
 
-function Ppm() {
+function Ppm({ ppms, submitPpm, saving }: { ppms: any[]; submitPpm: (formData: FormData) => void; saving: boolean }) {
   return (
-    <Panel title="Preventive Maintenance Planner" icon={CalendarCheck}>
-      <div className="grid gap-4 lg:grid-cols-3">
-        {["HVAC statutory PPM", "Fire systems weekly test", "Generator monthly load run", "Elevator safety service", "Water hygiene flushing", "UPS battery inspection"].map((item, index) => (
-          <div key={item} className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-            <p className="font-black">{item}</p>
-            <p className="mt-2 text-sm text-slate-600">Frequency: {index % 2 === 0 ? "Monthly" : "Weekly"}</p>
-            <p className="mt-1 text-sm text-slate-600">Auto-generates work orders, checklists, safety notes and material reservations.</p>
-          </div>
-        ))}
-      </div>
-    </Panel>
+    <section className="grid gap-5 xl:grid-cols-[1fr_380px]">
+      <Panel title="Preventive Maintenance Planner" icon={CalendarCheck}>
+        <DataTable rows={ppms} columns={[["code", "Code"], ["name", "PPM"], ["assetTag", "Asset"], ["frequency", "Frequency"], ["nextDue", "Next due"], ["active", "Active"]]} />
+      </Panel>
+      <ActionForm title="Create PPM" onSubmit={submitPpm} fields={["code", "name", "assetTag", "frequency", "durationHrs", "checklist"]} saving={saving} />
+    </section>
   );
 }
 
@@ -794,6 +831,68 @@ function BulkUpload({ saving, onSubmit }: { saving: boolean; onSubmit: (formData
           <Template title="Inventory" value="sku,name,category,unit,onHand,reorderPoint,unitCost,vendor,location" />
           <Template title="Requests" value="ticketNo,title,category,requester,channel,priority,status,location,slaHours,description" />
           <Template title="Work Orders" value="woNo,title,type,priority,status,assetTag,dueHours,estimatedHours,cost,jobPlan,safetyNotes" />
+        </div>
+      </Panel>
+    </section>
+  );
+}
+
+function UsersRoles({ users, permissions, submitUser, saving }: { users: any[]; permissions: any[]; submitUser: (formData: FormData) => void; saving: boolean }) {
+  return (
+    <section className="grid gap-5 xl:grid-cols-[1fr_420px]">
+      <div className="space-y-5">
+        <Panel title="Users" icon={Users}>
+          <DataTable rows={users} columns={[["name", "Name"], ["email", "Email"], ["role", "Role"], ["department", "Department"], ["active", "Active"]]} />
+        </Panel>
+        <Panel title="Permissions Matrix" icon={ShieldCheck}>
+          <DataTable rows={permissions} columns={[["module", "Module"], ["code", "Code"], ["name", "Permission"], ["description", "Description"]]} />
+        </Panel>
+      </div>
+      <ActionForm title="Create User" onSubmit={submitUser} fields={["name", "email", "password", "role", "department", "teamCode"]} saving={saving} />
+    </section>
+  );
+}
+
+function Reports() {
+  const [type, setType] = useState("assets");
+  const [rows, setRows] = useState<any[]>([]);
+
+  async function preview(nextType = type) {
+    const response = await fetch(`/api/reports?type=${nextType}&format=preview`, { cache: "no-store" });
+    const result = await response.json();
+    setRows(result.rows ?? []);
+  }
+
+  useEffect(() => {
+    preview(type);
+  }, []);
+
+  const columns = rows[0] ? Object.keys(rows[0]).map((key) => [key, key] as [string, string]) : [];
+
+  return (
+    <section className="space-y-5">
+      <Panel title="Reports Preview & Download" icon={ClipboardCheck}>
+        <div className="flex flex-wrap items-center gap-3">
+          <select
+            value={type}
+            onChange={(event) => {
+              setType(event.target.value);
+              preview(event.target.value);
+            }}
+            className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon"
+          >
+            <option value="assets">Assets</option>
+            <option value="work-orders">Work Orders</option>
+            <option value="requests">Service Requests</option>
+            <option value="inventory">Inventory</option>
+            <option value="ppm">PPM</option>
+          </select>
+          <a className="rounded-lg bg-lagoon px-4 py-3 text-sm font-black text-white" href={`/api/reports?type=${type}&format=csv`}>CSV</a>
+          <a className="rounded-lg bg-leaf px-4 py-3 text-sm font-black text-white" href={`/api/reports?type=${type}&format=excel`}>Excel</a>
+          <a className="rounded-lg bg-coral px-4 py-3 text-sm font-black text-white" href={`/api/reports?type=${type}&format=pdf`}>PDF</a>
+        </div>
+        <div className="mt-4">
+          <DataTable rows={rows} columns={columns} />
         </div>
       </Panel>
     </section>

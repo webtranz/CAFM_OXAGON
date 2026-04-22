@@ -7,7 +7,7 @@ export async function getOperatingData() {
   }
 
   try {
-    const [sites, assets, requests, workOrders, inventory, inspections, alerts, teams, services, categories] = await Promise.all([
+    const [sites, assets, requests, workOrders, inventory, inspections, alerts, teams, services, categories, ppms, users, permissions] = await Promise.all([
       prisma.site.findMany({ take: 6, orderBy: { name: "asc" } }),
       prisma.asset.findMany({
         take: 12,
@@ -30,9 +30,12 @@ export async function getOperatingData() {
       prisma.team.findMany({ take: 12, include: { services: true }, orderBy: { name: "asc" } }),
       prisma.serviceCatalog.findMany({ take: 12, include: { team: true }, orderBy: { name: "asc" } }),
       prisma.assetCategory.findMany({ take: 12, orderBy: { name: "asc" } }),
+      prisma.preventiveMaintenance.findMany({ take: 12, orderBy: { nextDue: "asc" } }),
+      prisma.user.findMany({ take: 20, include: { team: true }, orderBy: { name: "asc" } }),
+      prisma.permission.findMany({ take: 50, orderBy: [{ module: "asc" }, { name: "asc" }] }),
     ]);
 
-    return { sites, assets, requests, workOrders, inventory, inspections, alerts, teams, services, categories, live: true };
+    return { sites, assets, requests, workOrders, inventory, inspections, alerts, teams, services, categories, ppms, users, permissions, live: true };
   } catch {
     return { ...fallbackData, live: false };
   }

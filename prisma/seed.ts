@@ -6,6 +6,41 @@ const prisma = new PrismaClient();
 
 async function main() {
   const passwordHash = await bcrypt.hash("cafm12345", 10);
+  const adminPasswordHash = await bcrypt.hash("Admin@12345", 10);
+
+  const admin = await prisma.user.upsert({
+    where: { email: "admin@cafm.local" },
+    update: { passwordHash: adminPasswordHash, role: "Admin", active: true },
+    create: {
+      name: "System Administrator",
+      email: "admin@cafm.local",
+      role: "Admin",
+      department: "Administration",
+      passwordHash: adminPasswordHash,
+      active: true,
+    },
+  });
+
+  const permissions = [
+    ["assets.manage", "Manage Assets", "Assets", "Create, edit, import and view asset history"],
+    ["work.manage", "Manage Work Orders", "Work", "Create and update work orders"],
+    ["ppm.manage", "Manage PPM", "Maintenance", "Create planned preventive maintenance schedules"],
+    ["users.manage", "Manage Users", "Administration", "Create users and assign roles"],
+    ["reports.view", "View Reports", "Reports", "Preview and download reports"],
+  ] as const;
+
+  for (const [code, name, module, description] of permissions) {
+    const permission = await prisma.permission.upsert({
+      where: { code },
+      update: { name, module, description },
+      create: { code, name, module, description },
+    });
+    await prisma.rolePermission.upsert({
+      where: { role_permissionId: { role: "Admin", permissionId: permission.id } },
+      update: {},
+      create: { role: "Admin", permissionId: permission.id },
+    });
+  }
 
   const users = await Promise.all(
     [
@@ -21,6 +56,7 @@ async function main() {
       }),
     ),
   );
+  users.unshift(admin);
 
   const mepTeam = await prisma.team.upsert({
     where: { code: "MEP" },

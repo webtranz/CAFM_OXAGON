@@ -44,11 +44,30 @@ model User {
   email        String      @unique
   role         String
   department   String
+  active       Boolean     @default(true)
   teamId       String?
   passwordHash String
   team         Team?       @relation(fields: [teamId], references: [id])
   workOrders   WorkOrder[]
   createdAt    DateTime    @default(now())
+}
+
+model Permission {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  name        String
+  module      String
+  description String
+  roleLinks   RolePermission[]
+}
+
+model RolePermission {
+  id           String     @id @default(cuid())
+  role         String
+  permissionId String
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([role, permissionId])
 }
 
 model Team {

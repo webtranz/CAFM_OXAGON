@@ -59,4 +59,13 @@ export const fallbackData = {
   categories: [
     { id: "c1", code: "HVAC", name: "HVAC Equipment", type: "MEP", defaultLifeYrs: 15, statutory: false, description: "Cooling and ventilation assets" },
   ],
+  ppms: [
+    { id: "p1", code: "PM-HVAC-001", name: "Monthly AHU Service", assetTag: "AHU-RYD-01-004", frequency: "Monthly", nextDue: new Date(), durationHrs: 2, active: true },
+  ],
+  users: [
+    { id: "u1", name: "System Administrator", email: "admin@cafm.local", role: "Admin", department: "Administration", active: true, team: null },
+  ],
+  permissions: [
+    { id: "perm1", code: "assets.manage", name: "Manage Assets", module: "Assets", description: "Create and edit assets" },
+  ],
 };
