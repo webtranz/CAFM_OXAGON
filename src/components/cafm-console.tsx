@@ -158,6 +158,7 @@ const moduleGroups = [
 ];
 
 const healthColors = ["#35a852", "#0f8b8d", "#ffd166", "#f45d48"];
+const PAGE_SIZE = 100;
 const statToneClasses: Record<string, string> = {
   coral: "text-coral",
   leaf: "text-leaf",
@@ -554,6 +555,15 @@ function Assets({
   saving: boolean;
 }) {
   const selectedAsset = assets.find((asset) => asset.id === selectedAssetId) ?? assets[0];
+  const [page, setPage] = useState(1);
+  const totalPages = Math.max(1, Math.ceil(assets.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const startIndex = (currentPage - 1) * PAGE_SIZE;
+  const visibleAssets = assets.slice(startIndex, startIndex + PAGE_SIZE);
+
+  useEffect(() => {
+    setPage(1);
+  }, [query, assets.length]);
 
   return (
     <section className="grid gap-5 xl:grid-cols-[1fr_420px]">
@@ -564,18 +574,23 @@ function Assets({
         </div>
       <div className="grid gap-3">
           <div className="rounded-lg bg-lagoon/5 p-3 text-sm font-black text-lagoon">
-            Showing {assets.length} uploaded / registered assets
+            Showing {visibleAssets.length} of {assets.length} uploaded / registered assets
           </div>
-          {assets.map((asset) => (
+          {visibleAssets.map((asset, index) => (
             <button
               key={asset.id}
               onClick={() => setSelectedAssetId(asset.id)}
               className={`grid gap-2 rounded-lg border p-4 text-left transition ${selectedAsset?.id === asset.id ? "border-lagoon bg-lagoon/5" : "border-slate-200 bg-white hover:bg-slate-50"}`}
             >
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
+                <div className="flex items-start gap-3">
+                  <span className="grid h-7 min-w-7 place-items-center rounded-lg bg-slate-100 px-2 text-xs font-black text-slate-600">
+                    {startIndex + index + 1}
+                  </span>
+                  <div>
                   <p className="font-black">{asset.tag} | {asset.assetDescription ?? asset.name}</p>
                   <p className="text-sm text-slate-500">{asset.assetGroup ?? asset.category} / {asset.system}</p>
+                  </div>
                 </div>
                 <span className="rounded-lg bg-slate-100 px-2 py-1 text-xs font-black">{asset.status}</span>
               </div>
@@ -591,6 +606,7 @@ function Assets({
               </div>
             </button>
           ))}
+          <PaginationControls page={currentPage} totalPages={totalPages} onPageChange={setPage} totalItems={assets.length} />
         </div>
       </Panel>
       <div className="space-y-5">
@@ -1475,30 +1491,85 @@ function Panel({ title, icon: Icon, children }: { title: string; icon: any; chil
 }
 
 function DataTable({ rows, columns }: { rows: any[]; columns: [string, string][] }) {
+  const [page, setPage] = useState(1);
+  const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const startIndex = (currentPage - 1) * PAGE_SIZE;
+  const visibleRows = rows.slice(startIndex, startIndex + PAGE_SIZE);
+
+  useEffect(() => {
+    setPage(1);
+  }, [rows.length]);
+
   return (
-    <div className="overflow-auto rounded-lg border border-slate-200 scrollbar-thin">
-      <table className="min-w-full border-collapse bg-white text-sm">
-        <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
-          <tr>
-            {columns.map(([, label]) => (
-              <th key={label} className="whitespace-nowrap px-3 py-3 font-black">
-                {label}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row, index) => (
-            <tr key={row.id ?? index} className="border-t border-slate-100">
-              {columns.map(([key]) => (
-                <td key={key} className="max-w-[280px] whitespace-nowrap px-3 py-3">
-                  <CellValue value={row[key]} />
-                </td>
+    <div className="grid gap-3">
+      <div className="overflow-auto rounded-lg border border-slate-200 scrollbar-thin">
+        <table className="min-w-full border-collapse bg-white text-sm">
+          <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
+            <tr>
+              <th className="whitespace-nowrap px-3 py-3 font-black">#</th>
+              {columns.map(([, label]) => (
+                <th key={label} className="whitespace-nowrap px-3 py-3 font-black">
+                  {label}
+                </th>
               ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {visibleRows.map((row, index) => (
+              <tr key={row.id ?? index} className="border-t border-slate-100">
+                <td className="whitespace-nowrap px-3 py-3 font-black text-slate-500">{startIndex + index + 1}</td>
+                {columns.map(([key]) => (
+                  <td key={key} className="max-w-[280px] whitespace-nowrap px-3 py-3">
+                    <CellValue value={row[key]} />
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <PaginationControls page={currentPage} totalPages={totalPages} onPageChange={setPage} totalItems={rows.length} />
+    </div>
+  );
+}
+
+function PaginationControls({ page, totalPages, totalItems, onPageChange }: { page: number; totalPages: number; totalItems: number; onPageChange: (page: number) => void }) {
+  if (totalItems === 0) return <p className="text-sm font-bold text-slate-500">No entries found.</p>;
+
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-slate-50 p-3">
+      <p className="text-sm font-bold text-slate-600">
+        Page {page} of {totalPages} / {totalItems} entries / {PAGE_SIZE} per page
+      </p>
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          disabled={page === 1}
+          onClick={() => onPageChange(Math.max(1, page - 1))}
+          className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm font-black text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          Previous
+        </button>
+        {Array.from({ length: totalPages }, (_, index) => index + 1).map((item) => (
+          <button
+            type="button"
+            key={item}
+            onClick={() => onPageChange(item)}
+            className={`h-9 min-w-9 rounded-lg px-3 text-sm font-black ${item === page ? "bg-lagoon text-white" : "border border-slate-200 bg-white text-slate-700"}`}
+          >
+            {item}
+          </button>
+        ))}
+        <button
+          type="button"
+          disabled={page === totalPages}
+          onClick={() => onPageChange(Math.min(totalPages, page + 1))}
+          className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm font-black text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          Next
+        </button>
+      </div>
     </div>
   );
 }
