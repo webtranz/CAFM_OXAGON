@@ -22,12 +22,12 @@ async function main() {
   });
 
   const standardRoles = [
-    ["Admin", "Full system administration"],
-    ["Facility Manager", "Portfolio operations, reporting and governance"],
-    ["Supervisor", "Department/service supervision and work assignment"],
-    ["Technician", "Assigned work execution, status, time, photos and material usage"],
+    ["Admin", "Full system administration and configuration"],
+    ["Supervisor", "Department supervision, request conversion and work assignment"],
+    ["Service Team", "Assigned work execution, status, time, photos and material usage"],
     ["Helpdesk", "Request intake, triage and communication"],
-    ["Viewer", "Read-only operational visibility"],
+    ["Reception", "Front-desk resident and visitor service request intake"],
+    ["Resident", "Resident portal request submission and request tracking"],
   ] as const;
 
   for (const [name, description] of standardRoles) {
@@ -48,6 +48,8 @@ async function main() {
     ["users.manage", "Manage Users", "Administration", "Create users and assign roles"],
     ["roles.manage", "Manage Roles", "Administration", "Create custom roles and permission sets"],
     ["reports.view", "View Reports", "Reports", "Preview and download reports"],
+    ["reception.manage", "Reception Desk", "Reception", "Create resident requests and view front-desk queue"],
+    ["resident.portal", "Resident Portal", "Resident", "Create and track own requests"],
   ] as const;
 
   for (const [code, name, module, description] of permissions) {
@@ -64,11 +66,11 @@ async function main() {
   }
 
   const defaultRolePermissions: Record<string, string[]> = {
-    "Facility Manager": ["assets.manage", "work.manage", "requests.manage", "ppm.manage", "reports.view"],
     Supervisor: ["work.manage", "work.execute", "requests.manage", "requests.view", "reports.view"],
-    Technician: ["work.execute", "requests.view"],
+    "Service Team": ["work.execute", "requests.view"],
     Helpdesk: ["requests.manage", "requests.view", "reports.view"],
-    Viewer: ["requests.view", "reports.view"],
+    Reception: ["reception.manage", "requests.manage", "requests.view"],
+    Resident: ["resident.portal", "requests.view"],
   };
 
   for (const [role, codes] of Object.entries(defaultRolePermissions)) {

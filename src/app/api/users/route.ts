@@ -7,9 +7,13 @@ import { prisma } from "@/lib/prisma";
 const schema = z.object({
   name: z.string().min(2),
   email: z.string().email(),
+  phone: z.string().optional(),
   password: z.string().min(6),
   role: z.string().min(2),
   department: z.string().min(2),
+  supervisorEmail: z.string().optional(),
+  notifyWorkOrder: z.coerce.boolean().optional(),
+  notifyFacilityBooking: z.coerce.boolean().optional(),
   teamCode: z.string().optional(),
 });
 
@@ -25,16 +29,24 @@ export async function POST(request: Request) {
       where: { email: input.email },
       update: {
         name: input.name,
+        phone: input.phone || null,
         role: input.role,
         department: input.department,
+        supervisorEmail: input.supervisorEmail || null,
+        notifyWorkOrder: input.notifyWorkOrder ?? false,
+        notifyFacilityBooking: input.notifyFacilityBooking ?? false,
         teamId: team?.id,
         active: true,
       },
       create: {
         name: input.name,
         email: input.email,
+        phone: input.phone || null,
         role: input.role,
         department: input.department,
+        supervisorEmail: input.supervisorEmail || null,
+        notifyWorkOrder: input.notifyWorkOrder ?? false,
+        notifyFacilityBooking: input.notifyFacilityBooking ?? false,
         teamId: team?.id,
         passwordHash: await bcrypt.hash(input.password, 10),
       },

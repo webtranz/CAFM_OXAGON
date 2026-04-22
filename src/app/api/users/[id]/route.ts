@@ -7,9 +7,13 @@ import { prisma } from "@/lib/prisma";
 const schema = z.object({
   name: z.string().min(2),
   email: z.string().email(),
+  phone: z.string().optional(),
   password: z.string().optional(),
   role: z.string().min(2),
   department: z.string().min(2),
+  supervisorEmail: z.string().optional(),
+  notifyWorkOrder: z.coerce.boolean().optional(),
+  notifyFacilityBooking: z.coerce.boolean().optional(),
   teamCode: z.string().optional(),
   active: z.coerce.boolean().optional(),
 });
@@ -24,8 +28,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       data: {
         name: input.name,
         email: input.email,
+        phone: input.phone || null,
         role: input.role,
         department: input.department,
+        supervisorEmail: input.supervisorEmail || null,
+        notifyWorkOrder: input.notifyWorkOrder ?? false,
+        notifyFacilityBooking: input.notifyFacilityBooking ?? false,
         teamId: team?.id,
         active: input.active ?? true,
         passwordHash: input.password ? await bcrypt.hash(input.password, 10) : undefined,

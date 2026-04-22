@@ -471,6 +471,7 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { name: s
             <UsersRoles
               users={records.users}
               teams={records.teams}
+              departments={records.departments}
               roles={records.roles}
               permissions={records.permissions}
               rolePermissions={records.rolePermissions}
@@ -1522,6 +1523,7 @@ function Templates() {
 function UsersRoles({
   users,
   teams,
+  departments,
   roles,
   permissions,
   rolePermissions,
@@ -1535,6 +1537,7 @@ function UsersRoles({
 }: {
   users: any[];
   teams: any[];
+  departments: any[];
   roles: any[];
   permissions: any[];
   rolePermissions: any[];
@@ -1608,8 +1611,8 @@ function UsersRoles({
       </div>
       <div className="space-y-5">
         <RoleForm onSubmit={submitRole} saving={saving} />
-        <UserForm title="Create User" teams={teams} roles={roles} onSubmit={submitUser} saving={saving} />
-        {editingUser && <UserForm title="Edit User" user={editingUser} teams={teams} roles={roles} onSubmit={(formData) => updateUser(editingUser.id, formData)} saving={saving} />}
+        <UserForm title="Create User" teams={teams} departments={departments} users={users} roles={roles} onSubmit={submitUser} saving={saving} />
+        {editingUser && <UserForm title="Edit User" user={editingUser} teams={teams} departments={departments} users={users} roles={roles} onSubmit={(formData) => updateUser(editingUser.id, formData)} saving={saving} />}
       </div>
     </section>
   );
@@ -1635,11 +1638,11 @@ function RoleForm({ onSubmit, saving }: { onSubmit: (formData: FormData) => void
 }
 
 function roleOptions(roles: any[]) {
-  const defaults = ["Admin", "Facility Manager", "Supervisor", "Technician", "Helpdesk", "Viewer"];
+  const defaults = ["Admin", "Supervisor", "Service Team", "Helpdesk", "Reception", "Resident"];
   return Array.from(new Set([...defaults, ...roles.map((role) => role.name)]));
 }
 
-function UserForm({ title, user, teams, roles, onSubmit, saving }: { title: string; user?: any; teams: any[]; roles: any[]; onSubmit: (formData: FormData) => void; saving: boolean }) {
+function UserForm({ title, user, teams, departments, users, roles, onSubmit, saving }: { title: string; user?: any; teams: any[]; departments: any[]; users: any[]; roles: any[]; onSubmit: (formData: FormData) => void; saving: boolean }) {
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     await onSubmit(new FormData(event.currentTarget));
@@ -1651,25 +1654,42 @@ function UserForm({ title, user, teams, roles, onSubmit, saving }: { title: stri
   return (
     <form onSubmit={handleSubmit} className="rounded-lg border border-white/80 bg-white p-5 shadow-lift">
       <h3 className="text-xl font-black">{title}</h3>
-      <div className="mt-4 grid gap-3">
-        <input name="name" defaultValue={user?.name ?? ""} required placeholder="Name" className={cls} />
-        <input name="email" defaultValue={user?.email ?? ""} required type="email" placeholder="Email" className={cls} />
-        <input name="password" required={!user} type="password" placeholder={user ? "New password optional" : "Password"} className={cls} />
-        <select name="role" defaultValue={user?.role ?? "Technician"} required className={cls}>
+      <div className="mt-4 grid gap-3 md:grid-cols-2">
+        <label className="grid gap-1 text-sm font-bold text-slate-600">User Name<input name="name" defaultValue={user?.name ?? ""} required placeholder="Enter your Name" className={cls} /></label>
+        <label className="grid gap-1 text-sm font-bold text-slate-600">Email<input name="email" defaultValue={user?.email ?? ""} required type="email" placeholder="Enter Email" className={cls} /></label>
+        <label className="grid gap-1 text-sm font-bold text-slate-600">Phone<input name="phone" defaultValue={user?.phone ?? ""} placeholder="Enter Phone Number" className={cls} /></label>
+        <label className="grid gap-1 text-sm font-bold text-slate-600">Password<input name="password" required={!user} type="password" placeholder={user ? "New password optional" : "Password"} className={cls} /></label>
+        <label className="grid gap-1 text-sm font-bold text-slate-600">Select User Role<select name="role" defaultValue={user?.role ?? "Service Team"} required className={cls}>
           {roleOptions(roles).map((role) => <option key={role}>{role}</option>)}
-        </select>
-        <input name="department" defaultValue={user?.department ?? ""} required placeholder="Department" className={cls} />
+        </select></label>
+        <label className="grid gap-1 text-sm font-bold text-slate-600">Select Department<select name="department" defaultValue={user?.department ?? ""} required className={cls}>
+          <option value="">Select Department</option>
+          {departments.map((department) => <option key={department.id} value={department.code}>{department.code} - {department.name}</option>)}
+        </select></label>
+        <label className="grid gap-1 text-sm font-bold text-slate-600">Select Team
         <select name="teamCode" defaultValue={user?.team?.code ?? ""} className={cls}>
-          <option value="">No team</option>
+          <option value="">Select Team</option>
           {teams.map((team) => (
             <option key={team.id} value={team.code}>{team.code} - {team.name}</option>
           ))}
-        </select>
+        </select></label>
+        <label className="grid gap-1 text-sm font-bold text-slate-600">Supervisor / Assigned User<select name="supervisorEmail" defaultValue={user?.supervisorEmail ?? ""} className={cls}>
+          <option value="">Select user</option>
+          {users.filter((item) => item.id !== user?.id).map((item) => <option key={item.id} value={item.email}>{item.name} - {item.role}</option>)}
+        </select></label>
+        <label className="grid gap-1 text-sm font-bold text-slate-600">Status
         <select name="active" defaultValue={String(user?.active ?? true)} className={cls}>
           <option value="true">Active</option>
           <option value="false">Inactive</option>
-        </select>
-        <button disabled={saving} className="h-11 rounded-lg bg-ink font-black text-white disabled:bg-slate-400">{saving ? "Saving..." : "Save"}</button>
+        </select></label>
+        <div className="rounded-lg bg-slate-50 p-3 md:col-span-2">
+          <p className="text-sm font-black text-slate-700">Email Notification</p>
+          <div className="mt-3 flex flex-wrap gap-6">
+            <label className="flex items-center gap-2 text-sm font-bold text-slate-600"><input name="notifyWorkOrder" type="checkbox" defaultChecked={user?.notifyWorkOrder ?? false} /> Work Order</label>
+            <label className="flex items-center gap-2 text-sm font-bold text-slate-600"><input name="notifyFacilityBooking" type="checkbox" defaultChecked={user?.notifyFacilityBooking ?? false} /> Facility Booking</label>
+          </div>
+        </div>
+        <button disabled={saving} className="h-11 rounded-lg bg-ink font-black text-white disabled:bg-slate-400 md:col-span-2">{saving ? "Saving..." : "Create Now"}</button>
       </div>
     </form>
   );

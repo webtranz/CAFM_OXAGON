@@ -27,8 +27,14 @@ export async function POST(request: Request) {
     const input = schema.parse(await request.json());
     const count = await prisma.serviceRequest.count();
     const slaHours = slaByPriority[input.priority];
+    const department = input.departmentCode ? await prisma.department.findUnique({ where: { code: input.departmentCode } }) : null;
     const supervisor = input.departmentCode
-      ? await prisma.user.findFirst({ where: { role: { contains: "Supervisor", mode: "insensitive" }, department: input.departmentCode } })
+      ? await prisma.user.findFirst({
+          where: {
+            role: { contains: "Supervisor", mode: "insensitive" },
+            department: { in: [input.departmentCode, department?.name ?? input.departmentCode] },
+          },
+        })
       : null;
 
     const created = await prisma.serviceRequest.create({

@@ -29,8 +29,14 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const { id } = await params;
     const input = schema.parse(await request.json());
     const slaHours = slaByPriority[input.priority];
+    const department = input.departmentCode ? await prisma.department.findUnique({ where: { code: input.departmentCode } }) : null;
     const supervisor = input.departmentCode
-      ? await prisma.user.findFirst({ where: { role: { contains: "Supervisor", mode: "insensitive" }, department: input.departmentCode } })
+      ? await prisma.user.findFirst({
+          where: {
+            role: { contains: "Supervisor", mode: "insensitive" },
+            department: { in: [input.departmentCode, department?.name ?? input.departmentCode] },
+          },
+        })
       : null;
     const updated = await prisma.serviceRequest.update({
       where: { id },

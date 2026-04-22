@@ -42,8 +42,12 @@ model User {
   id           String      @id @default(cuid())
   name         String
   email        String      @unique
+  phone        String?
   role         String
   department   String
+  supervisorEmail String?
+  notifyWorkOrder Boolean  @default(false)
+  notifyFacilityBooking Boolean @default(false)
   active       Boolean     @default(true)
   teamId       String?
   passwordHash String
