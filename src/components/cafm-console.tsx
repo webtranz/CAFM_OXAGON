@@ -93,27 +93,27 @@ const moduleGroups = [
     label: "Facility Bookings",
     icon: MapPinned,
     items: [
-      { id: "command", label: "Facility Report", icon: Gauge },
-      { id: "locations", label: "Locations", icon: MapPinned },
-      { id: "reports", label: "Bookings Report", icon: ClipboardCheck },
+      { id: "command", label: "Facility Report", icon: Gauge, view: "facility-report" },
+      { id: "locations", label: "Locations", icon: MapPinned, view: "locations" },
+      { id: "reports", label: "Bookings Report", icon: ClipboardCheck, view: "bookings-report" },
     ],
   },
   {
     label: "Assets Management",
     icon: Building2,
     items: [
-      { id: "assets", label: "Assets Management", icon: Building2 },
-      { id: "bulk", label: "Bulk Upload Assets", icon: Upload },
-      { id: "assets", label: "Asset Inventory Allocation", icon: ClipboardCheck },
+      { id: "assets", label: "Assets Management", icon: Building2, view: "assets-register" },
+      { id: "bulk", label: "Bulk Upload Assets", icon: Upload, view: "bulk-assets" },
+      { id: "assets", label: "Asset Inventory Allocation", icon: ClipboardCheck, view: "asset-allocation" },
     ],
   },
   {
     label: "Inventory Management",
     icon: Boxes,
     items: [
-      { id: "inventory", label: "Inventory", icon: Boxes },
-      { id: "bulk", label: "Bulk Upload Inventory", icon: Upload },
-      { id: "reports", label: "Inventory Reports", icon: ClipboardCheck },
+      { id: "inventory", label: "Inventory", icon: Boxes, view: "inventory-register" },
+      { id: "bulk", label: "Bulk Upload Inventory", icon: Upload, view: "bulk-inventory" },
+      { id: "reports", label: "Inventory Reports", icon: ClipboardCheck, view: "inventory-report" },
     ],
   },
   {
@@ -136,28 +136,28 @@ const moduleGroups = [
     label: "Services",
     icon: ClipboardCheck,
     items: [
-      { id: "teams", label: "Department Codes", icon: MapPinned },
-      { id: "teams", label: "Create Team Code", icon: Users },
-      { id: "teams", label: "Service Teams", icon: Users },
-      { id: "teams", label: "Services Catalog", icon: ClipboardCheck },
-      { id: "bulk", label: "Bulk Upload Services", icon: Upload },
+      { id: "teams", label: "Department Codes", icon: MapPinned, view: "departments" },
+      { id: "teams", label: "Create Team Code", icon: Users, view: "team-code" },
+      { id: "teams", label: "Service Teams", icon: Users, view: "service-teams" },
+      { id: "teams", label: "Services Catalog", icon: ClipboardCheck, view: "services-catalog" },
+      { id: "bulk", label: "Bulk Upload Services", icon: Upload, view: "bulk-services" },
     ],
   },
   {
     label: "Users Management",
     icon: Users,
     items: [
-      { id: "users", label: "Users Management", icon: Users },
-      { id: "users", label: "Permissions", icon: ShieldCheck },
+      { id: "users", label: "Users Management", icon: Users, view: "users-management" },
+      { id: "users", label: "Permissions", icon: ShieldCheck, view: "permissions" },
     ],
   },
   {
     label: "Utilities",
     icon: Upload,
     items: [
-      { id: "bulk", label: "Bulk Upload Center", icon: Upload },
-      { id: "templates", label: "Bulk Upload Templates", icon: ClipboardCheck },
-      { id: "reports", label: "CSV / Excel / PDF Reports", icon: ClipboardCheck },
+      { id: "bulk", label: "Bulk Upload Center", icon: Upload, view: "bulk-center" },
+      { id: "templates", label: "Bulk Upload Templates", icon: ClipboardCheck, view: "templates" },
+      { id: "reports", label: "CSV / Excel / PDF Reports", icon: ClipboardCheck, view: "reports-export" },
     ],
   },
   {
@@ -205,9 +205,42 @@ function cleanMessage(message: string) {
     .slice(0, 260);
 }
 
+function bulkModuleFromView(view: string) {
+  const map: Record<string, string> = {
+    "bulk-assets": "assets",
+    "bulk-inventory": "inventory",
+    "bulk-services": "services",
+  };
+  return map[view] ?? "assets";
+}
+
+function displayValue(value: unknown) {
+  if (value === null || value === undefined || value === "") return "-";
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
+}
+
+function DetailPanel({ title, rows }: { title: string; rows: [string, unknown][] }) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+      <h4 className="text-base font-black text-ink">{title}</h4>
+      <div className="mt-3 grid gap-2">
+        {rows.map(([label, value]) => (
+          <div key={label} className="grid grid-cols-[140px_1fr] gap-3 rounded-lg bg-slate-50 p-2 text-sm">
+            <span className="font-black text-slate-500">{label}</span>
+            <span className="min-w-0 break-words font-bold text-slate-800">{displayValue(value)}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function CafmConsole({ data, user }: { data: ConsoleData; user: { name: string; email: string; role: string } }) {
   const [records, setRecords] = useState(data);
   const [active, setActive] = useState("command");
+  const [activeView, setActiveView] = useState("dashboard");
   const [activeMenuKey, setActiveMenuKey] = useState("Dashboard-Dashboard");
   const [query, setQuery] = useState("");
   const [toast, setToast] = useState("");
@@ -236,12 +269,13 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { name: s
     verifyWork: can("work.verify"),
   };
 
-  function navigate(moduleId: string, menuKey: string) {
+  function navigate(moduleId: string, menuKey: string, view = moduleId) {
     if (!canOpenModule(moduleId)) {
       setToast("You do not have permission to access this module.");
       return;
     }
     setActive(moduleId);
+    setActiveView(view);
     setActiveMenuKey(menuKey);
   }
 
@@ -387,7 +421,7 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { name: s
               if (!visibleItems.length) return null;
 
               return (
-                <details key={group.label} open={group.label === "Dashboard" || group.label === "Assets Management"} className="group">
+                <details key={group.label} open={visibleItems.some((item) => `${group.label}-${item.label}` === activeMenuKey)} className="group">
                   <summary className="flex h-11 cursor-pointer list-none items-center justify-between rounded-lg px-3 text-sm font-black text-slate-700 hover:bg-slate-50">
                     <span className="flex items-center gap-3">
                       <group.icon size={18} className="text-slate-600" />
@@ -402,7 +436,7 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { name: s
                       return (
                         <button
                           key={menuKey}
-                          onClick={() => navigate(item.id, menuKey)}
+                          onClick={() => navigate(item.id, menuKey, String("view" in item ? item.view : item.id))}
                           className={`flex h-9 items-center gap-2 rounded-lg px-2 text-left text-sm transition ${
                             activeMenuKey === menuKey ? "bg-indigo-50 font-black text-indigo-700" : "text-slate-600 hover:bg-slate-50 hover:text-ink"
                           }`}
@@ -520,9 +554,10 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { name: s
               submitService={(formData) => postRecord("/api/services", formData, "Service")}
               submitCategory={(formData) => postRecord("/api/asset-categories", formData, "Asset category")}
               submitDepartment={(formData) => postRecord("/api/departments", formData, "Department")}
+              view={activeView}
             />
           )}
-          {canViewActive && active === "bulk" && <BulkUpload saving={saving} onSubmit={bulkUpload} />}
+          {canViewActive && active === "bulk" && <BulkUpload saving={saving} onSubmit={bulkUpload} initialModule={bulkModuleFromView(activeView)} />}
           {canViewActive && active === "templates" && <Templates />}
           {canViewActive && active === "users" && (
             <UsersRoles
@@ -981,6 +1016,14 @@ function WorkOrders({
   deleteWorkOrder: (id: string) => void;
 }) {
   const [editing, setEditing] = useState<any | null>(null);
+  const [selectedWorkId, setSelectedWorkId] = useState<string | null>(data.workOrders[0]?.id ?? null);
+  const selectedWork = data.workOrders.find((work) => work.id === selectedWorkId) ?? data.workOrders[0];
+
+  useEffect(() => {
+    if (data.workOrders.length && !data.workOrders.some((work) => work.id === selectedWorkId)) {
+      setSelectedWorkId(data.workOrders[0].id);
+    }
+  }, [data.workOrders, selectedWorkId]);
 
   return (
     <section className="grid gap-5 xl:grid-cols-[1fr_380px]">
@@ -999,22 +1042,53 @@ function WorkOrders({
           ]}
         />
         <div className="mt-4 grid gap-2 md:grid-cols-2">
-          {data.workOrders.slice(0, 4).map((work) => (
-            <div key={work.id} className="flex items-center justify-between rounded-lg bg-slate-50 p-3">
-              <span className="text-sm font-bold">{work.woNo}</span>
+          {data.workOrders.slice(0, 8).map((work) => (
+            <div
+              key={work.id}
+              onClick={() => setSelectedWorkId(work.id)}
+              className={`flex cursor-pointer flex-wrap items-center justify-between gap-2 rounded-lg p-3 ${
+                selectedWork?.id === work.id ? "bg-indigo-50 ring-2 ring-indigo-100" : "bg-slate-50"
+              }`}
+            >
+              <span className="text-sm font-bold">{work.woNo} / {work.title}</span>
               <div className="flex gap-2">
-                <button disabled={saving || !permissions.manageWork} onClick={() => setEditing(work)} className="rounded-lg bg-slate-700 px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Edit</button>
-                <button disabled={saving || !permissions.executeWork} onClick={() => updateWorkStatus(work.id, "ACCEPTED")} className="rounded-lg bg-emerald-700 px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Accept</button>
-                <button disabled={saving || !permissions.executeWork} onClick={() => updateWorkStatus(work.id, "REJECTED")} className="rounded-lg bg-amber-600 px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Reject</button>
-                <button disabled={saving || !permissions.executeWork} onClick={() => updateWorkStatus(work.id, "IN_PROGRESS")} className="rounded-lg bg-lagoon px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Start</button>
-                <button disabled={saving || !permissions.executeWork} onClick={() => updateWorkStatus(work.id, "ON_HOLD")} className="rounded-lg bg-slate-500 px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Hold</button>
-                <button disabled={saving || !permissions.executeWork} onClick={() => updateWorkStatus(work.id, "COMPLETED")} className="rounded-lg bg-leaf px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Complete</button>
-                <button disabled={saving || !permissions.verifyWork} onClick={() => updateWorkStatus(work.id, "CLOSED")} className="rounded-lg bg-ink px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Close</button>
-                <button disabled={saving || !permissions.manageWork} onClick={() => deleteWorkOrder(work.id)} className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Delete</button>
+                <button disabled={saving || !permissions.manageWork} onClick={(event) => { event.stopPropagation(); setEditing(work); }} className="rounded-lg bg-slate-700 px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Edit</button>
+                <button disabled={saving || !permissions.executeWork} onClick={(event) => { event.stopPropagation(); updateWorkStatus(work.id, "ACCEPTED"); }} className="rounded-lg bg-emerald-700 px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Accept</button>
+                <button disabled={saving || !permissions.executeWork} onClick={(event) => { event.stopPropagation(); updateWorkStatus(work.id, "REJECTED"); }} className="rounded-lg bg-amber-600 px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Reject</button>
+                <button disabled={saving || !permissions.executeWork} onClick={(event) => { event.stopPropagation(); updateWorkStatus(work.id, "IN_PROGRESS"); }} className="rounded-lg bg-lagoon px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Start</button>
+                <button disabled={saving || !permissions.executeWork} onClick={(event) => { event.stopPropagation(); updateWorkStatus(work.id, "ON_HOLD"); }} className="rounded-lg bg-slate-500 px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Hold</button>
+                <button disabled={saving || !permissions.executeWork} onClick={(event) => { event.stopPropagation(); updateWorkStatus(work.id, "COMPLETED"); }} className="rounded-lg bg-leaf px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Complete</button>
+                <button disabled={saving || !permissions.verifyWork} onClick={(event) => { event.stopPropagation(); updateWorkStatus(work.id, "CLOSED"); }} className="rounded-lg bg-ink px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Close</button>
+                <button disabled={saving || !permissions.manageWork} onClick={(event) => { event.stopPropagation(); deleteWorkOrder(work.id); }} className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Delete</button>
               </div>
             </div>
           ))}
         </div>
+        {selectedWork && (
+          <div className="mt-5">
+            <DetailPanel
+              title={`Selected Work Order: ${selectedWork.woNo}`}
+              rows={[
+                ["Title", selectedWork.title],
+                ["Status", selectedWork.status],
+                ["Priority", selectedWork.priority],
+                ["Department", selectedWork.departmentCode],
+                ["Service", selectedWork.serviceCode],
+                ["Team", selectedWork.assignedTeamCode],
+                ["Assigned To", selectedWork.assignedTo?.email ?? selectedWork.assignedToEmail],
+                ["Asset", selectedWork.asset?.tag ?? selectedWork.assetTag],
+                ["Job Plan", selectedWork.jobPlanCode ?? selectedWork.jobPlan],
+                ["Response Time", selectedWork.responseAt],
+                ["Resolution Time", selectedWork.resolutionAt],
+                ["Finish Time", selectedWork.finishedAt],
+                ["Work Notes", selectedWork.workNotes],
+                ["Pictures", selectedWork.photoUrls],
+                ["Inventory Used", selectedWork.inventoryUsed],
+                ["Material Request", selectedWork.materialRequest],
+              ]}
+            />
+          </div>
+        )}
       </Panel>
       <div className="space-y-5">
         {permissions.manageWork && <WorkOrderForm title="Generate Work Order" data={data} onSubmit={submitWorkOrder} saving={saving} />}
@@ -1050,6 +1124,14 @@ function Helpdesk({
   saving: boolean;
 }) {
   const [editing, setEditing] = useState<any | null>(null);
+  const [selectedRequestId, setSelectedRequestId] = useState<string | null>(requests[0]?.id ?? null);
+  const selectedRequest = requests.find((request) => request.id === selectedRequestId) ?? requests[0];
+
+  useEffect(() => {
+    if (requests.length && !requests.some((request) => request.id === selectedRequestId)) {
+      setSelectedRequestId(requests[0].id);
+    }
+  }, [requests, selectedRequestId]);
 
   return (
     <section className="grid gap-5 xl:grid-cols-[1fr_380px]">
@@ -1072,18 +1154,47 @@ function Helpdesk({
         />
         <div className="mt-4 grid gap-2">
           {requests.slice(0, 8).map((request) => (
-            <div key={request.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-slate-50 p-3">
+            <div
+              key={request.id}
+              onClick={() => setSelectedRequestId(request.id)}
+              className={`flex cursor-pointer flex-wrap items-center justify-between gap-2 rounded-lg p-3 ${
+                selectedRequest?.id === request.id ? "bg-indigo-50 ring-2 ring-indigo-100" : "bg-slate-50"
+              }`}
+            >
               <span className="text-sm font-bold">{request.ticketNo} / {request.title}</span>
               <div className="flex gap-2">
-                <button disabled={saving || !permissions.manageRequests} onClick={() => setEditing(request)} className="rounded-lg bg-lagoon px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Edit</button>
-                <button disabled={saving || !permissions.approveRequests} onClick={() => updateRequest(request.id, requestFormData(request, "TRIAGED"))} className="rounded-lg bg-slate-700 px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Review</button>
-                <button disabled={saving || request.workOrder || !permissions.manageRequests} onClick={() => convertRequest(request.id)} className="rounded-lg bg-ink px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Create WO</button>
-                <button disabled={saving || !permissions.approveRequests} onClick={() => updateRequest(request.id, requestFormData(request, "REJECTED", "Rejected by supervisor/helpdesk"))} className="rounded-lg bg-amber-600 px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Reject</button>
-                <button disabled={saving || !permissions.manageRequests} onClick={() => deleteRequest(request.id)} className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Delete</button>
+                <button disabled={saving || !permissions.manageRequests} onClick={(event) => { event.stopPropagation(); setEditing(request); }} className="rounded-lg bg-lagoon px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Edit</button>
+                <button disabled={saving || !permissions.approveRequests} onClick={(event) => { event.stopPropagation(); updateRequest(request.id, requestFormData(request, "TRIAGED")); }} className="rounded-lg bg-slate-700 px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Review</button>
+                <button disabled={saving || request.workOrder || !permissions.manageRequests} onClick={(event) => { event.stopPropagation(); convertRequest(request.id); }} className="rounded-lg bg-ink px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Create WO</button>
+                <button disabled={saving || !permissions.approveRequests} onClick={(event) => { event.stopPropagation(); updateRequest(request.id, requestFormData(request, "REJECTED", "Rejected by supervisor/helpdesk")); }} className="rounded-lg bg-amber-600 px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Reject</button>
+                <button disabled={saving || !permissions.manageRequests} onClick={(event) => { event.stopPropagation(); deleteRequest(request.id); }} className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Delete</button>
               </div>
             </div>
           ))}
         </div>
+        {selectedRequest && (
+          <div className="mt-5">
+            <DetailPanel
+              title={`Selected Request: ${selectedRequest.ticketNo}`}
+              rows={[
+                ["Title", selectedRequest.title],
+                ["Status", selectedRequest.status],
+                ["Priority", selectedRequest.priority],
+                ["Category", selectedRequest.category],
+                ["Department", selectedRequest.departmentCode],
+                ["Service", selectedRequest.serviceCode],
+                ["Team", selectedRequest.assignedTeamCode],
+                ["Supervisor", selectedRequest.assignedSupervisorEmail],
+                ["Requester", selectedRequest.requester],
+                ["Location", selectedRequest.location],
+                ["Description", selectedRequest.description],
+                ["Attachments", selectedRequest.attachmentUrls],
+                ["Reject Reason", selectedRequest.rejectionReason],
+                ["Linked Work Order", selectedRequest.workOrder?.woNo],
+              ]}
+            />
+          </div>
+        )}
       </Panel>
       <div className="space-y-5">
         {permissions.manageRequests && <ServiceRequestForm title="Create Service Request" services={services} departments={departments} teams={teams} locations={locations} onSubmit={submitRequest} saving={saving} />}
@@ -1382,6 +1493,7 @@ function TeamsServices({
   submitService,
   submitCategory,
   submitDepartment,
+  view,
 }: {
   teams: any[];
   services: any[];
@@ -1392,29 +1504,49 @@ function TeamsServices({
   submitService: (formData: FormData) => void;
   submitCategory: (formData: FormData) => void;
   submitDepartment: (formData: FormData) => void;
+  view: string;
 }) {
+  const showAll = !["departments", "team-code", "service-teams", "services-catalog"].includes(view);
+  const showDepartments = showAll || view === "departments";
+  const showTeamCode = showAll || view === "team-code";
+  const showServiceTeams = showAll || view === "service-teams";
+  const showServices = showAll || view === "services-catalog";
+
   return (
     <section className="grid gap-5 xl:grid-cols-[1fr_420px]">
       <div className="space-y-5">
-        <Panel title="Service Teams" icon={Users}>
-          <DataTable rows={teams} columns={[["code", "Code"], ["name", "Team"], ["type", "Type"], ["supervisor", "Supervisor"], ["shift", "Shift"], ["coverage", "Coverage"]]} />
-        </Panel>
-        <Panel title="Services Catalog" icon={ClipboardCheck}>
-          <DataTable rows={services} columns={[["code", "Code"], ["name", "Service"], ["category", "Category"], ["type", "Type"], ["priority", "Priority"], ["slaHours", "SLA hrs"]]} />
-        </Panel>
-        <Panel title="Asset Categories" icon={Boxes}>
-          <DataTable rows={categories} columns={[["code", "Code"], ["name", "Category"], ["type", "Type"], ["defaultLifeYrs", "Life yrs"], ["statutory", "Statutory"]]} />
-        </Panel>
-        <Panel title="Department Codes" icon={MapPinned}>
-          <DataTable rows={departments} columns={[["code", "Code"], ["name", "Department"], ["siteLocation", "Site"], ["description", "Description"]]} />
-        </Panel>
+        {showDepartments && (
+          <Panel title="Department Codes" icon={MapPinned}>
+            <DataTable rows={departments} columns={[["code", "Code"], ["name", "Department"], ["siteLocation", "Site"], ["description", "Description"]]} />
+          </Panel>
+        )}
+        {showTeamCode && (
+          <Panel title="Team Codes" icon={Users}>
+            <DataTable rows={teams} columns={[["code", "Team Code"], ["name", "Team Name"], ["departmentName", "Department"], ["departmentCode", "Dept Code"], ["service", "Service"]]} />
+          </Panel>
+        )}
+        {showServiceTeams && (
+          <Panel title="Service Teams" icon={Users}>
+            <DataTable rows={teams} columns={[["code", "Code"], ["name", "Team"], ["companyIdNumber", "Company ID"], ["departmentCode", "Dept"], ["service", "Service"], ["email", "Email"], ["phone", "Phone"]]} />
+          </Panel>
+        )}
+        {showServices && (
+          <Panel title="Services Catalog" icon={ClipboardCheck}>
+            <DataTable rows={services} columns={[["code", "Code"], ["name", "Service"], ["departmentName", "Department"], ["departmentCode", "Dept"], ["teamCode", "Team Code"], ["slaHours", "SLA hrs"]]} />
+          </Panel>
+        )}
+        {showAll && (
+          <Panel title="Asset Categories" icon={Boxes}>
+            <DataTable rows={categories} columns={[["code", "Code"], ["name", "Category"], ["type", "Type"], ["defaultLifeYrs", "Life yrs"], ["statutory", "Statutory"]]} />
+          </Panel>
+        )}
       </div>
       <div className="space-y-5">
-        <ActionForm title="Create Department Code" onSubmit={submitDepartment} fields={["code", "name", "siteLocation", "description"]} saving={saving} />
-        <TeamCodeForm departments={departments} onSubmit={submitTeam} saving={saving} />
-        <TeamForm departments={departments} onSubmit={submitTeam} saving={saving} />
-        <ServiceForm teams={teams} departments={departments} onSubmit={submitService} saving={saving} />
-        <ActionForm title="Add Asset Category" onSubmit={submitCategory} fields={["code", "name", "type", "defaultLifeYrs", "statutory", "description"]} saving={saving} />
+        {showDepartments && <ActionForm title="Create Department Code" onSubmit={submitDepartment} fields={["code", "name", "siteLocation", "description"]} saving={saving} />}
+        {showTeamCode && <TeamCodeForm departments={departments} onSubmit={submitTeam} saving={saving} />}
+        {showServiceTeams && <TeamForm departments={departments} onSubmit={submitTeam} saving={saving} />}
+        {showServices && <ServiceForm teams={teams} departments={departments} onSubmit={submitService} saving={saving} />}
+        {showAll && <ActionForm title="Add Asset Category" onSubmit={submitCategory} fields={["code", "name", "type", "defaultLifeYrs", "statutory", "description"]} saving={saving} />}
       </div>
     </section>
   );
@@ -1558,11 +1690,18 @@ function JobPlans({ jobPlans, services, departments, submitJobPlan, saving }: { 
   );
 }
 
-function BulkUpload({ saving, onSubmit }: { saving: boolean; onSubmit: (formData: FormData) => void }) {
+function BulkUpload({ saving, onSubmit, initialModule }: { saving: boolean; onSubmit: (formData: FormData) => void; initialModule: string }) {
+  const [module, setModule] = useState(initialModule);
+
+  useEffect(() => {
+    setModule(initialModule);
+  }, [initialModule]);
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     await onSubmit(new FormData(event.currentTarget));
     event.currentTarget.reset();
+    setModule(initialModule);
   }
 
   return (
@@ -1571,7 +1710,7 @@ function BulkUpload({ saving, onSubmit }: { saving: boolean; onSubmit: (formData
         <form onSubmit={handleSubmit} className="grid gap-4">
           <label className="grid gap-1 text-sm font-bold text-slate-600">
             Module
-            <select name="module" required className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon">
+            <select name="module" required value={module} onChange={(event) => setModule(event.target.value)} className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon">
               <option value="assets">Assets</option>
               <option value="categories">Asset Categories</option>
               <option value="inventory">Inventory</option>
