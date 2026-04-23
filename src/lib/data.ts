@@ -17,7 +17,10 @@ export async function getOperatingData() {
           history: { take: 8, orderBy: { createdAt: "desc" } },
         },
       }),
-      prisma.serviceRequest.findMany({ orderBy: { createdAt: "desc" } }),
+      prisma.serviceRequest.findMany({
+        orderBy: { createdAt: "desc" },
+        include: { workOrder: { select: { id: true, woNo: true, status: true } } },
+      }),
       prisma.workOrder.findMany({
         orderBy: { dueAt: "asc" },
         include: { assignedTo: { select: { name: true, email: true } }, asset: { select: { tag: true } } },

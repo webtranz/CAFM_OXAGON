@@ -1011,12 +1011,13 @@ function WorkOrders({
   submitWorkOrder: (formData: FormData) => void;
   saving: boolean;
   permissions: ActionPermissions;
-  updateWorkOrder: (id: string, formData: FormData) => void;
-  updateWorkStatus: (id: string, status: string) => void;
-  deleteWorkOrder: (id: string) => void;
+  updateWorkOrder: (id: string, formData: FormData) => Promise<void> | void;
+  updateWorkStatus: (id: string, status: string) => Promise<void> | void;
+  deleteWorkOrder: (id: string) => Promise<void> | void;
 }) {
   const [editing, setEditing] = useState<any | null>(null);
   const [selectedWorkId, setSelectedWorkId] = useState<string | null>(data.workOrders[0]?.id ?? null);
+  const [workAction, setWorkAction] = useState<string | null>(null);
   const selectedWork = data.workOrders.find((work) => work.id === selectedWorkId) ?? data.workOrders[0];
 
   useEffect(() => {
@@ -1024,6 +1025,16 @@ function WorkOrders({
       setSelectedWorkId(data.workOrders[0].id);
     }
   }, [data.workOrders, selectedWorkId]);
+
+  async function runWorkAction(key: string, work: any, action: () => Promise<void> | void) {
+    setSelectedWorkId(work.id);
+    setWorkAction(key);
+    try {
+      await action();
+    } finally {
+      setWorkAction(null);
+    }
+  }
 
   return (
     <section className="grid gap-5 xl:grid-cols-[1fr_380px]">
@@ -1052,14 +1063,14 @@ function WorkOrders({
             >
               <span className="text-sm font-bold">{work.woNo} / {work.title}</span>
               <div className="flex gap-2">
-                <button disabled={saving || !permissions.manageWork} onClick={(event) => { event.stopPropagation(); setEditing(work); }} className="rounded-lg bg-slate-700 px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Edit</button>
-                <button disabled={saving || !permissions.executeWork} onClick={(event) => { event.stopPropagation(); updateWorkStatus(work.id, "ACCEPTED"); }} className="rounded-lg bg-emerald-700 px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Accept</button>
-                <button disabled={saving || !permissions.executeWork} onClick={(event) => { event.stopPropagation(); updateWorkStatus(work.id, "REJECTED"); }} className="rounded-lg bg-amber-600 px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Reject</button>
-                <button disabled={saving || !permissions.executeWork} onClick={(event) => { event.stopPropagation(); updateWorkStatus(work.id, "IN_PROGRESS"); }} className="rounded-lg bg-lagoon px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Start</button>
-                <button disabled={saving || !permissions.executeWork} onClick={(event) => { event.stopPropagation(); updateWorkStatus(work.id, "ON_HOLD"); }} className="rounded-lg bg-slate-500 px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Hold</button>
-                <button disabled={saving || !permissions.executeWork} onClick={(event) => { event.stopPropagation(); updateWorkStatus(work.id, "COMPLETED"); }} className="rounded-lg bg-leaf px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Complete</button>
-                <button disabled={saving || !permissions.verifyWork} onClick={(event) => { event.stopPropagation(); updateWorkStatus(work.id, "CLOSED"); }} className="rounded-lg bg-ink px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Close</button>
-                <button disabled={saving || !permissions.manageWork} onClick={(event) => { event.stopPropagation(); deleteWorkOrder(work.id); }} className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Delete</button>
+                <button disabled={!permissions.manageWork || workAction === `${work.id}:edit`} onClick={(event) => { event.stopPropagation(); setSelectedWorkId(work.id); setEditing(work); }} className="rounded-lg bg-slate-700 px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Edit</button>
+                <button disabled={!permissions.executeWork || workAction === `${work.id}:accept`} onClick={(event) => { event.stopPropagation(); runWorkAction(`${work.id}:accept`, work, () => updateWorkStatus(work.id, "ACCEPTED")); }} className="rounded-lg bg-emerald-700 px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">{workAction === `${work.id}:accept` ? "Saving..." : "Accept"}</button>
+                <button disabled={!permissions.executeWork || workAction === `${work.id}:reject`} onClick={(event) => { event.stopPropagation(); runWorkAction(`${work.id}:reject`, work, () => updateWorkStatus(work.id, "REJECTED")); }} className="rounded-lg bg-amber-600 px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">{workAction === `${work.id}:reject` ? "Saving..." : "Reject"}</button>
+                <button disabled={!permissions.executeWork || workAction === `${work.id}:start`} onClick={(event) => { event.stopPropagation(); runWorkAction(`${work.id}:start`, work, () => updateWorkStatus(work.id, "IN_PROGRESS")); }} className="rounded-lg bg-lagoon px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">{workAction === `${work.id}:start` ? "Saving..." : "Start"}</button>
+                <button disabled={!permissions.executeWork || workAction === `${work.id}:hold`} onClick={(event) => { event.stopPropagation(); runWorkAction(`${work.id}:hold`, work, () => updateWorkStatus(work.id, "ON_HOLD")); }} className="rounded-lg bg-slate-500 px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">{workAction === `${work.id}:hold` ? "Saving..." : "Hold"}</button>
+                <button disabled={!permissions.executeWork || workAction === `${work.id}:complete`} onClick={(event) => { event.stopPropagation(); runWorkAction(`${work.id}:complete`, work, () => updateWorkStatus(work.id, "COMPLETED")); }} className="rounded-lg bg-leaf px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">{workAction === `${work.id}:complete` ? "Saving..." : "Complete"}</button>
+                <button disabled={!permissions.verifyWork || workAction === `${work.id}:close`} onClick={(event) => { event.stopPropagation(); runWorkAction(`${work.id}:close`, work, () => updateWorkStatus(work.id, "CLOSED")); }} className="rounded-lg bg-ink px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">{workAction === `${work.id}:close` ? "Saving..." : "Close"}</button>
+                <button disabled={!permissions.manageWork || workAction === `${work.id}:delete`} onClick={(event) => { event.stopPropagation(); runWorkAction(`${work.id}:delete`, work, () => deleteWorkOrder(work.id)); }} className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">{workAction === `${work.id}:delete` ? "Deleting..." : "Delete"}</button>
               </div>
             </div>
           ))}
@@ -1118,13 +1129,14 @@ function Helpdesk({
   locations: any[];
   submitRequest: (formData: FormData) => void;
   permissions: ActionPermissions;
-  updateRequest: (id: string, formData: FormData) => void;
-  deleteRequest: (id: string) => void;
-  convertRequest: (id: string) => void;
+  updateRequest: (id: string, formData: FormData) => Promise<void> | void;
+  deleteRequest: (id: string) => Promise<void> | void;
+  convertRequest: (id: string) => Promise<void> | void;
   saving: boolean;
 }) {
   const [editing, setEditing] = useState<any | null>(null);
   const [selectedRequestId, setSelectedRequestId] = useState<string | null>(requests[0]?.id ?? null);
+  const [requestAction, setRequestAction] = useState<string | null>(null);
   const selectedRequest = requests.find((request) => request.id === selectedRequestId) ?? requests[0];
 
   useEffect(() => {
@@ -1132,6 +1144,16 @@ function Helpdesk({
       setSelectedRequestId(requests[0].id);
     }
   }, [requests, selectedRequestId]);
+
+  async function runRequestAction(key: string, request: any, action: () => Promise<void> | void) {
+    setSelectedRequestId(request.id);
+    setRequestAction(key);
+    try {
+      await action();
+    } finally {
+      setRequestAction(null);
+    }
+  }
 
   return (
     <section className="grid gap-5 xl:grid-cols-[1fr_380px]">
@@ -1163,11 +1185,11 @@ function Helpdesk({
             >
               <span className="text-sm font-bold">{request.ticketNo} / {request.title}</span>
               <div className="flex gap-2">
-                <button disabled={saving || !permissions.manageRequests} onClick={(event) => { event.stopPropagation(); setEditing(request); }} className="rounded-lg bg-lagoon px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Edit</button>
-                <button disabled={saving || !permissions.approveRequests} onClick={(event) => { event.stopPropagation(); updateRequest(request.id, requestFormData(request, "TRIAGED")); }} className="rounded-lg bg-slate-700 px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Review</button>
-                <button disabled={saving || request.workOrder || !permissions.manageRequests} onClick={(event) => { event.stopPropagation(); convertRequest(request.id); }} className="rounded-lg bg-ink px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Create WO</button>
-                <button disabled={saving || !permissions.approveRequests} onClick={(event) => { event.stopPropagation(); updateRequest(request.id, requestFormData(request, "REJECTED", "Rejected by supervisor/helpdesk")); }} className="rounded-lg bg-amber-600 px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Reject</button>
-                <button disabled={saving || !permissions.manageRequests} onClick={(event) => { event.stopPropagation(); deleteRequest(request.id); }} className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Delete</button>
+                <button disabled={!permissions.manageRequests} onClick={(event) => { event.stopPropagation(); setSelectedRequestId(request.id); setEditing(request); }} className="rounded-lg bg-lagoon px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Edit</button>
+                <button disabled={!permissions.approveRequests || requestAction === `${request.id}:review`} onClick={(event) => { event.stopPropagation(); runRequestAction(`${request.id}:review`, request, () => updateRequest(request.id, requestFormData(request, "TRIAGED"))); }} className="rounded-lg bg-slate-700 px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">{requestAction === `${request.id}:review` ? "Saving..." : "Review"}</button>
+                <button disabled={Boolean(request.workOrder) || !permissions.manageRequests || requestAction === `${request.id}:wo`} onClick={(event) => { event.stopPropagation(); runRequestAction(`${request.id}:wo`, request, () => convertRequest(request.id)); }} className="rounded-lg bg-ink px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">{requestAction === `${request.id}:wo` ? "Creating..." : request.workOrder ? "WO Created" : "Create WO"}</button>
+                <button disabled={!permissions.approveRequests || requestAction === `${request.id}:reject`} onClick={(event) => { event.stopPropagation(); runRequestAction(`${request.id}:reject`, request, () => updateRequest(request.id, requestFormData(request, "REJECTED", "Rejected by supervisor/helpdesk"))); }} className="rounded-lg bg-amber-600 px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">{requestAction === `${request.id}:reject` ? "Saving..." : "Reject"}</button>
+                <button disabled={!permissions.manageRequests || requestAction === `${request.id}:delete`} onClick={(event) => { event.stopPropagation(); runRequestAction(`${request.id}:delete`, request, () => deleteRequest(request.id)); }} className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">{requestAction === `${request.id}:delete` ? "Deleting..." : "Delete"}</button>
               </div>
             </div>
           ))}

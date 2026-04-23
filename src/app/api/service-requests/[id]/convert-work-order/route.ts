@@ -10,6 +10,10 @@ export async function POST(_: Request, { params }: { params: Promise<{ id: strin
     const { id } = await params;
     const request = await prisma.serviceRequest.findUnique({ where: { id } });
     if (!request) throw new Error("Service request not found");
+    const existingWorkOrder = await prisma.workOrder.findUnique({ where: { requestId: id } });
+    if (existingWorkOrder) {
+      return NextResponse.json(existingWorkOrder);
+    }
 
     const [count, technician] = await Promise.all([
       prisma.workOrder.count(),
