@@ -5,9 +5,10 @@ import { prisma } from "@/lib/prisma";
 
 const dueHours = { LOW: 120, MEDIUM: 72, HIGH: 24, CRITICAL: 6 };
 
-export async function POST(_: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(requestBody: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
+    const body = await requestBody.json().catch(() => ({}));
     const request = await prisma.serviceRequest.findUnique({ where: { id } });
     if (!request) throw new Error("Service request not found");
     const existingWorkOrder = await prisma.workOrder.findUnique({ where: { requestId: id } });
@@ -15,10 +16,14 @@ export async function POST(_: Request, { params }: { params: Promise<{ id: strin
       return NextResponse.json(existingWorkOrder);
     }
 
+    const assignedTeamCode = body.assignedTeamCode || request.assignedTeamCode || null;
+    const assignedToEmail = body.assignedToEmail || null;
     const [count, technician] = await Promise.all([
       prisma.workOrder.count(),
-      request.assignedTeamCode
-        ? prisma.user.findFirst({ where: { team: { code: request.assignedTeamCode }, active: true } })
+      assignedToEmail
+        ? prisma.user.findUnique({ where: { email: assignedToEmail } })
+        : assignedTeamCode
+        ? prisma.user.findFirst({ where: { team: { code: assignedTeamCode }, active: true } })
         : prisma.user.findFirst({ where: { role: { contains: "Technician", mode: "insensitive" }, active: true } }),
     ]);
 
@@ -29,11 +34,11 @@ export async function POST(_: Request, { params }: { params: Promise<{ id: strin
         type: "Reactive",
         departmentCode: request.departmentCode,
         serviceCode: request.serviceCode,
-        assignedTeamCode: request.assignedTeamCode,
+        assignedTeamCode,
         priority: request.priority,
-        status: "PENDING_ASSIGNMENT",
+        status: technician ? "ASSIGNED" : "PENDING_ASSIGNMENT",
         requestId: request.id,
-        assignedToId: null,
+        assignedToId: technician?.id ?? null,
         plannedStart: new Date(),
         dueAt: addHours(new Date(), dueHours[request.priority]),
         estimatedHours: request.priority === "CRITICAL" ? 2 : 4,
@@ -43,7 +48,15 @@ export async function POST(_: Request, { params }: { params: Promise<{ id: strin
       },
     });
 
-    await prisma.serviceRequest.update({ where: { id }, data: { status: "APPROVED", approvedAt: new Date(), reviewedAt: new Date() } });
+    await prisma.serviceRequest.update({
+      where: { id },
+      data: {
+        status: "APPROVED",
+        assignedTeamCode,
+        approvedAt: new Date(),
+        reviewedAt: new Date(),
+      },
+    });
     return NextResponse.json(workOrder, { status: 201 });
   } catch (error) {
     return apiError(error, "Unable to convert request to work order");

@@ -373,9 +373,13 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { name: s
     setSaving(false);
   }
 
-  async function convertRequestToWorkOrder(id: string) {
+  async function convertRequestToWorkOrder(id: string, assignment: { assignedTeamCode?: string; assignedToEmail?: string } = {}) {
     setSaving(true);
-    const response = await fetch(`/api/service-requests/${id}/convert-work-order`, { method: "POST" });
+    const response = await fetch(`/api/service-requests/${id}/convert-work-order`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(assignment),
+    });
     const result = await response.json();
     setToast(response.ok ? `Work order ${result.woNo} created from request.` : cleanMessage(result.message ?? "Conversion failed."));
     if (response.ok) await refreshData();
@@ -529,6 +533,7 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { name: s
               departments={records.departments}
               teams={records.teams}
               locations={records.locations}
+              users={records.users}
               submitRequest={submitRequest}
               permissions={actionPermissions}
               updateRequest={(id, formData) => patchRecord(`/api/service-requests/${id}`, Object.fromEntries(formData.entries()) as Record<string, string>, "Service request updated by admin.")}
@@ -1115,6 +1120,7 @@ function Helpdesk({
   departments,
   teams,
   locations,
+  users,
   submitRequest,
   permissions,
   updateRequest,
@@ -1127,16 +1133,18 @@ function Helpdesk({
   departments: any[];
   teams: any[];
   locations: any[];
+  users: any[];
   submitRequest: (formData: FormData) => void;
   permissions: ActionPermissions;
   updateRequest: (id: string, formData: FormData) => Promise<void> | void;
   deleteRequest: (id: string) => Promise<void> | void;
-  convertRequest: (id: string) => Promise<void> | void;
+  convertRequest: (id: string, assignment?: { assignedTeamCode?: string; assignedToEmail?: string }) => Promise<void> | void;
   saving: boolean;
 }) {
   const [editing, setEditing] = useState<any | null>(null);
   const [selectedRequestId, setSelectedRequestId] = useState<string | null>(requests[0]?.id ?? null);
   const [requestAction, setRequestAction] = useState<string | null>(null);
+  const [assignments, setAssignments] = useState<Record<string, { assignedTeamCode: string; assignedToEmail: string }>>({});
   const selectedRequest = requests.find((request) => request.id === selectedRequestId) ?? requests[0];
 
   useEffect(() => {
@@ -1153,6 +1161,25 @@ function Helpdesk({
     } finally {
       setRequestAction(null);
     }
+  }
+
+  function assignmentFor(request: any) {
+    return assignments[request.id] ?? { assignedTeamCode: request.assignedTeamCode ?? "", assignedToEmail: "" };
+  }
+
+  function setAssignment(requestId: string, next: Partial<{ assignedTeamCode: string; assignedToEmail: string }>) {
+    setAssignments((current) => {
+      const previous = current[requestId] ?? { assignedTeamCode: "", assignedToEmail: "" };
+      return { ...current, [requestId]: { ...previous, ...next } };
+    });
+  }
+
+  function teamMembers(teamCode: string) {
+    return users.filter((item) => {
+      const teamMatches = teamCode ? item.team?.code === teamCode : true;
+      const role = String(item.role ?? "").toLowerCase();
+      return item.active !== false && teamMatches && (role.includes("service") || role.includes("technician") || role.includes("team"));
+    });
   }
 
   return (
@@ -1175,24 +1202,50 @@ function Helpdesk({
           ]}
         />
         <div className="mt-4 grid gap-2">
-          {requests.slice(0, 8).map((request) => (
-            <div
-              key={request.id}
-              onClick={() => setSelectedRequestId(request.id)}
-              className={`flex cursor-pointer flex-wrap items-center justify-between gap-2 rounded-lg p-3 ${
-                selectedRequest?.id === request.id ? "bg-indigo-50 ring-2 ring-indigo-100" : "bg-slate-50"
-              }`}
-            >
-              <span className="text-sm font-bold">{request.ticketNo} / {request.title}</span>
-              <div className="flex gap-2">
-                <button disabled={!permissions.manageRequests} onClick={(event) => { event.stopPropagation(); setSelectedRequestId(request.id); setEditing(request); }} className="rounded-lg bg-lagoon px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Edit</button>
-                <button disabled={!permissions.approveRequests || requestAction === `${request.id}:review`} onClick={(event) => { event.stopPropagation(); runRequestAction(`${request.id}:review`, request, () => updateRequest(request.id, requestFormData(request, "TRIAGED"))); }} className="rounded-lg bg-slate-700 px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">{requestAction === `${request.id}:review` ? "Saving..." : "Review"}</button>
-                <button disabled={Boolean(request.workOrder) || !permissions.manageRequests || requestAction === `${request.id}:wo`} onClick={(event) => { event.stopPropagation(); runRequestAction(`${request.id}:wo`, request, () => convertRequest(request.id)); }} className="rounded-lg bg-ink px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">{requestAction === `${request.id}:wo` ? "Creating..." : request.workOrder ? "WO Created" : "Create WO"}</button>
-                <button disabled={!permissions.approveRequests || requestAction === `${request.id}:reject`} onClick={(event) => { event.stopPropagation(); runRequestAction(`${request.id}:reject`, request, () => updateRequest(request.id, requestFormData(request, "REJECTED", "Rejected by supervisor/helpdesk"))); }} className="rounded-lg bg-amber-600 px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">{requestAction === `${request.id}:reject` ? "Saving..." : "Reject"}</button>
-                <button disabled={!permissions.manageRequests || requestAction === `${request.id}:delete`} onClick={(event) => { event.stopPropagation(); runRequestAction(`${request.id}:delete`, request, () => deleteRequest(request.id)); }} className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">{requestAction === `${request.id}:delete` ? "Deleting..." : "Delete"}</button>
+          {requests.slice(0, 8).map((request) => {
+            const assignment = assignmentFor(request);
+            const members = teamMembers(assignment.assignedTeamCode);
+            return (
+              <div
+                key={request.id}
+                onClick={() => setSelectedRequestId(request.id)}
+                className={`grid cursor-pointer gap-3 rounded-lg p-3 ${
+                  selectedRequest?.id === request.id ? "bg-indigo-50 ring-2 ring-indigo-100" : "bg-slate-50"
+                }`}
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-sm font-bold">{request.ticketNo} / {request.title}</span>
+                  <div className="flex flex-wrap gap-2">
+                    <button disabled={!permissions.manageRequests} onClick={(event) => { event.stopPropagation(); setSelectedRequestId(request.id); setEditing(request); }} className="rounded-lg bg-lagoon px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Edit</button>
+                    <button disabled={!permissions.approveRequests || requestAction === `${request.id}:review`} onClick={(event) => { event.stopPropagation(); runRequestAction(`${request.id}:review`, request, () => updateRequest(request.id, requestFormData(request, "TRIAGED", "", { assignedTeamCode: assignment.assignedTeamCode }))); }} className="rounded-lg bg-slate-700 px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">{requestAction === `${request.id}:review` ? "Saving..." : "Review"}</button>
+                    <button disabled={Boolean(request.workOrder) || !permissions.manageRequests || requestAction === `${request.id}:wo`} onClick={(event) => { event.stopPropagation(); runRequestAction(`${request.id}:wo`, request, () => convertRequest(request.id, assignment)); }} className="rounded-lg bg-ink px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">{requestAction === `${request.id}:wo` ? "Creating..." : request.workOrder ? "WO Created" : "Create WO"}</button>
+                    <button disabled={!permissions.approveRequests || requestAction === `${request.id}:reject`} onClick={(event) => { event.stopPropagation(); runRequestAction(`${request.id}:reject`, request, () => updateRequest(request.id, requestFormData(request, "REJECTED", "Rejected by supervisor/helpdesk", { assignedTeamCode: assignment.assignedTeamCode }))); }} className="rounded-lg bg-amber-600 px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">{requestAction === `${request.id}:reject` ? "Saving..." : "Reject"}</button>
+                    <button disabled={!permissions.manageRequests || requestAction === `${request.id}:delete`} onClick={(event) => { event.stopPropagation(); runRequestAction(`${request.id}:delete`, request, () => deleteRequest(request.id)); }} className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">{requestAction === `${request.id}:delete` ? "Deleting..." : "Delete"}</button>
+                  </div>
+                </div>
+                <div className="grid gap-2 md:grid-cols-2">
+                  <select
+                    value={assignment.assignedTeamCode}
+                    onClick={(event) => event.stopPropagation()}
+                    onChange={(event) => setAssignment(request.id, { assignedTeamCode: event.target.value, assignedToEmail: "" })}
+                    className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-lagoon"
+                  >
+                    <option value="">Assign service team</option>
+                    {teams.map((team) => <option key={team.id} value={team.code}>{team.code} - {team.name}</option>)}
+                  </select>
+                  <select
+                    value={assignment.assignedToEmail}
+                    onClick={(event) => event.stopPropagation()}
+                    onChange={(event) => setAssignment(request.id, { assignedToEmail: event.target.value })}
+                    className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-lagoon"
+                  >
+                    <option value="">Assign team member</option>
+                    {members.map((member) => <option key={member.id} value={member.email}>{member.name} - {member.email}</option>)}
+                  </select>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
         {selectedRequest && (
           <div className="mt-5">
@@ -1226,13 +1279,13 @@ function Helpdesk({
   );
 }
 
-function requestFormData(request: any, status: string, rejectionReason = "") {
+function requestFormData(request: any, status: string, rejectionReason = "", overrides: Record<string, string> = {}) {
   const formData = new FormData();
   formData.set("title", request.title ?? "");
   formData.set("category", request.category ?? "General");
   formData.set("departmentCode", request.departmentCode ?? "");
   formData.set("serviceCode", request.serviceCode ?? "");
-  formData.set("assignedTeamCode", request.assignedTeamCode ?? "");
+  formData.set("assignedTeamCode", overrides.assignedTeamCode ?? request.assignedTeamCode ?? "");
   formData.set("requester", request.requester ?? "Requester");
   formData.set("priority", request.priority ?? "MEDIUM");
   formData.set("status", status);
@@ -1924,11 +1977,11 @@ function UserForm({ title, user, teams, departments, users, roles, onSubmit, sav
         <label className="grid gap-1 text-sm font-bold text-slate-600">User Name<input name="name" defaultValue={user?.name ?? ""} required placeholder="Enter your Name" className={cls} /></label>
         <label className="grid gap-1 text-sm font-bold text-slate-600">Email<input name="email" defaultValue={user?.email ?? ""} required type="email" placeholder="Enter Email" className={cls} /></label>
         <label className="grid gap-1 text-sm font-bold text-slate-600">Phone<input name="phone" defaultValue={user?.phone ?? ""} placeholder="Enter Phone Number" className={cls} /></label>
-        <label className="grid gap-1 text-sm font-bold text-slate-600">Password<input name="password" required={!user} type="password" placeholder={user ? "New password optional" : "Password"} className={cls} /></label>
+        <label className="grid gap-1 text-sm font-bold text-slate-600">Password<input name="password" type="password" placeholder={user ? "New password optional" : "Optional, default Welcome@123"} className={cls} /></label>
         <label className="grid gap-1 text-sm font-bold text-slate-600">Select User Role<select name="role" defaultValue={user?.role ?? "Service Team"} required className={cls}>
           {roleOptions(roles).map((role) => <option key={role}>{role}</option>)}
         </select></label>
-        <label className="grid gap-1 text-sm font-bold text-slate-600">Select Department<select name="department" defaultValue={user?.department ?? ""} required className={cls}>
+        <label className="grid gap-1 text-sm font-bold text-slate-600">Select Department<select name="department" defaultValue={user?.department ?? ""} className={cls}>
           <option value="">Select Department</option>
           {departments.map((department) => <option key={department.id} value={department.code}>{department.code} - {department.name}</option>)}
         </select></label>
