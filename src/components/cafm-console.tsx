@@ -164,23 +164,6 @@ const moduleGroups = [
 
 const healthColors = ["#35a852", "#0f8b8d", "#ffd166", "#f45d48"];
 const PAGE_SIZE = 100;
-const modulePermissions: Record<string, string> = {
-  assets: "assets.manage",
-  work: "work.execute",
-  helpdesk: "requests.view",
-  ppm: "ppm.manage",
-  users: "users.manage",
-  reports: "reports.view",
-  bulk: "assets.manage",
-  templates: "assets.manage",
-  teams: "requests.manage",
-  jobPlans: "work.manage",
-  locations: "requests.manage",
-  inventory: "assets.manage",
-  hse: "reports.view",
-  iot: "reports.view",
-  hr: "users.manage",
-};
 const statToneClasses: Record<string, string> = {
   coral: "text-coral",
   leaf: "text-leaf",
@@ -200,7 +183,6 @@ function cleanMessage(message: string) {
 export function CafmConsole({ data, user }: { data: ConsoleData; user: { name: string; email: string; role: string } }) {
   const [records, setRecords] = useState(data);
   const [active, setActive] = useState("command");
-  const [activeMenuKey, setActiveMenuKey] = useState("Dashboard-Dashboard");
   const [query, setQuery] = useState("");
   const [toast, setToast] = useState("");
   const [health, setHealth] = useState<{ app: string; database: string; message?: string } | null>(null);
@@ -214,29 +196,6 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { name: s
   const filteredAssets = useMemo(() => {
     return records.assets.filter((asset) => `${asset.tag} ${asset.name} ${asset.category}`.toLowerCase().includes(query.toLowerCase()));
   }, [records.assets, query]);
-  const permissionCodes = useMemo(() => {
-    return new Set(records.rolePermissions.filter((item) => item.role === user.role).map((item) => item.permission.code));
-  }, [records.rolePermissions, user.role]);
-  const can = (permission?: string) => user.role === "Admin" || !permission || permissionCodes.has(permission);
-  const canOpenModule = (moduleId: string) => can(modulePermissions[moduleId]);
-  const canViewActive = canOpenModule(active);
-  const actionPermissions = {
-    manageRequests: can("requests.manage"),
-    approveRequests: can("requests.approve"),
-    manageWork: can("work.manage"),
-    assignWork: can("work.assign"),
-    executeWork: can("work.execute"),
-    verifyWork: can("work.verify"),
-  };
-
-  function navigate(moduleId: string, menuKey: string) {
-    if (!canOpenModule(moduleId)) {
-      setToast("You do not have permission to access this module.");
-      return;
-    }
-    setActive(moduleId);
-    setActiveMenuKey(menuKey);
-  }
 
   async function checkHealth() {
     const response = await fetch("/api/health", { cache: "no-store" });
@@ -375,40 +334,34 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { name: s
           </div>
 
           <nav className="mt-5 grid gap-1">
-            {moduleGroups.map((group) => {
-              const visibleItems = group.items.filter((item) => canOpenModule(item.id));
-              if (!visibleItems.length) return null;
-
-              return (
-                <details key={group.label} open={group.label === "Dashboard" || group.label === "Assets Management"} className="group">
-                  <summary className="flex h-11 cursor-pointer list-none items-center justify-between rounded-lg px-3 text-sm font-black text-slate-700 hover:bg-slate-50">
-                    <span className="flex items-center gap-3">
-                      <group.icon size={18} className="text-slate-600" />
-                      {group.label}
-                    </span>
-                    <ChevronDown size={15} className="text-slate-400 transition group-open:rotate-180" />
-                  </summary>
-                  <div className="ml-4 mt-1 grid border-l border-slate-100 pl-3">
-                    {visibleItems.map((item) => {
-                      const Icon = item.icon;
-                      const menuKey = `${group.label}-${item.label}`;
-                      return (
-                        <button
-                          key={menuKey}
-                          onClick={() => navigate(item.id, menuKey)}
-                          className={`flex h-9 items-center gap-2 rounded-lg px-2 text-left text-sm transition ${
-                            activeMenuKey === menuKey ? "bg-indigo-50 font-black text-indigo-700" : "text-slate-600 hover:bg-slate-50 hover:text-ink"
-                          }`}
-                        >
-                          <Icon size={13} />
-                          {item.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </details>
-              );
-            })}
+            {moduleGroups.map((group) => (
+              <details key={group.label} open={group.label === "Dashboard" || group.label === "Assets Management"} className="group">
+                <summary className="flex h-11 cursor-pointer list-none items-center justify-between rounded-lg px-3 text-sm font-black text-slate-700 hover:bg-slate-50">
+                  <span className="flex items-center gap-3">
+                    <group.icon size={18} className="text-slate-600" />
+                    {group.label}
+                  </span>
+                  <ChevronDown size={15} className="text-slate-400 transition group-open:rotate-180" />
+                </summary>
+                <div className="ml-4 mt-1 grid border-l border-slate-100 pl-3">
+                  {group.items.map((item) => {
+                    const Icon = item.icon;
+                    return (
+                      <button
+                        key={`${group.label}-${item.label}`}
+                        onClick={() => setActive(item.id)}
+                        className={`flex h-9 items-center gap-2 rounded-lg px-2 text-left text-sm transition ${
+                          active === item.id ? "bg-indigo-50 font-black text-indigo-700" : "text-slate-600 hover:bg-slate-50 hover:text-ink"
+                        }`}
+                      >
+                        <Icon size={13} />
+                        {item.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </details>
+            ))}
           </nav>
 
           <div className="mt-5 rounded-lg bg-slate-50 p-3">
@@ -432,11 +385,11 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { name: s
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
-                <button onClick={() => navigate("work", "Tickets-Work Orders")} className="flex h-11 items-center gap-2 rounded-lg bg-coral px-4 font-black text-white shadow-lg">
+                <button onClick={() => setActive("work")} className="flex h-11 items-center gap-2 rounded-lg bg-coral px-4 font-black text-white shadow-lg">
                   <Plus size={18} />
                   New Work
                 </button>
-                <button onClick={() => navigate("helpdesk", "Tickets-Service Requests")} className="flex h-11 items-center gap-2 rounded-lg bg-lagoon px-4 font-black text-white shadow-lg">
+                <button onClick={() => setActive("helpdesk")} className="flex h-11 items-center gap-2 rounded-lg bg-lagoon px-4 font-black text-white shadow-lg">
                   <Smartphone size={18} />
                   Dispatch
                 </button>
@@ -456,9 +409,8 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { name: s
             ))}
           </section>
 
-          {!canViewActive && <AccessDenied moduleId={active} />}
-          {canViewActive && active === "command" && <CommandCenter data={records} />}
-          {canViewActive && active === "assets" && (
+          {active === "command" && <CommandCenter data={records} />}
+          {active === "assets" && (
             <Assets
               assets={filteredAssets}
               selectedAssetId={selectedAssetId}
@@ -470,18 +422,17 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { name: s
               updateAsset={updateAsset}
             />
           )}
-          {canViewActive && active === "work" && (
+          {active === "work" && (
             <WorkOrders
               data={records}
               submitWorkOrder={submitWorkOrder}
               saving={saving}
-              permissions={actionPermissions}
               updateWorkOrder={(id, formData) => patchRecord(`/api/work-orders/${id}`, Object.fromEntries(formData.entries()) as Record<string, string>, "Work order updated by admin.")}
               updateWorkStatus={(id, status) => patchRecord(`/api/work-orders/${id}`, { status }, `Work order marked ${status}.`)}
               deleteWorkOrder={(id) => deleteRecord(`/api/work-orders/${id}`, "Work order deleted.")}
             />
           )}
-          {canViewActive && active === "helpdesk" && (
+          {active === "helpdesk" && (
             <Helpdesk
               requests={records.requests}
               services={records.services}
@@ -489,20 +440,19 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { name: s
               teams={records.teams}
               locations={records.locations}
               submitRequest={submitRequest}
-              permissions={actionPermissions}
               updateRequest={(id, formData) => patchRecord(`/api/service-requests/${id}`, Object.fromEntries(formData.entries()) as Record<string, string>, "Service request updated by admin.")}
               deleteRequest={(id) => deleteRecord(`/api/service-requests/${id}`, "Service request deleted.")}
               convertRequest={convertRequestToWorkOrder}
               saving={saving}
             />
           )}
-          {canViewActive && active === "jobPlans" && <JobPlans jobPlans={records.jobPlans} services={records.services} departments={records.departments} saving={saving} submitJobPlan={(formData) => postRecord("/api/job-plans", formData, "Job plan")} />}
-          {canViewActive && active === "locations" && <Locations locations={records.locations} saving={saving} submitLocation={(formData) => postRecord("/api/locations", formData, "Location")} />}
-          {canViewActive && active === "ppm" && <Ppm ppms={records.ppms} saving={saving} submitPpm={(formData) => postRecord("/api/ppm", formData, "PPM")} />}
-          {canViewActive && active === "inventory" && <Inventory inventory={records.inventory} saving={saving} submitInventory={(formData) => postRecord("/api/inventory", formData, "Inventory item")} />}
-          {canViewActive && active === "hse" && <Hse inspections={records.inspections} saving={saving} submitInspection={(formData) => postRecord("/api/inspections", formData, "Inspection")} />}
-          {canViewActive && active === "iot" && <Iot alerts={records.alerts} saving={saving} acknowledgeAlert={(id) => patchRecord(`/api/iot-alerts/${id}`, {}, "IoT alert acknowledged.")} />}
-          {canViewActive && active === "teams" && (
+          {active === "jobPlans" && <JobPlans jobPlans={records.jobPlans} services={records.services} departments={records.departments} saving={saving} submitJobPlan={(formData) => postRecord("/api/job-plans", formData, "Job plan")} />}
+          {active === "locations" && <Locations locations={records.locations} saving={saving} submitLocation={(formData) => postRecord("/api/locations", formData, "Location")} />}
+          {active === "ppm" && <Ppm ppms={records.ppms} saving={saving} submitPpm={(formData) => postRecord("/api/ppm", formData, "PPM")} />}
+          {active === "inventory" && <Inventory inventory={records.inventory} saving={saving} submitInventory={(formData) => postRecord("/api/inventory", formData, "Inventory item")} />}
+          {active === "hse" && <Hse inspections={records.inspections} saving={saving} submitInspection={(formData) => postRecord("/api/inspections", formData, "Inspection")} />}
+          {active === "iot" && <Iot alerts={records.alerts} saving={saving} acknowledgeAlert={(id) => patchRecord(`/api/iot-alerts/${id}`, {}, "IoT alert acknowledged.")} />}
+          {active === "teams" && (
             <TeamsServices
               teams={records.teams}
               services={records.services}
@@ -515,9 +465,9 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { name: s
               submitDepartment={(formData) => postRecord("/api/departments", formData, "Department")}
             />
           )}
-          {canViewActive && active === "bulk" && <BulkUpload saving={saving} onSubmit={bulkUpload} />}
-          {canViewActive && active === "templates" && <Templates />}
-          {canViewActive && active === "users" && (
+          {active === "bulk" && <BulkUpload saving={saving} onSubmit={bulkUpload} />}
+          {active === "templates" && <Templates />}
+          {active === "users" && (
             <UsersRoles
               users={records.users}
               teams={records.teams}
@@ -546,8 +496,8 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { name: s
               }}
             />
           )}
-          {canViewActive && active === "reports" && <Reports />}
-          {canViewActive && active === "hr" && <HumanResources employees={records.employees} departments={records.departments} saving={saving} submitEmployee={(formData) => postRecord("/api/employees", formData, "Employee")} />}
+          {active === "reports" && <Reports />}
+          {active === "hr" && <HumanResources employees={records.employees} departments={records.departments} saving={saving} submitEmployee={(formData) => postRecord("/api/employees", formData, "Employee")} />}
         </section>
       </section>
     </main>
@@ -623,16 +573,6 @@ function CommandCenter({ data }: { data: ConsoleData }) {
         />
       </Panel>
     </section>
-  );
-}
-
-function AccessDenied({ moduleId }: { moduleId: string }) {
-  return (
-    <Panel title="Access Restricted" icon={ShieldCheck}>
-      <p className="text-sm font-bold text-slate-600">
-        Your role does not have permission for `{moduleId}`. Update the role permissions in Users Management to allow access.
-      </p>
-    </Panel>
   );
 }
 
@@ -960,7 +900,6 @@ function WorkOrders({
   data,
   submitWorkOrder,
   saving,
-  permissions,
   updateWorkOrder,
   updateWorkStatus,
   deleteWorkOrder,
@@ -968,7 +907,6 @@ function WorkOrders({
   data: ConsoleData;
   submitWorkOrder: (formData: FormData) => void;
   saving: boolean;
-  permissions: { manageRequests: boolean; approveRequests: boolean; manageWork: boolean; assignWork: boolean; executeWork: boolean; verifyWork: boolean };
   updateWorkOrder: (id: string, formData: FormData) => void;
   updateWorkStatus: (id: string, status: string) => void;
   deleteWorkOrder: (id: string) => void;
@@ -996,22 +934,22 @@ function WorkOrders({
             <div key={work.id} className="flex items-center justify-between rounded-lg bg-slate-50 p-3">
               <span className="text-sm font-bold">{work.woNo}</span>
               <div className="flex gap-2">
-                <button disabled={saving || !permissions.manageWork} onClick={() => setEditing(work)} className="rounded-lg bg-slate-700 px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Edit</button>
-                <button disabled={saving || !permissions.executeWork} onClick={() => updateWorkStatus(work.id, "ACCEPTED")} className="rounded-lg bg-emerald-700 px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Accept</button>
-                <button disabled={saving || !permissions.executeWork} onClick={() => updateWorkStatus(work.id, "REJECTED")} className="rounded-lg bg-amber-600 px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Reject</button>
-                <button disabled={saving || !permissions.executeWork} onClick={() => updateWorkStatus(work.id, "IN_PROGRESS")} className="rounded-lg bg-lagoon px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Start</button>
-                <button disabled={saving || !permissions.executeWork} onClick={() => updateWorkStatus(work.id, "ON_HOLD")} className="rounded-lg bg-slate-500 px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Hold</button>
-                <button disabled={saving || !permissions.executeWork} onClick={() => updateWorkStatus(work.id, "COMPLETED")} className="rounded-lg bg-leaf px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Complete</button>
-                <button disabled={saving || !permissions.verifyWork} onClick={() => updateWorkStatus(work.id, "CLOSED")} className="rounded-lg bg-ink px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Close</button>
-                <button disabled={saving || !permissions.manageWork} onClick={() => deleteWorkOrder(work.id)} className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Delete</button>
+                <button disabled={saving} onClick={() => setEditing(work)} className="rounded-lg bg-slate-700 px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Edit</button>
+                <button disabled={saving} onClick={() => updateWorkStatus(work.id, "ACCEPTED")} className="rounded-lg bg-emerald-700 px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Accept</button>
+                <button disabled={saving} onClick={() => updateWorkStatus(work.id, "REJECTED")} className="rounded-lg bg-amber-600 px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Reject</button>
+                <button disabled={saving} onClick={() => updateWorkStatus(work.id, "IN_PROGRESS")} className="rounded-lg bg-lagoon px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Start</button>
+                <button disabled={saving} onClick={() => updateWorkStatus(work.id, "ON_HOLD")} className="rounded-lg bg-slate-500 px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Hold</button>
+                <button disabled={saving} onClick={() => updateWorkStatus(work.id, "COMPLETED")} className="rounded-lg bg-leaf px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Complete</button>
+                <button disabled={saving} onClick={() => updateWorkStatus(work.id, "CLOSED")} className="rounded-lg bg-ink px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Close</button>
+                <button disabled={saving} onClick={() => deleteWorkOrder(work.id)} className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Delete</button>
               </div>
             </div>
           ))}
         </div>
       </Panel>
       <div className="space-y-5">
-        {permissions.manageWork && <WorkOrderForm title="Generate Work Order" data={data} onSubmit={submitWorkOrder} saving={saving} />}
-        {editing && permissions.manageWork && <WorkOrderForm title={`Edit ${editing.woNo}`} data={data} work={editing} onSubmit={(formData) => updateWorkOrder(editing.id, formData)} saving={saving} />}
+        <WorkOrderForm title="Generate Work Order" data={data} onSubmit={submitWorkOrder} saving={saving} />
+        {editing && <WorkOrderForm title={`Edit ${editing.woNo}`} data={data} work={editing} onSubmit={(formData) => updateWorkOrder(editing.id, formData)} saving={saving} />}
       </div>
     </section>
   );
@@ -1024,7 +962,6 @@ function Helpdesk({
   teams,
   locations,
   submitRequest,
-  permissions,
   updateRequest,
   deleteRequest,
   convertRequest,
@@ -1036,7 +973,6 @@ function Helpdesk({
   teams: any[];
   locations: any[];
   submitRequest: (formData: FormData) => void;
-  permissions: { manageRequests: boolean; approveRequests: boolean; manageWork: boolean; assignWork: boolean; executeWork: boolean; verifyWork: boolean };
   updateRequest: (id: string, formData: FormData) => void;
   deleteRequest: (id: string) => void;
   convertRequest: (id: string) => void;
@@ -1069,19 +1005,18 @@ function Helpdesk({
               <span className="text-sm font-bold">{request.ticketNo} / {request.title}</span>
               <div className="flex gap-2">
                 <button disabled={saving} onClick={() => setEditing(request)} className="rounded-lg bg-lagoon px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Edit</button>
-                <button disabled={saving || !permissions.manageRequests} onClick={() => setEditing(request)} className="rounded-lg bg-lagoon px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Edit</button>
-                <button disabled={saving || !permissions.approveRequests} onClick={() => updateRequest(request.id, requestFormData(request, "TRIAGED"))} className="rounded-lg bg-slate-700 px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Review</button>
-                <button disabled={saving || request.workOrder || !permissions.manageRequests} onClick={() => convertRequest(request.id)} className="rounded-lg bg-ink px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Create WO</button>
-                <button disabled={saving || !permissions.approveRequests} onClick={() => updateRequest(request.id, requestFormData(request, "REJECTED", "Rejected by supervisor/helpdesk"))} className="rounded-lg bg-amber-600 px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Reject</button>
-                <button disabled={saving || !permissions.manageRequests} onClick={() => deleteRequest(request.id)} className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Delete</button>
+                <button disabled={saving} onClick={() => updateRequest(request.id, requestFormData(request, "TRIAGED"))} className="rounded-lg bg-slate-700 px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Review</button>
+                <button disabled={saving || request.workOrder} onClick={() => convertRequest(request.id)} className="rounded-lg bg-ink px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Create WO</button>
+                <button disabled={saving} onClick={() => updateRequest(request.id, requestFormData(request, "REJECTED", "Rejected by supervisor/helpdesk"))} className="rounded-lg bg-amber-600 px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Reject</button>
+                <button disabled={saving} onClick={() => deleteRequest(request.id)} className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Delete</button>
               </div>
             </div>
           ))}
         </div>
       </Panel>
       <div className="space-y-5">
-        {permissions.manageRequests && <ServiceRequestForm title="Create Service Request" services={services} departments={departments} teams={teams} locations={locations} onSubmit={submitRequest} saving={saving} />}
-        {editing && permissions.manageRequests && <ServiceRequestForm title={`Edit ${editing.ticketNo}`} request={editing} services={services} departments={departments} teams={teams} locations={locations} onSubmit={(formData) => updateRequest(editing.id, formData)} saving={saving} />}
+        <ServiceRequestForm title="Create Service Request" services={services} departments={departments} teams={teams} locations={locations} onSubmit={submitRequest} saving={saving} />
+        {editing && <ServiceRequestForm title={`Edit ${editing.ticketNo}`} request={editing} services={services} departments={departments} teams={teams} locations={locations} onSubmit={(formData) => updateRequest(editing.id, formData)} saving={saving} />}
       </div>
     </section>
   );
