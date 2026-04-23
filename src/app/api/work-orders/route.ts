@@ -35,11 +35,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ message: "Only Admin or Supervisor can create work orders." }, { status: 403 });
     }
     const priority = ["LOW", "MEDIUM", "HIGH", "CRITICAL"].includes(input.priority || "") ? input.priority as keyof typeof dueHours : "MEDIUM";
-    const [count, asset, technician, assignedUser, team] = await Promise.all([
+    const [count, asset, team] = await Promise.all([
       prisma.workOrder.count(),
       input.assetTag ? prisma.asset.findUnique({ where: { tag: input.assetTag } }) : null,
-      prisma.user.findFirst({ where: { role: "Technician" } }),
-      input.assignedToEmail ? prisma.user.findUnique({ where: { email: input.assignedToEmail } }) : null,
       input.assignedTeamCode ? prisma.team.findUnique({ where: { code: input.assignedTeamCode } }) : null,
     ]);
 
@@ -54,9 +52,9 @@ export async function POST(request: Request) {
         assignedTeamCode: input.assignedTeamCode || team?.code || null,
         jobPlanCode: input.jobPlanCode || null,
         priority,
-        status: input.assignedToEmail || input.assignedTeamCode ? "ASSIGNED" : "PENDING_ASSIGNMENT",
+        status: input.assignedTeamCode ? "ASSIGNED" : "PENDING_ASSIGNMENT",
         assetId: asset?.id,
-        assignedToId: assignedUser?.id || technician?.id,
+        assignedToId: null,
         plannedStart: new Date(),
         dueAt: addHours(new Date(), dueHours[priority]),
         estimatedHours: priority === "CRITICAL" ? 2 : 4,

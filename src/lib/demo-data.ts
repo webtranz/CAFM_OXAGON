@@ -86,4 +86,5 @@ export const fallbackData = {
   jobPlans: [
     { id: "jp1", code: "JP-HVAC-FILTER", name: "AHU Filter Replacement", assetType: "HVAC", departmentCode: "MEP", serviceCode: "HVAC-REQ", estimatedHours: 2, priority: "MEDIUM", active: true },
   ],
+  auditLogs: [],
 };

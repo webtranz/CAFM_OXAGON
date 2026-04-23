@@ -3,6 +3,7 @@ import { z } from "zod";
 import { addHours } from "date-fns";
 import { apiError } from "@/lib/api-response";
 import { canManageDepartmentRecord } from "@/lib/access-control";
+import { auditAction } from "@/lib/audit";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
@@ -72,6 +73,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         approvedAt: status === "APPROVED" ? new Date() : undefined,
       },
     });
+    await auditAction({ user, action: `SERVICE_REQUEST_${status}`, entity: "service_request", entityId: id, details: input.rejectionReason || undefined });
 
     return NextResponse.json(updated);
   } catch (error) {
@@ -88,6 +90,7 @@ export async function DELETE(_: Request, { params }: { params: Promise<{ id: str
       return apiError(new Error("You do not have permission to delete this request."), "Access denied", 403);
     }
     await prisma.serviceRequest.delete({ where: { id } });
+    await auditAction({ user, action: "SERVICE_REQUEST_DELETE", entity: "service_request", entityId: id });
     return NextResponse.json({ ok: true });
   } catch (error) {
     return apiError(error, "Unable to delete service request");

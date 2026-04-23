@@ -46,12 +46,12 @@ export async function getOperatingData(user: OperatingUser = null) {
         : kind === "supervisor"
         ? { departmentCode: { in: departmentsForUser } }
         : kind === "technician"
-        ? { assignedToId: user?.id || "" }
+        ? { OR: [{ assignedToId: user?.id || "" }, { assignedTeamCode: teamCode || "" }] }
         : { assignedToId: "__none__" };
     const visibleJobPlanWhere = kind === "admin" ? {} : kind === "supervisor" || kind === "technician" ? { departmentCode: { in: departmentsForUser } } : {};
     const visibleUsersWhere = kind === "admin" ? {} : { OR: [{ department: { in: departmentsForUser } }, { id: user?.id || "" }] };
 
-    const [sites, assets, requests, workOrders, inventory, inspections, alerts, teams, services, categories, ppms, users, permissions, departments, employees, rolePermissions, locations, jobPlans, roles] = await Promise.all([
+    const [sites, assets, requests, workOrders, inventory, inspections, alerts, teams, services, categories, ppms, users, permissions, departments, employees, rolePermissions, locations, jobPlans, roles, auditLogs] = await Promise.all([
       prisma.site.findMany({ orderBy: { name: "asc" } }),
       prisma.asset.findMany({
         where: visibleAssetWhere,
@@ -87,12 +87,13 @@ export async function getOperatingData(user: OperatingUser = null) {
       prisma.location.findMany({ orderBy: [{ site: "asc" }, { building: "asc" }, { floor: "asc" }, { room: "asc" }] }),
       prisma.jobPlan.findMany({ where: visibleJobPlanWhere, orderBy: { code: "asc" } }),
       prisma.role.findMany({ orderBy: { name: "asc" } }),
+      prisma.auditLog.findMany({ orderBy: { createdAt: "desc" }, take: 500 }),
     ]);
 
     const visibleAssetTags = new Set(assets.map((asset) => asset.tag));
     const scopedPpms = kind === "admin" ? ppms : ppms.filter((ppm) => visibleAssetTags.has(ppm.assetTag));
 
-    return { sites, assets, requests, workOrders, inventory, inspections, alerts, teams, services, categories, ppms: scopedPpms, users, permissions, departments, employees, rolePermissions, locations, jobPlans, roles, live: true };
+    return { sites, assets, requests, workOrders, inventory, inspections, alerts, teams, services, categories, ppms: scopedPpms, users, permissions, departments, employees, rolePermissions, locations, jobPlans, roles, auditLogs, live: true };
   } catch {
     return { ...fallbackData, live: false };
   }

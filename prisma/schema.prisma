@@ -439,3 +439,15 @@ model IotAlert {
   status      WorkStatus
   detectedAt  DateTime  @default(now())
 }
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorId   String?
+  actorName String
+  role      String
+  action    String
+  entity    String
+  entityId  String
+  details   String?
+  createdAt DateTime @default(now())
+}

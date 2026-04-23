@@ -63,6 +63,7 @@ type ConsoleData = {
   locations: any[];
   jobPlans: any[];
   roles: any[];
+  auditLogs: any[];
 };
 
 type ActionPermissions = {
@@ -164,8 +165,8 @@ const moduleGroups = [
     label: "Activity Logs",
     icon: Activity,
     items: [
+      { id: "audit", label: "Audit Logs", icon: Activity },
       { id: "reports", label: "Reports Preview", icon: ClipboardCheck },
-      { id: "command", label: "System Activity", icon: Activity },
     ],
   },
 ];
@@ -188,6 +189,7 @@ const modulePermissions: Record<string, string> = {
   hse: "reports.view",
   iot: "reports.view",
   hr: "users.manage",
+  audit: "reports.view",
 };
 const statToneClasses: Record<string, string> = {
   coral: "text-coral",
@@ -249,6 +251,14 @@ function dashboardSubtitle(role: string, department?: string | null) {
     return "Technician dashboard: assigned work orders, assigned requests and assigned PPM task execution.";
   }
   return "Requester dashboard: create and track your service requests.";
+}
+
+function roleKindLabel(role: string) {
+  const lower = role.toLowerCase();
+  if (lower === "admin" || lower.includes("super admin")) return "admin";
+  if (lower.includes("supervisor")) return "supervisor";
+  if (lower.includes("technician") || lower.includes("service team")) return "technician";
+  return "requester";
 }
 
 export function CafmConsole({ data, user }: { data: ConsoleData; user: { id?: string; name: string; email: string; role: string; department?: string | null; team?: { code: string; name?: string } | null } }) {
@@ -535,6 +545,7 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { id?: st
               submitWorkOrder={submitWorkOrder}
               saving={saving}
               permissions={actionPermissions}
+              role={user.role}
               updateWorkOrder={(id, formData) => patchRecord(`/api/work-orders/${id}`, Object.fromEntries(formData.entries()) as Record<string, string>, "Work order updated by admin.")}
               updateWorkStatus={(id, status) => patchRecord(`/api/work-orders/${id}`, { status }, `Work order marked ${status}.`)}
               deleteWorkOrder={(id) => deleteRecord(`/api/work-orders/${id}`, "Work order deleted.")}
@@ -547,9 +558,9 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { id?: st
               departments={records.departments}
               teams={records.teams}
               locations={records.locations}
-              users={records.users}
               submitRequest={submitRequest}
               permissions={actionPermissions}
+              role={user.role}
               updateRequest={(id, formData) => patchRecord(`/api/service-requests/${id}`, Object.fromEntries(formData.entries()) as Record<string, string>, "Service request updated by admin.")}
               deleteRequest={(id) => deleteRecord(`/api/service-requests/${id}`, "Service request deleted.")}
               convertRequest={convertRequestToWorkOrder}
@@ -608,6 +619,7 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { id?: st
             />
           )}
           {canViewActive && active === "reports" && <Reports />}
+          {canViewActive && active === "audit" && <AuditLogs logs={records.auditLogs ?? []} />}
           {canViewActive && active === "hr" && <HumanResources employees={records.employees} departments={records.departments} saving={saving} submitEmployee={(formData) => postRecord("/api/employees", formData, "Employee")} />}
         </section>
       </section>
@@ -1022,6 +1034,7 @@ function WorkOrders({
   submitWorkOrder,
   saving,
   permissions,
+  role,
   updateWorkOrder,
   updateWorkStatus,
   deleteWorkOrder,
@@ -1030,6 +1043,7 @@ function WorkOrders({
   submitWorkOrder: (formData: FormData) => void;
   saving: boolean;
   permissions: ActionPermissions;
+  role: string;
   updateWorkOrder: (id: string, formData: FormData) => Promise<void> | void;
   updateWorkStatus: (id: string, status: string) => Promise<void> | void;
   deleteWorkOrder: (id: string) => Promise<void> | void;
@@ -1038,6 +1052,10 @@ function WorkOrders({
   const [selectedWorkId, setSelectedWorkId] = useState<string | null>(data.workOrders[0]?.id ?? null);
   const [workAction, setWorkAction] = useState<string | null>(null);
   const selectedWork = data.workOrders.find((work) => work.id === selectedWorkId) ?? data.workOrders[0];
+  const isTechnician = roleKindLabel(role) === "technician";
+  const canAssignOrEdit = permissions.manageWork && !isTechnician;
+  const canExecute = permissions.executeWork;
+  const canFinalReview = permissions.verifyWork && !isTechnician;
 
   useEffect(() => {
     if (data.workOrders.length && !data.workOrders.some((work) => work.id === selectedWorkId)) {
@@ -1082,14 +1100,13 @@ function WorkOrders({
             >
               <span className="text-sm font-bold">{work.woNo} / {work.title}</span>
               <div className="flex gap-2">
-                <button disabled={!permissions.manageWork || workAction === `${work.id}:edit`} onClick={(event) => { event.stopPropagation(); setSelectedWorkId(work.id); setEditing(work); }} className="rounded-lg bg-slate-700 px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Edit</button>
-                <button disabled={!permissions.executeWork || workAction === `${work.id}:accept`} onClick={(event) => { event.stopPropagation(); runWorkAction(`${work.id}:accept`, work, () => updateWorkStatus(work.id, "ACCEPTED")); }} className="rounded-lg bg-emerald-700 px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">{workAction === `${work.id}:accept` ? "Saving..." : "Accept"}</button>
-                <button disabled={!permissions.executeWork || workAction === `${work.id}:reject`} onClick={(event) => { event.stopPropagation(); runWorkAction(`${work.id}:reject`, work, () => updateWorkStatus(work.id, "REJECTED")); }} className="rounded-lg bg-amber-600 px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">{workAction === `${work.id}:reject` ? "Saving..." : "Reject"}</button>
-                <button disabled={!permissions.executeWork || workAction === `${work.id}:start`} onClick={(event) => { event.stopPropagation(); runWorkAction(`${work.id}:start`, work, () => updateWorkStatus(work.id, "IN_PROGRESS")); }} className="rounded-lg bg-lagoon px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">{workAction === `${work.id}:start` ? "Saving..." : "Start"}</button>
-                <button disabled={!permissions.executeWork || workAction === `${work.id}:hold`} onClick={(event) => { event.stopPropagation(); runWorkAction(`${work.id}:hold`, work, () => updateWorkStatus(work.id, "ON_HOLD")); }} className="rounded-lg bg-slate-500 px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">{workAction === `${work.id}:hold` ? "Saving..." : "Hold"}</button>
-                <button disabled={!permissions.executeWork || workAction === `${work.id}:complete`} onClick={(event) => { event.stopPropagation(); runWorkAction(`${work.id}:complete`, work, () => updateWorkStatus(work.id, "COMPLETED")); }} className="rounded-lg bg-leaf px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">{workAction === `${work.id}:complete` ? "Saving..." : "Complete"}</button>
-                <button disabled={!permissions.verifyWork || workAction === `${work.id}:close`} onClick={(event) => { event.stopPropagation(); runWorkAction(`${work.id}:close`, work, () => updateWorkStatus(work.id, "CLOSED")); }} className="rounded-lg bg-ink px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">{workAction === `${work.id}:close` ? "Saving..." : "Close"}</button>
-                <button disabled={!permissions.manageWork || workAction === `${work.id}:delete`} onClick={(event) => { event.stopPropagation(); runWorkAction(`${work.id}:delete`, work, () => deleteWorkOrder(work.id)); }} className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">{workAction === `${work.id}:delete` ? "Deleting..." : "Delete"}</button>
+                {canAssignOrEdit && <button disabled={workAction === `${work.id}:edit`} onClick={(event) => { event.stopPropagation(); setSelectedWorkId(work.id); setEditing(work); }} className="rounded-lg bg-slate-700 px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Edit / Assign</button>}
+                {canExecute && <button disabled={workAction === `${work.id}:start`} onClick={(event) => { event.stopPropagation(); runWorkAction(`${work.id}:start`, work, () => updateWorkStatus(work.id, "IN_PROGRESS")); }} className="rounded-lg bg-lagoon px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">{workAction === `${work.id}:start` ? "Saving..." : "In Progress"}</button>}
+                {canExecute && <button disabled={workAction === `${work.id}:hold`} onClick={(event) => { event.stopPropagation(); runWorkAction(`${work.id}:hold`, work, () => updateWorkStatus(work.id, "ON_HOLD")); }} className="rounded-lg bg-slate-500 px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">{workAction === `${work.id}:hold` ? "Saving..." : "On Hold"}</button>}
+                {canExecute && <button disabled={workAction === `${work.id}:complete`} onClick={(event) => { event.stopPropagation(); runWorkAction(`${work.id}:complete`, work, () => updateWorkStatus(work.id, "COMPLETED")); }} className="rounded-lg bg-leaf px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">{workAction === `${work.id}:complete` ? "Saving..." : "Submit Closure"}</button>}
+                {canFinalReview && <button disabled={workAction === `${work.id}:close`} onClick={(event) => { event.stopPropagation(); runWorkAction(`${work.id}:close`, work, () => updateWorkStatus(work.id, "CLOSED")); }} className="rounded-lg bg-ink px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">{workAction === `${work.id}:close` ? "Saving..." : "Close"}</button>}
+                {canFinalReview && <button disabled={workAction === `${work.id}:reopen`} onClick={(event) => { event.stopPropagation(); runWorkAction(`${work.id}:reopen`, work, () => updateWorkStatus(work.id, "REOPENED")); }} className="rounded-lg bg-amber-600 px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">{workAction === `${work.id}:reopen` ? "Saving..." : "Reopen"}</button>}
+                {canAssignOrEdit && <button disabled={workAction === `${work.id}:delete`} onClick={(event) => { event.stopPropagation(); runWorkAction(`${work.id}:delete`, work, () => deleteWorkOrder(work.id)); }} className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">{workAction === `${work.id}:delete` ? "Deleting..." : "Delete"}</button>}
               </div>
             </div>
           ))}
@@ -1121,8 +1138,9 @@ function WorkOrders({
         )}
       </Panel>
       <div className="space-y-5">
-        {permissions.manageWork && <WorkOrderForm title="Generate Work Order" data={data} onSubmit={submitWorkOrder} saving={saving} />}
-        {editing && permissions.manageWork && <WorkOrderForm title={`Edit ${editing.woNo}`} data={data} work={editing} onSubmit={(formData) => updateWorkOrder(editing.id, formData)} saving={saving} />}
+        {canAssignOrEdit && <WorkOrderForm title="Generate Work Order" data={data} onSubmit={submitWorkOrder} saving={saving} />}
+        {editing && canAssignOrEdit && <WorkOrderForm title={`Edit / Assign ${editing.woNo}`} data={data} work={editing} onSubmit={(formData) => updateWorkOrder(editing.id, formData)} saving={saving} />}
+        {selectedWork && canExecute && !canAssignOrEdit && <WorkExecutionForm work={selectedWork} saving={saving} onSubmit={(formData) => updateWorkOrder(selectedWork.id, formData)} />}
       </div>
     </section>
   );
@@ -1134,9 +1152,9 @@ function Helpdesk({
   departments,
   teams,
   locations,
-  users,
   submitRequest,
   permissions,
+  role,
   updateRequest,
   deleteRequest,
   convertRequest,
@@ -1147,9 +1165,9 @@ function Helpdesk({
   departments: any[];
   teams: any[];
   locations: any[];
-  users: any[];
   submitRequest: (formData: FormData) => void;
   permissions: ActionPermissions;
+  role: string;
   updateRequest: (id: string, formData: FormData) => Promise<void> | void;
   deleteRequest: (id: string) => Promise<void> | void;
   convertRequest: (id: string, assignment?: { assignedTeamCode?: string; assignedToEmail?: string }) => Promise<void> | void;
@@ -1160,6 +1178,7 @@ function Helpdesk({
   const [requestAction, setRequestAction] = useState<string | null>(null);
   const [assignments, setAssignments] = useState<Record<string, { assignedTeamCode: string; assignedToEmail: string }>>({});
   const selectedRequest = requests.find((request) => request.id === selectedRequestId) ?? requests[0];
+  const isSupervisorView = roleKindLabel(role) === "admin" || roleKindLabel(role) === "supervisor";
 
   useEffect(() => {
     if (requests.length && !requests.some((request) => request.id === selectedRequestId)) {
@@ -1188,14 +1207,6 @@ function Helpdesk({
     });
   }
 
-  function teamMembers(teamCode: string) {
-    return users.filter((item) => {
-      const teamMatches = teamCode ? item.team?.code === teamCode : true;
-      const role = String(item.role ?? "").toLowerCase();
-      return item.active !== false && teamMatches && (role.includes("service") || role.includes("technician") || role.includes("team"));
-    });
-  }
-
   return (
     <section className="grid gap-5 xl:grid-cols-[1fr_380px]">
       <Panel title="Helpdesk & SLA Triage" icon={TicketCheck}>
@@ -1218,7 +1229,6 @@ function Helpdesk({
         <div className="mt-4 grid gap-2">
           {requests.slice(0, 8).map((request) => {
             const assignment = assignmentFor(request);
-            const members = teamMembers(assignment.assignedTeamCode);
             return (
               <div
                 key={request.id}
@@ -1230,14 +1240,14 @@ function Helpdesk({
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="text-sm font-bold">{request.ticketNo} / {request.title}</span>
                   <div className="flex flex-wrap gap-2">
-                    <button disabled={!permissions.manageRequests} onClick={(event) => { event.stopPropagation(); setSelectedRequestId(request.id); setEditing(request); }} className="rounded-lg bg-lagoon px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Edit</button>
-                    <button disabled={!permissions.approveRequests || requestAction === `${request.id}:review`} onClick={(event) => { event.stopPropagation(); runRequestAction(`${request.id}:review`, request, () => updateRequest(request.id, requestFormData(request, "TRIAGED", "", { assignedTeamCode: assignment.assignedTeamCode }))); }} className="rounded-lg bg-slate-700 px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">{requestAction === `${request.id}:review` ? "Saving..." : "Review"}</button>
-                    <button disabled={Boolean(request.workOrder) || !permissions.manageRequests || requestAction === `${request.id}:wo`} onClick={(event) => { event.stopPropagation(); runRequestAction(`${request.id}:wo`, request, () => convertRequest(request.id, assignment)); }} className="rounded-lg bg-ink px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">{requestAction === `${request.id}:wo` ? "Creating..." : request.workOrder ? "WO Created" : "Create WO"}</button>
-                    <button disabled={!permissions.approveRequests || requestAction === `${request.id}:reject`} onClick={(event) => { event.stopPropagation(); runRequestAction(`${request.id}:reject`, request, () => updateRequest(request.id, requestFormData(request, "REJECTED", "Rejected by supervisor/helpdesk", { assignedTeamCode: assignment.assignedTeamCode }))); }} className="rounded-lg bg-amber-600 px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">{requestAction === `${request.id}:reject` ? "Saving..." : "Reject"}</button>
-                    <button disabled={!permissions.manageRequests || requestAction === `${request.id}:delete`} onClick={(event) => { event.stopPropagation(); runRequestAction(`${request.id}:delete`, request, () => deleteRequest(request.id)); }} className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">{requestAction === `${request.id}:delete` ? "Deleting..." : "Delete"}</button>
+                    {isSupervisorView && permissions.manageRequests && <button onClick={(event) => { event.stopPropagation(); setSelectedRequestId(request.id); setEditing(request); }} className="rounded-lg bg-lagoon px-3 py-2 text-xs font-black text-white">Edit</button>}
+                    {isSupervisorView && permissions.approveRequests && <button disabled={requestAction === `${request.id}:review`} onClick={(event) => { event.stopPropagation(); runRequestAction(`${request.id}:review`, request, () => updateRequest(request.id, requestFormData(request, "TRIAGED", "", { assignedTeamCode: assignment.assignedTeamCode }))); }} className="rounded-lg bg-slate-700 px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">{requestAction === `${request.id}:review` ? "Saving..." : "Review"}</button>}
+                    {isSupervisorView && permissions.manageRequests && <button disabled={Boolean(request.workOrder) || requestAction === `${request.id}:wo`} onClick={(event) => { event.stopPropagation(); runRequestAction(`${request.id}:wo`, request, () => convertRequest(request.id, { assignedTeamCode: assignment.assignedTeamCode })); }} className="rounded-lg bg-ink px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">{requestAction === `${request.id}:wo` ? "Creating..." : request.workOrder ? "WO Created" : "Create WO"}</button>}
+                    {isSupervisorView && permissions.approveRequests && <button disabled={requestAction === `${request.id}:reject`} onClick={(event) => { event.stopPropagation(); runRequestAction(`${request.id}:reject`, request, () => updateRequest(request.id, requestFormData(request, "REJECTED", "Rejected by supervisor/helpdesk", { assignedTeamCode: assignment.assignedTeamCode }))); }} className="rounded-lg bg-amber-600 px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">{requestAction === `${request.id}:reject` ? "Saving..." : "Reject"}</button>}
+                    {isSupervisorView && permissions.manageRequests && <button disabled={requestAction === `${request.id}:delete`} onClick={(event) => { event.stopPropagation(); runRequestAction(`${request.id}:delete`, request, () => deleteRequest(request.id)); }} className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">{requestAction === `${request.id}:delete` ? "Deleting..." : "Delete"}</button>}
                   </div>
                 </div>
-                <div className="grid gap-2 md:grid-cols-2">
+                {isSupervisorView && permissions.manageRequests && <div className="grid gap-2 md:grid-cols-1">
                   <select
                     value={assignment.assignedTeamCode}
                     onClick={(event) => event.stopPropagation()}
@@ -1247,16 +1257,7 @@ function Helpdesk({
                     <option value="">Assign service team</option>
                     {teams.map((team) => <option key={team.id} value={team.code}>{team.code} - {team.name}</option>)}
                   </select>
-                  <select
-                    value={assignment.assignedToEmail}
-                    onClick={(event) => event.stopPropagation()}
-                    onChange={(event) => setAssignment(request.id, { assignedToEmail: event.target.value })}
-                    className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-lagoon"
-                  >
-                    <option value="">Assign team member</option>
-                    {members.map((member) => <option key={member.id} value={member.email}>{member.name} - {member.email}</option>)}
-                  </select>
-                </div>
+                </div>}
               </div>
             );
           })}
@@ -1394,10 +1395,6 @@ function WorkOrderForm({ title, work, data, onSubmit, saving }: { title: string;
           <option value="">Assign service team</option>
           {data.teams.map((team) => <option key={team.id} value={team.code}>{team.code} - {team.name}</option>)}
         </select>
-        <select name="assignedToEmail" defaultValue={work?.assignedTo?.email ?? ""} className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon">
-          <option value="">Assign user</option>
-          {data.users.map((user) => <option key={user.id} value={user.email}>{user.name} - {user.role}</option>)}
-        </select>
         <select name="jobPlanCode" defaultValue={work?.jobPlanCode ?? ""} className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon">
           <option value="">Select job plan</option>
           {data.jobPlans.map((plan) => <option key={plan.id} value={plan.code}>{plan.code} - {plan.name}</option>)}
@@ -1431,6 +1428,33 @@ function WorkOrderForm({ title, work, data, onSubmit, saving }: { title: string;
         )}
         {work && <div className="grid grid-cols-2 gap-3"><input name="estimatedHours" type="number" defaultValue={work.estimatedHours ?? ""} className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" /><input name="cost" type="number" defaultValue={work.cost ?? ""} className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" /></div>}
         <button disabled={saving} className="h-11 rounded-lg bg-ink font-black text-white disabled:bg-slate-400">{saving ? "Saving..." : "Save Work Order"}</button>
+      </div>
+    </form>
+  );
+}
+
+function WorkExecutionForm({ work, onSubmit, saving }: { work: any; onSubmit: (formData: FormData) => void; saving: boolean }) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await onSubmit(new FormData(event.currentTarget));
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="rounded-lg border border-white/80 bg-white p-5 shadow-lift">
+      <h3 className="text-xl font-black">Update Assigned Work</h3>
+      <p className="mt-1 text-sm font-bold text-slate-500">{work.woNo} / {work.title}</p>
+      <div className="mt-4 grid gap-3">
+        <select name="status" defaultValue={work.status} className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon">
+          <option>IN_PROGRESS</option>
+          <option>ON_HOLD</option>
+          <option>COMPLETED</option>
+        </select>
+        <textarea name="workNotes" defaultValue={work.workNotes ?? ""} placeholder="Work description / notes" className="min-h-24 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />
+        <textarea name="photoUrls" defaultValue={work.photoUrls ?? ""} placeholder="Before / after image links" className="min-h-20 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />
+        <textarea name="materialRequest" defaultValue={work.materialRequest ?? ""} placeholder="Parts request for supervisor approval" className="min-h-20 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />
+        <textarea name="assetsUsed" defaultValue={work.assetsUsed ?? ""} placeholder="Assets requested or used" className="min-h-20 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />
+        <textarea name="inventoryUsed" defaultValue={work.inventoryUsed ?? ""} placeholder="Parts/inventory used after approval" className="min-h-20 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />
+        <button disabled={saving} className="h-11 rounded-lg bg-ink font-black text-white disabled:bg-slate-400">{saving ? "Saving..." : "Submit Update"}</button>
       </div>
     </form>
   );
@@ -2103,6 +2127,25 @@ function Reports() {
         </div>
       </Panel>
     </section>
+  );
+}
+
+function AuditLogs({ logs }: { logs: any[] }) {
+  return (
+    <Panel title="Audit Logs" icon={Activity}>
+      <DataTable
+        rows={logs}
+        columns={[
+          ["createdAt", "Time"],
+          ["actorName", "User"],
+          ["role", "Role"],
+          ["action", "Action"],
+          ["entity", "Record Type"],
+          ["entityId", "Record ID"],
+          ["details", "Details"],
+        ]}
+      />
+    </Panel>
   );
 }
 
