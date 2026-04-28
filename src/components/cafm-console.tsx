@@ -903,6 +903,7 @@ function AssetCreateForm({ onSubmit, saving }: { onSubmit: (formData: FormData) 
         <AssetTextField label="Additional description" name="additionalDescription" />
         <AssetTextField label="Parent Asset" name="parentAsset" />
         <AssetTextField label="Department" name="departmentCode" />
+        <ImageUploadField name="documentationUrl" />
         <label className="grid gap-1 text-sm font-bold text-slate-600">
           Remarks
           <textarea name="remarks" className="min-h-24 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />
@@ -1059,7 +1060,7 @@ function AssetEditForm({ asset, saving, onSubmit }: { asset: any; saving: boolea
             <EditField label="Model" name="model" defaultValue={textValue(asset.model)} />
             <EditField label="Warranty expiry" name="warrantyExpiry" type="date" defaultValue={dateValue(asset.warrantyExpiry)} />
             <EditField label="Contract reference" name="contractRef" defaultValue={textValue(asset.contractRef)} />
-            <EditField label="Documentation URL" name="documentationUrl" defaultValue={textValue(asset.documentationUrl)} />
+            <ImageUploadField name="documentationUrl" defaultValue={textValue(asset.documentationUrl)} />
             <div className="grid grid-cols-3 gap-3">
               <EditField label="Cost" name="purchaseCost" type="number" defaultValue={textValue(asset.purchaseCost)} />
               <EditField label="Salvage" name="salvageValue" type="number" defaultValue={textValue(asset.salvageValue)} />
@@ -1111,22 +1112,59 @@ function WorkOrders({
   deleteWorkOrder: (id: string) => Promise<void> | void;
 }) {
   const [editing, setEditing] = useState<any | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
   const [selectedWorkId, setSelectedWorkId] = useState<string | null>(data.workOrders[0]?.id ?? null);
   const [workAction, setWorkAction] = useState<string | null>(null);
   const [showTimeMetrics, setShowTimeMetrics] = useState(false);
   const [showOnlyDelayed, setShowOnlyDelayed] = useState(false);
-  const selectedWork = data.workOrders.find((work) => work.id === selectedWorkId) ?? data.workOrders[0];
-  const workRows = showTimeMetrics ? workMetricRows(data.workOrders, showOnlyDelayed) : data.workOrders;
+  const [view, setView] = useState<"list" | "calendar">("list");
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("All");
+  const [priorityFilter, setPriorityFilter] = useState("All");
+  const [categoryFilter, setCategoryFilter] = useState("All");
+  const [typeFilter, setTypeFilter] = useState("All");
+  const [assignedFilter, setAssignedFilter] = useState("All");
+  const [overdueOnly, setOverdueOnly] = useState(false);
+  const [monthDate, setMonthDate] = useState(() => new Date());
   const isTechnician = roleKindLabel(role) === "technician";
   const canAssignOrEdit = permissions.manageWork && !isTechnician;
   const canExecute = permissions.executeWork;
   const canFinalReview = permissions.verifyWork && !isTechnician;
+  const statuses = ["All", ...Array.from(new Set(data.workOrders.map((work) => work.status).filter(Boolean)))];
+  const categories = ["All", ...Array.from(new Set(data.workOrders.map((work) => work.departmentCode || work.assetType).filter(Boolean)))];
+  const types = ["All", ...Array.from(new Set(data.workOrders.map((work) => work.type).filter(Boolean)))];
+  const teams = ["All", ...Array.from(new Set(data.workOrders.map((work) => work.assignedTeamCode).filter(Boolean)))];
+  const filteredWorks = useMemo(() => {
+    const sourceRows = showTimeMetrics ? workMetricRows(data.workOrders, showOnlyDelayed) : data.workOrders;
+    return sourceRows.filter((work) => {
+      const haystack = `${work.woNo} ${work.title} ${work.type} ${work.assetType} ${work.departmentCode} ${work.serviceCode} ${work.assignedTeamCode} ${work.location} ${work.jobPlan}`.toLowerCase();
+      const queryMatch = !search || haystack.includes(search.toLowerCase());
+      const statusMatch = statusFilter === "All" || work.status === statusFilter;
+      const priorityMatch = priorityFilter === "All" || work.priority === priorityFilter;
+      const categoryMatch = categoryFilter === "All" || work.departmentCode === categoryFilter || work.assetType === categoryFilter;
+      const typeMatch = typeFilter === "All" || work.type === typeFilter;
+      const assignedMatch = assignedFilter === "All" || work.assignedTeamCode === assignedFilter || (assignedFilter === "Not Assigned" && !work.assignedTeamCode);
+      const dueTime = work.dueAt ? new Date(work.dueAt).getTime() : null;
+      const overdueMatch = !overdueOnly || (dueTime !== null && dueTime <= Date.now() + 24 * 60 * 60 * 1000 && work.status !== "CLOSED");
+      return queryMatch && statusMatch && priorityMatch && categoryMatch && typeMatch && assignedMatch && overdueMatch;
+    });
+  }, [data.workOrders, search, statusFilter, priorityFilter, categoryFilter, typeFilter, assignedFilter, overdueOnly, showTimeMetrics, showOnlyDelayed]);
+  const selectedWork = filteredWorks.find((work) => work.id === selectedWorkId) ?? filteredWorks[0] ?? data.workOrders[0];
+  const [page, setPage] = useState(1);
+  const totalPages = Math.max(1, Math.ceil(filteredWorks.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const startIndex = (currentPage - 1) * PAGE_SIZE;
+  const visibleWorks = filteredWorks.slice(startIndex, startIndex + PAGE_SIZE);
 
   useEffect(() => {
-    if (data.workOrders.length && !data.workOrders.some((work) => work.id === selectedWorkId)) {
-      setSelectedWorkId(data.workOrders[0].id);
+    if (filteredWorks.length && !filteredWorks.some((work) => work.id === selectedWorkId)) {
+      setSelectedWorkId(filteredWorks[0].id);
     }
-  }, [data.workOrders, selectedWorkId]);
+  }, [filteredWorks, selectedWorkId]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, statusFilter, priorityFilter, categoryFilter, typeFilter, assignedFilter, overdueOnly, showTimeMetrics, showOnlyDelayed, filteredWorks.length]);
 
   async function runWorkAction(key: string, work: any, action: () => Promise<void> | void) {
     setSelectedWorkId(work.id);
@@ -1139,57 +1177,109 @@ function WorkOrders({
   }
 
   return (
-    <section className="grid gap-5 xl:grid-cols-[1fr_380px]">
-      <Panel title="Work Order Control" icon={Wrench}>
+    <section className="space-y-5">
+      <Panel title="Work Orders" icon={Wrench}>
         <ReportButtons type="work-orders" label="Work orders report" />
-        <div className="mb-4 flex flex-wrap gap-4 rounded-lg bg-slate-50 p-3 text-sm font-bold text-slate-700">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3">
+          <div className="flex gap-2">
+            <button type="button" onClick={() => setView("list")} className={`h-10 rounded-lg px-4 text-sm font-black ${view === "list" ? "bg-lagoon text-white" : "bg-slate-50 text-slate-600"}`}>List</button>
+            <button type="button" onClick={() => setView("calendar")} className={`h-10 rounded-lg px-4 text-sm font-black ${view === "calendar" ? "bg-lagoon text-white" : "bg-slate-50 text-slate-600"}`}>Calendar</button>
+          </div>
+          <div className="flex min-w-[280px] flex-1 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 lg:max-w-md">
+            <Search size={16} className="text-slate-400" />
+            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search Work Orders" className="h-11 w-full text-sm outline-none" />
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button type="button" onClick={() => setShowTimeMetrics((current) => !current)} className={`h-10 rounded-lg px-3 text-sm font-black ${showTimeMetrics ? "bg-lagoon text-white" : "bg-slate-50 text-lagoon"}`}>KPIs</button>
+            {canAssignOrEdit && <button type="button" onClick={() => { setEditing(null); setCreateOpen(true); }} className="flex h-10 items-center gap-2 rounded-lg bg-lagoon px-4 text-sm font-black text-white"><Plus size={16} /> Work Order</button>}
+          </div>
+        </div>
+        <div className="mb-4 flex flex-wrap gap-3 rounded-lg bg-slate-50 p-3 text-sm font-bold text-slate-700">
+          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="h-10 rounded-lg border border-slate-200 bg-white px-3">
+            {statuses.map((status) => <option key={status} value={status}>{status === "All" ? "Status" : status}</option>)}
+          </select>
+          <select value={priorityFilter} onChange={(event) => setPriorityFilter(event.target.value)} className="h-10 rounded-lg border border-slate-200 bg-white px-3">
+            <option value="All">Priority</option><option value="LOW">Low</option><option value="MEDIUM">Medium</option><option value="HIGH">High</option><option value="CRITICAL">Critical</option>
+          </select>
+          <select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)} className="h-10 rounded-lg border border-slate-200 bg-white px-3">
+            {categories.map((category) => <option key={category} value={category}>{category === "All" ? "Category" : category}</option>)}
+          </select>
+          <select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)} className="h-10 rounded-lg border border-slate-200 bg-white px-3">
+            {types.map((type) => <option key={type} value={type}>{type === "All" ? "Work Type" : type}</option>)}
+          </select>
+          <select value={assignedFilter} onChange={(event) => setAssignedFilter(event.target.value)} className="h-10 rounded-lg border border-slate-200 bg-white px-3">
+            <option value="All">Assigned to</option>
+            <option value="Not Assigned">Not Assigned</option>
+            {teams.filter((team) => team !== "All").map((team) => <option key={team} value={team}>{team}</option>)}
+          </select>
+          <button type="button" onClick={() => setAssignedFilter("Not Assigned")} className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-lagoon">Not Assigned</button>
+          <button type="button" onClick={() => setOverdueOnly((current) => !current)} className={`h-10 rounded-lg px-3 ${overdueOnly ? "bg-coral text-white" : "border border-slate-200 bg-white text-lagoon"}`}>Overdue & Due Today</button>
           <label className="flex items-center gap-2"><input type="checkbox" checked={showTimeMetrics} onChange={(event) => setShowTimeMetrics(event.target.checked)} /> Show Time Metrics</label>
           <label className="flex items-center gap-2"><input type="checkbox" checked={showOnlyDelayed} onChange={(event) => setShowOnlyDelayed(event.target.checked)} /> Show Only Delayed</label>
+          <button type="button" onClick={() => { setSearch(""); setStatusFilter("All"); setPriorityFilter("All"); setCategoryFilter("All"); setTypeFilter("All"); setAssignedFilter("All"); setOverdueOnly(false); }} className="ml-auto h-10 rounded-lg bg-white px-3 text-lagoon">Clear all</button>
         </div>
-        <DataTable
-          rows={workRows}
-          columns={showTimeMetrics ? [
-            ["woNo", "WO"],
-            ["assetTag", "Asset"],
-            ["status", "Status"],
-            ["responseMetric", "Response"],
-            ["resolutionMetric", "Resolution"],
-            ["finishMetric", "Finish"],
-            ["totalMetric", "Total Time"],
-            ["assignedTeamCode", "Team"],
-          ] : [
-            ["woNo", "WO"],
-            ["title", "Title"],
-            ["type", "Type"],
-            ["assetType", "Asset Type"],
-            ["assignedTeamCode", "Team"],
-            ["priority", "Priority"],
-            ["status", "Status"],
-            ["cost", "Cost"],
-          ]}
-        />
-        <div className="mt-4 grid gap-2 md:grid-cols-2">
-          {data.workOrders.slice(0, 8).map((work) => (
-            <div
-              key={work.id}
-              onClick={() => setSelectedWorkId(work.id)}
-              className={`flex cursor-pointer flex-wrap items-center justify-between gap-2 rounded-lg p-3 ${
-                selectedWork?.id === work.id ? "bg-indigo-50 ring-2 ring-indigo-100" : "bg-slate-50"
-              }`}
-            >
-              <span className="text-sm font-bold">{work.woNo} / {work.title}</span>
-              <div className="flex gap-2">
-                {canAssignOrEdit && <button disabled={workAction === `${work.id}:edit`} onClick={(event) => { event.stopPropagation(); setSelectedWorkId(work.id); setEditing(work); }} className="rounded-lg bg-slate-700 px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Edit / Assign</button>}
-                {canExecute && <button disabled={workAction === `${work.id}:start`} onClick={(event) => { event.stopPropagation(); runWorkAction(`${work.id}:start`, work, () => updateWorkStatus(work.id, "IN_PROGRESS")); }} className="rounded-lg bg-lagoon px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">{workAction === `${work.id}:start` ? "Saving..." : "In Progress"}</button>}
-                {canExecute && <button disabled={workAction === `${work.id}:hold`} onClick={(event) => { event.stopPropagation(); runWorkAction(`${work.id}:hold`, work, () => updateWorkStatus(work.id, "ON_HOLD")); }} className="rounded-lg bg-slate-500 px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">{workAction === `${work.id}:hold` ? "Saving..." : "On Hold"}</button>}
-                {canExecute && <button disabled={workAction === `${work.id}:complete`} onClick={(event) => { event.stopPropagation(); runWorkAction(`${work.id}:complete`, work, () => updateWorkStatus(work.id, "COMPLETED")); }} className="rounded-lg bg-leaf px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">{workAction === `${work.id}:complete` ? "Saving..." : "Submit Closure"}</button>}
-                {canFinalReview && <button disabled={workAction === `${work.id}:close`} onClick={(event) => { event.stopPropagation(); runWorkAction(`${work.id}:close`, work, () => updateWorkStatus(work.id, "CLOSED")); }} className="rounded-lg bg-ink px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">{workAction === `${work.id}:close` ? "Saving..." : "Close"}</button>}
-                {canFinalReview && <button disabled={workAction === `${work.id}:reopen`} onClick={(event) => { event.stopPropagation(); runWorkAction(`${work.id}:reopen`, work, () => updateWorkStatus(work.id, "REOPENED")); }} className="rounded-lg bg-amber-600 px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">{workAction === `${work.id}:reopen` ? "Saving..." : "Reopen"}</button>}
-                {canAssignOrEdit && <button disabled={workAction === `${work.id}:delete`} onClick={(event) => { event.stopPropagation(); runWorkAction(`${work.id}:delete`, work, () => deleteWorkOrder(work.id)); }} className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">{workAction === `${work.id}:delete` ? "Deleting..." : "Delete"}</button>}
-              </div>
+        {view === "list" ? (
+          <>
+            <div className="overflow-auto rounded-lg border border-slate-200 scrollbar-thin">
+              <table className="min-w-[1700px] border-collapse bg-white text-sm">
+                <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
+                  <tr>
+                    <th className="px-3 py-3 font-black">#</th>
+                    <th className="px-3 py-3 font-black">Title</th>
+                    <th className="px-3 py-3 font-black">Status</th>
+                    <th className="px-3 py-3 font-black">Priority</th>
+                    <th className="px-3 py-3 font-black">Category</th>
+                    <th className="px-3 py-3 font-black">Due Date</th>
+                    <th className="px-3 py-3 font-black">Asset</th>
+                    <th className="px-3 py-3 font-black">Location</th>
+                    <th className="px-3 py-3 font-black">Work Type</th>
+                    <th className="px-3 py-3 font-black">Description</th>
+                    <th className="px-3 py-3 font-black">Created when</th>
+                    <th className="px-3 py-3 font-black">Assigned To</th>
+                    <th className="px-3 py-3 font-black">Updated when</th>
+                    <th className="px-3 py-3 font-black">Schedule</th>
+                    <th className="px-3 py-3 font-black">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visibleWorks.map((work, index) => (
+                    <tr key={work.id} onClick={() => setSelectedWorkId(work.id)} className={`cursor-pointer border-t border-slate-100 align-top ${selectedWork?.id === work.id ? "bg-lagoon/5" : "hover:bg-slate-50"}`}>
+                      <td className="whitespace-nowrap px-3 py-3 font-black text-slate-500">{startIndex + index + 1}</td>
+                      <td className="max-w-[280px] px-3 py-3"><div className="font-black">{work.title}</div><div className="mt-1 text-xs font-bold text-slate-500">{work.woNo}</div></td>
+                      <td className="whitespace-nowrap px-3 py-3"><WorkOrderStatusBadge status={work.status} /></td>
+                      <td className="whitespace-nowrap px-3 py-3"><RequestPriorityBadge priority={work.priority} /></td>
+                      <td className="whitespace-nowrap px-3 py-3">{work.departmentCode || work.assetType || "-"}</td>
+                      <td className="whitespace-nowrap px-3 py-3">{formatDateCell(work.dueAt)}</td>
+                      <td className="whitespace-nowrap px-3 py-3 text-lagoon">{work.asset?.tag ?? work.assetTag ?? "-"}</td>
+                      <td className="max-w-[260px] px-3 py-3 text-slate-600">{work.asset?.buildingCode || work.asset?.floor || work.location || "-"}</td>
+                      <td className="whitespace-nowrap px-3 py-3">{work.type || "-"}</td>
+                      <td className="max-w-[320px] px-3 py-3 text-slate-600"><div className="line-clamp-2">{work.jobPlan || work.workNotes || work.title}</div></td>
+                      <td className="whitespace-nowrap px-3 py-3">{formatDateCell(work.createdAt)}</td>
+                      <td className="whitespace-nowrap px-3 py-3">{work.assignedTo?.email ?? work.assignedTeamCode ?? "-"}</td>
+                      <td className="whitespace-nowrap px-3 py-3">{formatDateCell(work.updatedAt)}</td>
+                      <td className="whitespace-nowrap px-3 py-3 text-lagoon">{formatDateCell(work.plannedStart)}</td>
+                      <td className="px-3 py-3">
+                        <div className="flex min-w-[300px] flex-wrap gap-2">
+                          {canAssignOrEdit && <button type="button" disabled={workAction === `${work.id}:edit`} onClick={(event) => { event.stopPropagation(); setSelectedWorkId(work.id); setEditing(work); }} className="rounded-lg bg-slate-700 px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Edit</button>}
+                          {canExecute && <button type="button" disabled={workAction === `${work.id}:start`} onClick={(event) => { event.stopPropagation(); runWorkAction(`${work.id}:start`, work, () => updateWorkStatus(work.id, "IN_PROGRESS")); }} className="rounded-lg bg-lagoon px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">In Progress</button>}
+                          {canExecute && <button type="button" disabled={workAction === `${work.id}:hold`} onClick={(event) => { event.stopPropagation(); runWorkAction(`${work.id}:hold`, work, () => updateWorkStatus(work.id, "ON_HOLD")); }} className="rounded-lg bg-slate-500 px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">On Hold</button>}
+                          {canExecute && <button type="button" disabled={workAction === `${work.id}:complete`} onClick={(event) => { event.stopPropagation(); runWorkAction(`${work.id}:complete`, work, () => updateWorkStatus(work.id, "COMPLETED")); }} className="rounded-lg bg-leaf px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Complete</button>}
+                          {canFinalReview && <button type="button" disabled={workAction === `${work.id}:close`} onClick={(event) => { event.stopPropagation(); runWorkAction(`${work.id}:close`, work, () => updateWorkStatus(work.id, "CLOSED")); }} className="rounded-lg bg-ink px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Close</button>}
+                          {canAssignOrEdit && <button type="button" disabled={workAction === `${work.id}:delete`} onClick={(event) => { event.stopPropagation(); runWorkAction(`${work.id}:delete`, work, () => deleteWorkOrder(work.id)); }} className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Delete</button>}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          ))}
-        </div>
+            <div className="mt-3">
+              <PaginationControls page={currentPage} totalPages={totalPages} onPageChange={setPage} totalItems={filteredWorks.length} />
+            </div>
+          </>
+        ) : (
+          <WorkOrderCalendar works={filteredWorks} monthDate={monthDate} setMonthDate={setMonthDate} setSelectedWorkId={setSelectedWorkId} />
+        )}
         {selectedWork && (
           <div className="mt-5">
             <DetailPanel
@@ -1214,11 +1304,17 @@ function WorkOrders({
           </div>
         )}
       </Panel>
-      <div className="space-y-5">
-        {canAssignOrEdit && <WorkOrderForm title="Generate Work Order" data={data} onSubmit={submitWorkOrder} saving={saving} />}
-        {editing && canAssignOrEdit && <WorkOrderForm title={`Edit / Assign ${editing.woNo}`} data={data} work={editing} onSubmit={(formData) => updateWorkOrder(editing.id, formData)} saving={saving} />}
-        {selectedWork && canExecute && !canAssignOrEdit && <WorkExecutionForm work={selectedWork} saving={saving} onSubmit={(formData) => updateWorkOrder(selectedWork.id, formData)} />}
-      </div>
+      {canAssignOrEdit && createOpen && (
+        <RequestModalShell title="New Work Order" onClose={() => setCreateOpen(false)}>
+          <WorkOrderForm title="" data={data} onSubmit={async (formData) => { await submitWorkOrder(formData); setCreateOpen(false); }} saving={saving} />
+        </RequestModalShell>
+      )}
+      {editing && canAssignOrEdit && (
+        <RequestModalShell title={`Edit ${editing.woNo}`} onClose={() => setEditing(null)}>
+          <WorkOrderForm title="" data={data} work={editing} onSubmit={async (formData) => { await updateWorkOrder(editing.id, formData); setEditing(null); }} saving={saving} />
+        </RequestModalShell>
+      )}
+      {selectedWork && canExecute && !canAssignOrEdit && <WorkExecutionForm work={selectedWork} saving={saving} onSubmit={(formData) => updateWorkOrder(selectedWork.id, formData)} />}
     </section>
   );
 }
@@ -1609,7 +1705,7 @@ function ServiceRequestForm({ title, request, services, departments, teams, loca
         )}
         {!request && <input type="hidden" name="status" value="NEW" />}
         <input type="hidden" name="assignedTeamCode" value={request?.assignedTeamCode ?? ""} />
-        <textarea name="attachmentUrls" defaultValue={request?.attachmentUrls ?? ""} placeholder="Attachment links / proof URLs" className="min-h-20 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />
+        <ImageUploadField name="attachmentUrls" defaultValue={request?.attachmentUrls ?? ""} />
         {request && <textarea name="rejectionReason" defaultValue={request?.rejectionReason ?? ""} placeholder="Reject / close reason" className="min-h-20 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />}
         <div className="flex justify-end gap-3">
           <button type="submit" disabled={saving} className="h-11 rounded-lg bg-ink px-5 font-black text-white disabled:bg-slate-400">{saving ? "Saving..." : "Save"}</button>
@@ -1660,6 +1756,113 @@ function formatDateCell(value: string | null | undefined) {
   return date.toLocaleString("en-US", { month: "2-digit", day: "2-digit", year: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
+function WorkOrderStatusBadge({ status }: { status: string }) {
+  const tone =
+    status === "CLOSED" || status === "VERIFIED" ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
+    status === "IN_PROGRESS" || status === "ASSIGNED" ? "bg-cyan-50 text-cyan-700 border-cyan-200" :
+    status === "ON_HOLD" || status === "REOPENED" ? "bg-amber-50 text-amber-700 border-amber-200" :
+    status === "REJECTED" ? "bg-rose-50 text-rose-700 border-rose-200" :
+    "bg-slate-50 text-slate-700 border-slate-200";
+  return <span className={`rounded-full border px-2 py-1 text-xs font-black ${tone}`}>{status?.replaceAll("_", " ") || "OPEN"}</span>;
+}
+
+function WorkOrderCalendar({ works, monthDate, setMonthDate, setSelectedWorkId }: { works: any[]; monthDate: Date; setMonthDate: (date: Date) => void; setSelectedWorkId: (id: string) => void }) {
+  const year = monthDate.getFullYear();
+  const month = monthDate.getMonth();
+  const first = new Date(year, month, 1);
+  const start = new Date(first);
+  start.setDate(first.getDate() - first.getDay());
+  const days = Array.from({ length: 42 }, (_, index) => {
+    const date = new Date(start);
+    date.setDate(start.getDate() + index);
+    return date;
+  });
+  const monthLabel = monthDate.toLocaleString("en-US", { month: "long", year: "numeric" });
+  const worksByDay = works.reduce((acc: Record<string, any[]>, work) => {
+    const value = work.dueAt || work.plannedStart || work.createdAt;
+    if (!value) return acc;
+    const key = new Date(value).toISOString().slice(0, 10);
+    acc[key] = [...(acc[key] ?? []), work];
+    return acc;
+  }, {});
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 p-4">
+        <div className="flex items-center gap-3">
+          <button type="button" onClick={() => setMonthDate(new Date(year, month - 1, 1))} className="h-9 rounded-lg border border-slate-200 px-3 text-lagoon">{"<"}</button>
+          <button type="button" onClick={() => setMonthDate(new Date(year, month + 1, 1))} className="h-9 rounded-lg border border-slate-200 px-3 text-lagoon">{">"}</button>
+          <h4 className="text-2xl font-black">{monthLabel}</h4>
+        </div>
+        <div className="flex rounded-lg border border-lagoon text-sm font-black text-lagoon">
+          <span className="px-3 py-2">Week</span>
+          <span className="bg-lagoon px-3 py-2 text-white">Month</span>
+        </div>
+      </div>
+      <div className="grid grid-cols-7 border-b border-slate-200 bg-slate-100 text-center text-xs font-black">
+        {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => <div key={day} className="border-r border-slate-200 p-2 last:border-r-0">{day}</div>)}
+      </div>
+      <div className="grid grid-cols-7">
+        {days.map((day) => {
+          const key = day.toISOString().slice(0, 10);
+          const dayWorks = worksByDay[key] ?? [];
+          const inMonth = day.getMonth() === month;
+          const isToday = key === new Date().toISOString().slice(0, 10);
+          return (
+            <div key={key} className={`min-h-32 border-b border-r border-slate-200 p-2 last:border-r-0 ${inMonth ? "bg-white" : "bg-slate-100"} ${isToday ? "bg-lime-50" : ""}`}>
+              <div className={`mb-2 grid h-6 w-6 place-items-center rounded-full text-xs font-black ${isToday ? "bg-lime-400 text-ink" : "text-slate-500"}`}>{day.getDate()}</div>
+              <div className="grid gap-1">
+                {dayWorks.slice(0, 4).map((work) => (
+                  <button key={work.id} type="button" onClick={() => setSelectedWorkId(work.id)} className="truncate rounded bg-slate-50 px-2 py-1 text-left text-xs font-bold text-slate-700 hover:bg-lagoon/10">
+                    {work.title} <span className="text-coral">{work.priority === "CRITICAL" ? "!" : ""}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function ImageUploadField({ name, defaultValue = "" }: { name: string; defaultValue?: string }) {
+  const [value, setValue] = useState(defaultValue);
+  const [uploading, setUploading] = useState(false);
+  const urls = value.split(/\s+/).map((item) => item.trim()).filter(Boolean);
+
+  async function upload(files: FileList | null) {
+    if (!files?.length) return;
+    const formData = new FormData();
+    Array.from(files).forEach((file) => formData.append("files", file));
+    setUploading(true);
+    const response = await fetch("/api/uploads", { method: "POST", body: formData });
+    const result = await response.json();
+    const next = [...urls, ...(result.urls ?? [])].join("\n");
+    setValue(next);
+    setUploading(false);
+  }
+
+  return (
+    <div className="grid gap-2 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3">
+      <input type="hidden" name={name} value={value} />
+      <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg bg-white p-4 text-center text-sm font-bold text-slate-600">
+        <Upload size={18} className="text-lagoon" />
+        {uploading ? "Uploading..." : "Upload images"}
+        <input type="file" accept="image/*" multiple className="hidden" onChange={(event) => upload(event.target.files)} />
+      </label>
+      <textarea value={value} onChange={(event) => setValue(event.target.value)} placeholder="Uploaded image URLs" className="min-h-20 rounded-lg border border-slate-200 p-3 text-sm outline-none focus:border-lagoon" />
+      {urls.length > 0 && (
+        <div className="grid grid-cols-3 gap-2">
+          {urls.slice(0, 6).map((url) => (
+            <img key={url} src={url} alt="Uploaded proof" className="h-20 w-full rounded-lg object-cover" />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function WorkOrderForm({ title, work, data, onSubmit, saving }: { title: string; work?: any; data: ConsoleData; onSubmit: (formData: FormData) => void; saving: boolean }) {
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1706,13 +1909,13 @@ function WorkOrderForm({ title, work, data, onSubmit, saving }: { title: string;
         {work && <select name="status" defaultValue={work.status} className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon"><option>PENDING_ASSIGNMENT</option><option>ASSIGNED</option><option>ACCEPTED</option><option>REJECTED</option><option>IN_PROGRESS</option><option>ON_HOLD</option><option>COMPLETED</option><option>VERIFIED</option><option>REOPENED</option><option>CLOSED</option></select>}
         <textarea name="jobPlan" defaultValue={work?.jobPlan ?? ""} placeholder="Job plan / work steps" className="min-h-24 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />
         <textarea name="safetyNotes" defaultValue={work?.safetyNotes ?? ""} placeholder="Safety notes" className="min-h-20 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />
+        <ImageUploadField name="photoUrls" defaultValue={work?.photoUrls ?? ""} />
         {work && (
           <div className="grid gap-3 rounded-lg bg-slate-50 p-3">
             <p className="text-sm font-black text-slate-700">Team Member Update</p>
             <input name="responseAt" type="datetime-local" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
             <input name="resolutionAt" type="datetime-local" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
             <input name="finishedAt" type="datetime-local" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
-            <textarea name="photoUrls" defaultValue={work.photoUrls ?? ""} placeholder="Picture links / uploaded evidence URLs" className="min-h-20 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />
             <textarea name="assetsUsed" defaultValue={work.assetsUsed ?? ""} placeholder="Assets added or used" className="min-h-20 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />
             <textarea name="inventoryUsed" defaultValue={work.inventoryUsed ?? ""} placeholder="Inventory/spares used" className="min-h-20 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />
             <textarea name="workNotes" defaultValue={work.workNotes ?? ""} placeholder="Work notes / execution log" className="min-h-20 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />
@@ -1751,7 +1954,7 @@ function WorkExecutionForm({ work, onSubmit, saving }: { work: any; onSubmit: (f
           <option>COMPLETED</option>
         </select>
         <textarea name="workNotes" defaultValue={work.workNotes ?? ""} placeholder="Work description / notes" className="min-h-24 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />
-        <textarea name="photoUrls" defaultValue={work.photoUrls ?? ""} placeholder="Before / after image links" className="min-h-20 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />
+        <ImageUploadField name="photoUrls" defaultValue={work.photoUrls ?? ""} />
         <textarea name="materialRequest" defaultValue={work.materialRequest ?? ""} placeholder="Parts request for supervisor approval" className="min-h-20 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />
         <textarea name="assetsUsed" defaultValue={work.assetsUsed ?? ""} placeholder="Assets requested or used" className="min-h-20 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />
         <textarea name="inventoryUsed" defaultValue={work.inventoryUsed ?? ""} placeholder="Parts/inventory used after approval" className="min-h-20 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />

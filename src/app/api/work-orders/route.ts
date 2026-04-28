@@ -17,6 +17,7 @@ const schema = z.object({
   priority: z.string().optional(),
   assetTag: z.string().optional(),
   jobPlan: z.string().optional(),
+  photoUrls: z.string().optional(),
 });
 
 const dueHours = {
@@ -61,6 +62,7 @@ export async function POST(request: Request) {
         cost: 0,
         jobPlan: input.jobPlan || input.title || "Work to be defined by supervisor.",
         safetyNotes: "Supervisor must verify permits, isolation and access requirements before work starts.",
+        photoUrls: input.photoUrls || null,
       },
     });
 
