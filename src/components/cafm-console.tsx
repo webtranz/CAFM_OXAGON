@@ -1251,17 +1251,44 @@ function Helpdesk({
   saving: boolean;
 }) {
   const [editing, setEditing] = useState<any | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
   const [selectedRequestId, setSelectedRequestId] = useState<string | null>(requests[0]?.id ?? null);
   const [requestAction, setRequestAction] = useState<string | null>(null);
   const [assignments, setAssignments] = useState<Record<string, { assignedTeamCode: string; assignedToEmail: string }>>({});
-  const selectedRequest = requests.find((request) => request.id === selectedRequestId) ?? requests[0];
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("All");
+  const [priorityFilter, setPriorityFilter] = useState("All");
+  const [categoryFilter, setCategoryFilter] = useState("All");
+  const [overdueOnly, setOverdueOnly] = useState(false);
   const isSupervisorView = roleKindLabel(role) === "admin" || roleKindLabel(role) === "supervisor";
+  const categories = ["All", ...Array.from(new Set(requests.map((request) => request.category).filter(Boolean)))];
+  const filteredRequests = useMemo(() => {
+    return requests.filter((request) => {
+      const haystack = `${request.ticketNo} ${request.title} ${request.description} ${request.requester} ${request.location} ${request.category} ${request.departmentCode} ${request.serviceCode}`.toLowerCase();
+      const queryMatch = !search || haystack.includes(search.toLowerCase());
+      const statusMatch = statusFilter === "All" || request.status === statusFilter;
+      const priorityMatch = priorityFilter === "All" || request.priority === priorityFilter;
+      const categoryMatch = categoryFilter === "All" || request.category === categoryFilter;
+      const overdueMatch = !overdueOnly || (request.dueAt ? new Date(request.dueAt).getTime() < Date.now() && request.status !== "CLOSED" : false);
+      return queryMatch && statusMatch && priorityMatch && categoryMatch && overdueMatch;
+    });
+  }, [requests, search, statusFilter, priorityFilter, categoryFilter, overdueOnly]);
+  const selectedRequest = filteredRequests.find((request) => request.id === selectedRequestId) ?? filteredRequests[0] ?? requests[0];
+  const [page, setPage] = useState(1);
+  const totalPages = Math.max(1, Math.ceil(filteredRequests.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const startIndex = (currentPage - 1) * PAGE_SIZE;
+  const visibleRequests = filteredRequests.slice(startIndex, startIndex + PAGE_SIZE);
 
   useEffect(() => {
-    if (requests.length && !requests.some((request) => request.id === selectedRequestId)) {
-      setSelectedRequestId(requests[0].id);
+    if (filteredRequests.length && !filteredRequests.some((request) => request.id === selectedRequestId)) {
+      setSelectedRequestId(filteredRequests[0].id);
     }
-  }, [requests, selectedRequestId]);
+  }, [filteredRequests, selectedRequestId]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, statusFilter, priorityFilter, categoryFilter, overdueOnly, filteredRequests.length]);
 
   async function runRequestAction(key: string, request: any, action: () => Promise<void> | void) {
     setSelectedRequestId(request.id);
@@ -1285,27 +1312,115 @@ function Helpdesk({
   }
 
   return (
-    <section className="grid gap-5 xl:grid-cols-[1fr_380px]">
+    <section className="space-y-5">
       <Panel title="Helpdesk & SLA Triage" icon={TicketCheck}>
         <ReportButtons type="requests" label="Service requests report" />
-        <DataTable
-          rows={requests}
-          columns={[
-            ["ticketNo", "Ticket"],
-            ["title", "Request"],
-            ["category", "Category"],
-            ["departmentCode", "Dept"],
-            ["serviceCode", "Service"],
-            ["assignedTeamCode", "Team"],
-            ["assignedSupervisorEmail", "Supervisor"],
-            ["requester", "Requester"],
-            ["priority", "Priority"],
-            ["status", "Status"],
-            ["location", "Location"],
-          ]}
-        />
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+          <div className="flex flex-1 flex-wrap items-center gap-2">
+            <div className="flex h-11 min-w-[250px] flex-1 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3">
+              <Search size={16} className="text-slate-400" />
+              <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search requests" className="w-full text-sm outline-none" />
+            </div>
+            <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold">
+              <option value="All">Status</option>
+              <option value="NEW">New</option>
+              <option value="TRIAGED">Pending</option>
+              <option value="APPROVED">Approved</option>
+              <option value="REJECTED">Rejected</option>
+              <option value="CLOSED">Closed</option>
+            </select>
+            <select value={priorityFilter} onChange={(event) => setPriorityFilter(event.target.value)} className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold">
+              <option value="All">Priority</option>
+              <option value="LOW">Low</option>
+              <option value="MEDIUM">Medium</option>
+              <option value="HIGH">High</option>
+              <option value="CRITICAL">Critical</option>
+            </select>
+            <select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)} className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold">
+              {categories.map((category) => <option key={category} value={category}>{category === "All" ? "Category" : category}</option>)}
+            </select>
+            <button type="button" onClick={() => setOverdueOnly((current) => !current)} className={`h-11 rounded-lg px-3 text-sm font-black ${overdueOnly ? "bg-coral text-white" : "border border-slate-200 bg-white text-slate-600"}`}>Overdue & Due Today</button>
+          </div>
+          {permissions.manageRequests && <button type="button" onClick={() => { setEditing(null); setCreateOpen(true); }} className="flex h-11 items-center gap-2 rounded-lg bg-lagoon px-4 text-sm font-black text-white shadow-sm"><Plus size={16} /> Request</button>}
+        </div>
+
+        <div className="overflow-auto rounded-lg border border-slate-200 scrollbar-thin">
+          <table className="min-w-[1500px] border-collapse bg-white text-sm">
+            <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
+              <tr>
+                <th className="px-3 py-3 font-black">#</th>
+                <th className="px-3 py-3 font-black">Title</th>
+                <th className="px-3 py-3 font-black">Status</th>
+                <th className="px-3 py-3 font-black">Priority</th>
+                <th className="px-3 py-3 font-black">Category</th>
+                <th className="px-3 py-3 font-black">Created when</th>
+                <th className="px-3 py-3 font-black">Needed by</th>
+                <th className="px-3 py-3 font-black">Location</th>
+                <th className="px-3 py-3 font-black">Department</th>
+                <th className="px-3 py-3 font-black">Service</th>
+                <th className="px-3 py-3 font-black">Description</th>
+                <th className="px-3 py-3 font-black">Created by</th>
+                <th className="px-3 py-3 font-black">Supervisor</th>
+                <th className="px-3 py-3 font-black">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visibleRequests.map((request, index) => {
+                const assignment = assignmentFor(request);
+                return (
+                  <tr
+                    key={request.id}
+                    onClick={() => setSelectedRequestId(request.id)}
+                    className={`cursor-pointer border-t border-slate-100 align-top ${selectedRequest?.id === request.id ? "bg-lagoon/5" : "hover:bg-slate-50"}`}
+                  >
+                    <td className="whitespace-nowrap px-3 py-3 font-black text-slate-500">{startIndex + index + 1}</td>
+                    <td className="max-w-[280px] px-3 py-3">
+                      <div className="font-black text-slate-800">{request.title}</div>
+                      <div className="mt-1 text-xs font-bold text-slate-500">{request.ticketNo}</div>
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-3"><RequestStatusBadge status={request.status} /></td>
+                    <td className="whitespace-nowrap px-3 py-3"><RequestPriorityBadge priority={request.priority} /></td>
+                    <td className="whitespace-nowrap px-3 py-3">{request.category || "-"}</td>
+                    <td className="whitespace-nowrap px-3 py-3 text-slate-600">{formatDateCell(request.createdAt)}</td>
+                    <td className="whitespace-nowrap px-3 py-3 text-slate-600">{formatDateCell(request.dueAt)}</td>
+                    <td className="max-w-[260px] px-3 py-3 text-slate-600">{request.location || "-"}</td>
+                    <td className="whitespace-nowrap px-3 py-3">{request.departmentCode || "-"}</td>
+                    <td className="whitespace-nowrap px-3 py-3">{request.serviceCode || "-"}</td>
+                    <td className="max-w-[320px] px-3 py-3 text-slate-600"><div className="line-clamp-2">{request.description || "-"}</div></td>
+                    <td className="whitespace-nowrap px-3 py-3">{request.requester || "-"}</td>
+                    <td className="whitespace-nowrap px-3 py-3">{request.assignedSupervisorEmail || "-"}</td>
+                    <td className="px-3 py-3">
+                      <div className="flex min-w-[260px] flex-wrap gap-2">
+                        {isSupervisorView && permissions.manageRequests && <button type="button" onClick={(event) => { event.stopPropagation(); setSelectedRequestId(request.id); setEditing(request); }} className="rounded-lg bg-lagoon px-3 py-2 text-xs font-black text-white">Edit</button>}
+                        {isSupervisorView && permissions.approveRequests && <button type="button" disabled={requestAction === `${request.id}:review`} onClick={(event) => { event.stopPropagation(); runRequestAction(`${request.id}:review`, request, () => updateRequest(request.id, requestFormData(request, "TRIAGED", "", { assignedTeamCode: assignment.assignedTeamCode }))); }} className="rounded-lg bg-slate-700 px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">{requestAction === `${request.id}:review` ? "Saving..." : "Review"}</button>}
+                        {isSupervisorView && permissions.manageRequests && <button type="button" disabled={Boolean(request.workOrder) || requestAction === `${request.id}:wo`} onClick={(event) => { event.stopPropagation(); runRequestAction(`${request.id}:wo`, request, () => convertRequest(request.id, { assignedTeamCode: assignment.assignedTeamCode })); }} className="rounded-lg bg-ink px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">{requestAction === `${request.id}:wo` ? "Creating..." : request.workOrder ? "WO Created" : "Create WO"}</button>}
+                        {isSupervisorView && permissions.approveRequests && <button type="button" disabled={requestAction === `${request.id}:reject`} onClick={(event) => { event.stopPropagation(); runRequestAction(`${request.id}:reject`, request, () => updateRequest(request.id, requestFormData(request, "REJECTED", "Rejected by supervisor/helpdesk", { assignedTeamCode: assignment.assignedTeamCode }))); }} className="rounded-lg bg-amber-600 px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">{requestAction === `${request.id}:reject` ? "Saving..." : "Reject"}</button>}
+                        {isSupervisorView && permissions.manageRequests && <button type="button" disabled={requestAction === `${request.id}:delete`} onClick={(event) => { event.stopPropagation(); runRequestAction(`${request.id}:delete`, request, () => deleteRequest(request.id)); }} className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">{requestAction === `${request.id}:delete` ? "Deleting..." : "Delete"}</button>}
+                      </div>
+                      {isSupervisorView && permissions.manageRequests && (
+                        <select
+                          value={assignment.assignedTeamCode}
+                          onClick={(event) => event.stopPropagation()}
+                          onChange={(event) => setAssignment(request.id, { assignedTeamCode: event.target.value, assignedToEmail: "" })}
+                          className="mt-2 h-10 min-w-[220px] rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-lagoon"
+                        >
+                          <option value="">Assign service team</option>
+                          {teams.map((team) => <option key={team.id} value={team.code}>{team.code} - {team.name}</option>)}
+                        </select>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        <div className="mt-3">
+          <PaginationControls page={currentPage} totalPages={totalPages} onPageChange={setPage} totalItems={filteredRequests.length} />
+        </div>
+
         <div className="mt-4 grid gap-2">
-          {requests.slice(0, 8).map((request) => {
+          {visibleRequests.map((request) => {
             const assignment = assignmentFor(request);
             return (
               <div
@@ -1364,10 +1479,41 @@ function Helpdesk({
           </div>
         )}
       </Panel>
-      <div className="space-y-5">
-        {permissions.manageRequests && <ServiceRequestForm title="Create Service Request" services={services} departments={departments} teams={teams} locations={locations} onSubmit={submitRequest} saving={saving} />}
-        {editing && permissions.manageRequests && <ServiceRequestForm title={`Edit ${editing.ticketNo}`} request={editing} services={services} departments={departments} teams={teams} locations={locations} onSubmit={(formData) => updateRequest(editing.id, formData)} saving={saving} />}
-      </div>
+      {permissions.manageRequests && createOpen && (
+        <RequestModalShell title="New Request" onClose={() => setCreateOpen(false)}>
+          <ServiceRequestForm
+            title=""
+            services={services}
+            departments={departments}
+            teams={teams}
+            locations={locations}
+            onSubmit={async (formData) => {
+              await submitRequest(formData);
+              setCreateOpen(false);
+            }}
+            saving={saving}
+            mode="modal"
+          />
+        </RequestModalShell>
+      )}
+      {editing && permissions.manageRequests && (
+        <RequestModalShell title={`Edit ${editing.ticketNo}`} onClose={() => setEditing(null)}>
+          <ServiceRequestForm
+            title=""
+            request={editing}
+            services={services}
+            departments={departments}
+            teams={teams}
+            locations={locations}
+            onSubmit={async (formData) => {
+              await updateRequest(editing.id, formData);
+              setEditing(null);
+            }}
+            saving={saving}
+            mode="modal"
+          />
+        </RequestModalShell>
+      )}
     </section>
   );
 }
@@ -1389,7 +1535,7 @@ function requestFormData(request: any, status: string, rejectionReason = "", ove
   return formData;
 }
 
-function ServiceRequestForm({ title, request, services, departments, teams, locations, onSubmit, saving }: { title: string; request?: any; services: any[]; departments: any[]; teams: any[]; locations: any[]; onSubmit: (formData: FormData) => void; saving: boolean }) {
+function ServiceRequestForm({ title, request, services, departments, teams, locations, onSubmit, saving, mode = "panel" }: { title: string; request?: any; services: any[]; departments: any[]; teams: any[]; locations: any[]; onSubmit: (formData: FormData) => void; saving: boolean; mode?: "panel" | "modal" }) {
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
@@ -1398,25 +1544,64 @@ function ServiceRequestForm({ title, request, services, departments, teams, loca
   }
 
   const locationOptions = locations.map((location) => `${location.site} / ${location.building} / ${location.floor} / ${location.room}`);
+  const formClass = mode === "modal" ? "" : "rounded-lg border border-white/80 bg-white p-5 shadow-lift";
+  const [priority, setPriority] = useState(request?.priority ?? "MEDIUM");
+  const priorities = [
+    { value: "LOW", label: "Low", tone: "bg-emerald-50 text-emerald-700 border-emerald-200" },
+    { value: "MEDIUM", label: "Medium", tone: "bg-amber-50 text-amber-700 border-amber-200" },
+    { value: "HIGH", label: "High", tone: "bg-orange-50 text-orange-700 border-orange-200" },
+    { value: "CRITICAL", label: "Critical", tone: "bg-rose-50 text-rose-700 border-rose-200" },
+  ];
 
   return (
-    <form onSubmit={handleSubmit} className="rounded-lg border border-white/80 bg-white p-5 shadow-lift">
-      <h3 className="text-xl font-black">{title}</h3>
-      <div className="mt-4 grid gap-3">
-        <input name="title" defaultValue={request?.title ?? ""} placeholder="Request title" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
-        <select name="departmentCode" defaultValue={request?.departmentCode ?? ""} className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon">
-          <option value="">Select department</option>
-          {departments.map((department) => <option key={department.id} value={department.code}>{department.code} - {department.name}</option>)}
+    <form onSubmit={handleSubmit} className={formClass}>
+      {title ? <h3 className="text-xl font-black">{title}</h3> : null}
+      <div className={`${title ? "mt-4" : ""} grid gap-4`}>
+        <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 text-center text-sm font-bold text-slate-500">
+          Upload images or files by drag and drop, or paste links below.
+        </div>
+        <input name="title" defaultValue={request?.title ?? ""} placeholder="Title" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
+        <label className="grid gap-2 text-sm font-bold text-slate-600">
+          Description
+          <textarea name="description" defaultValue={request?.description ?? ""} placeholder="Describe the issue" className="min-h-24 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />
+        </label>
+        <div className="flex flex-wrap items-center gap-2 rounded-lg bg-slate-50 p-3">
+          <span className="text-sm font-black text-slate-600">Priority</span>
+          {priorities.map((item) => (
+            <button
+              key={item.value}
+              type="button"
+              onClick={() => setPriority(item.value)}
+              className={`rounded-lg border px-3 py-2 text-xs font-black ${priority === item.value ? item.tone : "border-slate-200 bg-white text-slate-500"}`}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+        <input type="hidden" name="priority" value={priority} />
+        <select name="location" defaultValue={request?.location ?? ""} className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon">
+          <option value="">Location</option>
+          {locationOptions.map((location) => <option key={location}>{location}</option>)}
         </select>
-        <select name="serviceCode" defaultValue={request?.serviceCode ?? ""} className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon">
-          <option value="">Select service</option>
-          {services.map((service) => <option key={service.id} value={service.code}>{service.code} - {service.name}</option>)}
-        </select>
-        <input name="category" defaultValue={request?.category ?? ""} placeholder="Category" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
-        <input name="requester" defaultValue={request?.requester ?? ""} placeholder="Requester" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
-        <select name="priority" defaultValue={request?.priority ?? "MEDIUM"} className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon">
-          <option>LOW</option><option>MEDIUM</option><option>HIGH</option><option>CRITICAL</option>
-        </select>
+        <div className="grid gap-3 md:grid-cols-2">
+          <select name="category" defaultValue={request?.category ?? ""} className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon">
+            <option value="">Category</option>
+            {Array.from(new Set(services.map((service) => service.category).filter(Boolean))).map((category) => (
+              <option key={category} value={category}>{category}</option>
+            ))}
+          </select>
+          <input name="requester" defaultValue={request?.requester ?? ""} placeholder="Created by / requester" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
+        </div>
+        <div className="grid gap-3 md:grid-cols-2">
+          <select name="departmentCode" defaultValue={request?.departmentCode ?? ""} className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon">
+            <option value="">Department</option>
+            {departments.map((department) => <option key={department.id} value={department.code}>{department.code} - {department.name}</option>)}
+          </select>
+          <select name="serviceCode" defaultValue={request?.serviceCode ?? ""} className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon">
+            <option value="">Service</option>
+            {services.map((service) => <option key={service.id} value={service.code}>{service.code} - {service.name}</option>)}
+          </select>
+        </div>
         {request && (
           <select name="status" defaultValue={request.status} className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon">
             <option>NEW</option><option>TRIAGED</option><option>APPROVED</option><option>REJECTED</option><option>ASSIGNED</option><option>CLOSED</option>
@@ -1424,17 +1609,55 @@ function ServiceRequestForm({ title, request, services, departments, teams, loca
         )}
         {!request && <input type="hidden" name="status" value="NEW" />}
         <input type="hidden" name="assignedTeamCode" value={request?.assignedTeamCode ?? ""} />
-        <select name="location" defaultValue={request?.location ?? ""} className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon">
-          <option value="">Select location</option>
-          {locationOptions.map((location) => <option key={location}>{location}</option>)}
-        </select>
-        <textarea name="description" defaultValue={request?.description ?? ""} placeholder="Description" className="min-h-24 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />
         <textarea name="attachmentUrls" defaultValue={request?.attachmentUrls ?? ""} placeholder="Attachment links / proof URLs" className="min-h-20 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />
         {request && <textarea name="rejectionReason" defaultValue={request?.rejectionReason ?? ""} placeholder="Reject / close reason" className="min-h-20 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />}
-        <button disabled={saving} className="h-11 rounded-lg bg-ink font-black text-white disabled:bg-slate-400">{saving ? "Saving..." : "Save Request"}</button>
+        <div className="flex justify-end gap-3">
+          <button type="submit" disabled={saving} className="h-11 rounded-lg bg-ink px-5 font-black text-white disabled:bg-slate-400">{saving ? "Saving..." : "Save"}</button>
+        </div>
       </div>
     </form>
   );
+}
+
+function RequestModalShell({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/45 p-4 pt-20 backdrop-blur-sm">
+      <div className="w-full max-w-xl overflow-hidden rounded-lg border border-slate-200 bg-white shadow-2xl">
+        <div className="flex items-center justify-between bg-ink px-4 py-3 text-white">
+          <h3 className="text-sm font-black">{title}</h3>
+          <div className="flex gap-2">
+            <button type="button" onClick={onClose} className="rounded-lg border border-cyan-400 px-3 py-2 text-xs font-black text-cyan-300">Cancel</button>
+          </div>
+        </div>
+        <div className="p-5">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+function RequestStatusBadge({ status }: { status: string }) {
+  const tone =
+    status === "CLOSED" ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
+    status === "REJECTED" ? "bg-rose-50 text-rose-700 border-rose-200" :
+    status === "APPROVED" ? "bg-cyan-50 text-cyan-700 border-cyan-200" :
+    "bg-amber-50 text-amber-700 border-amber-200";
+  return <span className={`rounded-full border px-2 py-1 text-xs font-black ${tone}`}>{status.replaceAll("_", " ")}</span>;
+}
+
+function RequestPriorityBadge({ priority }: { priority: string }) {
+  const tone =
+    priority === "CRITICAL" ? "text-rose-700" :
+    priority === "HIGH" ? "text-orange-700" :
+    priority === "MEDIUM" ? "text-amber-700" :
+    "text-emerald-700";
+  return <span className={`text-xs font-black uppercase ${tone}`}>{priority}</span>;
+}
+
+function formatDateCell(value: string | null | undefined) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleString("en-US", { month: "2-digit", day: "2-digit", year: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
 function WorkOrderForm({ title, work, data, onSubmit, saving }: { title: string; work?: any; data: ConsoleData; onSubmit: (formData: FormData) => void; saving: boolean }) {
