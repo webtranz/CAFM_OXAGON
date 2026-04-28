@@ -418,7 +418,7 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { id?: st
     setSaving(false);
   }
 
-  async function patchRecord(path: string, body: Record<string, string>, successLabel: string) {
+  async function patchRecord(path: string, body: Record<string, unknown>, successLabel: string) {
     setSaving(true);
     const response = await fetch(path, {
       method: "PATCH",
@@ -1178,6 +1178,13 @@ function WorkOrders({
     }
   }
 
+  async function quickPatchWork(work: any, body: Record<string, string>) {
+    const formData = new FormData();
+    Object.entries(body).forEach(([key, value]) => formData.append(key, value));
+    await updateWorkOrder(work.id, formData);
+    setPreviewWork((current: any) => current?.id === work.id ? { ...current, ...body } : current);
+  }
+
   return (
     <section className="space-y-5">
       <Panel title="Work Orders" icon={Wrench}>
@@ -1323,6 +1330,7 @@ function WorkOrders({
           work={previewWork}
           onClose={() => setPreviewWork(null)}
           onStatusChange={previewWork.status !== "CLOSED" ? (status) => runWorkAction(`${previewWork.id}:${status}`, previewWork, () => updateWorkStatus(previewWork.id, status)) : undefined}
+          onPatch={(body) => quickPatchWork(previewWork, body)}
           onEdit={canAssignOrEdit && previewWork.status !== "CLOSED" ? () => { setEditing(previewWork); setPreviewWork(null); } : undefined}
           onCloseWork={canFinalReview && ["PENDING_SUPERVISOR_REVIEW", "COMPLETED"].includes(previewWork.status) ? () => { setReviewWork({ work: previewWork, action: "close" }); setPreviewWork(null); } : undefined}
           onReopenWork={canFinalReview && ["PENDING_SUPERVISOR_REVIEW", "COMPLETED"].includes(previewWork.status) ? () => { setReviewWork({ work: previewWork, action: "reopen" }); setPreviewWork(null); } : undefined}
@@ -1862,6 +1870,7 @@ function WorkOrderPreviewModal({
   work,
   onClose,
   onStatusChange,
+  onPatch,
   onEdit,
   onCloseWork,
   onReopenWork,
@@ -1869,6 +1878,7 @@ function WorkOrderPreviewModal({
   work: any;
   onClose: () => void;
   onStatusChange?: (status: string) => Promise<void> | void;
+  onPatch?: (body: Record<string, string>) => Promise<void> | void;
   onEdit?: () => void;
   onCloseWork?: () => void;
   onReopenWork?: () => void;
@@ -1878,6 +1888,8 @@ function WorkOrderPreviewModal({
   const files = attachments.filter((item) => !isImageUrl(item));
   const [activeImage, setActiveImage] = useState(images[0] ?? "");
   const [zoom, setZoom] = useState(1);
+  const [quickForm, setQuickForm] = useState<"" | "procedure" | "part" | "cost">("");
+  const [quickValue, setQuickValue] = useState("");
   const timelineRows: [string, unknown][] = [
     ["Created", work.createdAt],
     ["Assigned / Planned", work.plannedStart],
@@ -1894,6 +1906,16 @@ function WorkOrderPreviewModal({
     ["Completed when", work.resolutionAt, "Service team submitted completion for supervisor review."],
     ["Closed", work.finishedAt, work.supervisorDecision || "Final supervisor review pending."],
   ].filter(([, date]) => Boolean(date));
+
+  async function saveQuick(kind: "procedure" | "part" | "cost") {
+    const value = quickValue.trim();
+    if (!value) return;
+    if (kind === "procedure") await onPatch?.({ jobPlan: [work.jobPlan, value].filter(Boolean).join("\n") });
+    if (kind === "part") await onPatch?.({ materialRequest: [work.materialRequest, value].filter(Boolean).join("\n") });
+    if (kind === "cost") await onPatch?.({ cost: value });
+    setQuickValue("");
+    setQuickForm("");
+  }
 
   return (
     <RequestModalShell title={`Work Order Preview: ${work.woNo}`} onClose={onClose}>
@@ -2013,8 +2035,14 @@ function WorkOrderPreviewModal({
           <div className="rounded-lg border border-slate-200 bg-white p-4">
             <div className="flex items-center justify-between gap-3">
               <h4 className="font-black">Procedures & Checklist</h4>
-              <button type="button" onClick={onEdit} disabled={!onEdit} className="rounded-lg border border-lagoon/30 px-3 py-2 text-xs font-black text-lagoon disabled:opacity-50">Add Procedure</button>
+              <button type="button" onClick={() => setQuickForm(quickForm === "procedure" ? "" : "procedure")} disabled={!onPatch} className="rounded-lg border border-lagoon/30 px-3 py-2 text-xs font-black text-lagoon disabled:opacity-50">Add Procedure</button>
             </div>
+            {quickForm === "procedure" && (
+              <div className="mt-3 flex gap-2">
+                <input value={quickValue} onChange={(event) => setQuickValue(event.target.value)} placeholder="Procedure / checklist step" className="h-10 flex-1 rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-lagoon" />
+                <button type="button" onClick={() => saveQuick("procedure")} className="rounded-lg bg-lagoon px-4 text-sm font-black text-white">Save</button>
+              </div>
+            )}
             <div className="mt-3 grid gap-2">
               {checklist.map((item, index) => (
                 <label key={`${item}-${index}`} className="flex gap-3 rounded-lg bg-slate-50 p-3 text-sm font-bold text-slate-700">
@@ -2034,11 +2062,23 @@ function WorkOrderPreviewModal({
               </div>
             </div>
             <div className="rounded-lg border border-slate-200 bg-white p-4">
-              <div className="flex items-center justify-between"><h4 className="font-black">Parts</h4><button type="button" onClick={onEdit} disabled={!onEdit} className="rounded-lg border border-lagoon/30 px-3 py-2 text-xs font-black text-lagoon disabled:opacity-50">Add Part</button></div>
+              <div className="flex items-center justify-between"><h4 className="font-black">Parts</h4><button type="button" onClick={() => setQuickForm(quickForm === "part" ? "" : "part")} disabled={!onPatch} className="rounded-lg border border-lagoon/30 px-3 py-2 text-xs font-black text-lagoon disabled:opacity-50">Add Part</button></div>
+              {quickForm === "part" && (
+                <div className="mt-3 flex gap-2">
+                  <input value={quickValue} onChange={(event) => setQuickValue(event.target.value)} placeholder="Part name / quantity" className="h-10 flex-1 rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-lagoon" />
+                  <button type="button" onClick={() => saveQuick("part")} className="rounded-lg bg-lagoon px-4 text-sm font-black text-white">Save</button>
+                </div>
+              )}
               <p className="mt-2 text-sm font-bold text-slate-600">{work.materialRequest || work.inventoryUsed || "No parts added."}</p>
             </div>
             <div className="rounded-lg border border-slate-200 bg-white p-4">
-              <div className="flex items-center justify-between"><h4 className="font-black">Other Costs</h4><button type="button" onClick={onEdit} disabled={!onEdit} className="rounded-lg border border-lagoon/30 px-3 py-2 text-xs font-black text-lagoon disabled:opacity-50">Add Cost</button></div>
+              <div className="flex items-center justify-between"><h4 className="font-black">Other Costs</h4><button type="button" onClick={() => setQuickForm(quickForm === "cost" ? "" : "cost")} disabled={!onPatch} className="rounded-lg border border-lagoon/30 px-3 py-2 text-xs font-black text-lagoon disabled:opacity-50">Add Cost</button></div>
+              {quickForm === "cost" && (
+                <div className="mt-3 flex gap-2">
+                  <input value={quickValue} onChange={(event) => setQuickValue(event.target.value)} type="number" placeholder="Cost amount" className="h-10 flex-1 rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-lagoon" />
+                  <button type="button" onClick={() => saveQuick("cost")} className="rounded-lg bg-lagoon px-4 text-sm font-black text-white">Save</button>
+                </div>
+              )}
               <p className="mt-2 text-sm font-black text-slate-700">{work.cost ? `$${work.cost}` : "No extra costs."}</p>
             </div>
           </div>
@@ -2414,7 +2454,7 @@ function Ppm({
   assets: any[];
   workOrders: any[];
   submitPpm: (formData: FormData) => void;
-  updatePpm: (body: Record<string, string>) => Promise<void> | void;
+  updatePpm: (body: Record<string, unknown>) => Promise<void> | void;
   saving: boolean;
 }) {
   const [previewPpm, setPreviewPpm] = useState<any | null>(null);
@@ -2476,7 +2516,7 @@ function Ppm({
                       <td className="px-3 py-3">
                         <div className="flex gap-2">
                           <button type="button" onClick={(event) => { event.stopPropagation(); setPreviewPpm(ppm); }} className="rounded-lg bg-lagoon px-3 py-2 text-xs font-black text-white">Preview</button>
-                          <button type="button" disabled={saving} onClick={(event) => { event.stopPropagation(); updatePpm({ id: ppm.id, active: String(!ppm.active) }); }} className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-black text-slate-700">{ppm.active ? "Pause" : "Activate"}</button>
+                          <button type="button" disabled={saving} onClick={(event) => { event.stopPropagation(); updatePpm({ id: ppm.id, active: !ppm.active }); }} className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-black text-slate-700">{ppm.active ? "Pause" : "Activate"}</button>
                         </div>
                       </td>
                     </tr>
@@ -2511,7 +2551,10 @@ function Ppm({
           workOrders={workOrders.filter((work) => work.asset?.tag === previewPpm.assetTag || work.assetTag === previewPpm.assetTag)}
           saving={saving}
           onClose={() => setPreviewPpm(null)}
-          onUpdate={(body) => updatePpm({ id: previewPpm.id, ...body })}
+          onUpdate={(body) => {
+            setPreviewPpm((current: any) => current ? { ...current, ...body } : current);
+            return updatePpm({ id: previewPpm.id, ...body });
+          }}
         />
       )}
     </section>
@@ -2531,10 +2574,12 @@ function PmPreviewModal({
   workOrders: any[];
   saving: boolean;
   onClose: () => void;
-  onUpdate: (body: Record<string, string>) => Promise<void> | void;
+  onUpdate: (body: Record<string, unknown>) => Promise<void> | void;
 }) {
   const checklist = checklistItems(ppm.checklist);
   const [tab, setTab] = useState<"comments" | "history">("history");
+  const [quickForm, setQuickForm] = useState<"" | "procedure" | "part" | "cost">("");
+  const [quickValue, setQuickValue] = useState("");
   const priority = ppm.durationHrs >= 8 ? "CRITICAL" : ppm.durationHrs >= 4 ? "HIGH" : "MEDIUM";
   const historyData = workOrders.slice(0, 8).map((work) => ({
     name: String(formatDateCell(work.createdAt)).slice(0, 10),
@@ -2542,14 +2587,23 @@ function PmPreviewModal({
     completed: ["CLOSED", "COMPLETED", "PENDING_SUPERVISOR_REVIEW"].includes(work.status) ? 1 : 0,
   }));
 
+  async function savePpmQuick(kind: "procedure" | "part" | "cost") {
+    const value = quickValue.trim();
+    if (!value) return;
+    const line = kind === "procedure" ? value : `${kind === "part" ? "Part" : "Cost"}: ${value}`;
+    await onUpdate({ checklist: [ppm.checklist, line].filter(Boolean).join("\n") });
+    setQuickValue("");
+    setQuickForm("");
+  }
+
   return (
     <RequestModalShell title={`PM | ${ppm.name}`} onClose={onClose}>
       <div className="grid gap-5">
         <div className="sticky top-0 z-10 -mx-5 -mt-5 border-b border-slate-200 bg-white px-5 py-3 shadow-sm">
           <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
-            <button type="button" disabled={saving} onClick={() => onUpdate({ active: "true" })} className={`rounded-lg border px-3 py-3 text-xs font-black ${ppm.active ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-slate-200 text-slate-600"}`}>Active</button>
-            <button type="button" disabled={saving} onClick={() => onUpdate({ active: "true" })} className="rounded-lg border border-lime-300 bg-lime-100 px-3 py-3 text-xs font-black text-lime-800">Planned</button>
-            <button type="button" disabled={saving} onClick={() => onUpdate({ active: "false" })} className={`rounded-lg border px-3 py-3 text-xs font-black ${!ppm.active ? "border-amber-300 bg-amber-50 text-amber-700" : "border-slate-200 text-slate-600"}`}>Paused</button>
+            <button type="button" disabled={saving} onClick={() => onUpdate({ active: true })} className={`rounded-lg border px-3 py-3 text-xs font-black ${ppm.active ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "border-slate-200 text-slate-600"}`}>Active</button>
+            <button type="button" disabled={saving} onClick={() => onUpdate({ active: true })} className="rounded-lg border border-lime-300 bg-lime-100 px-3 py-3 text-xs font-black text-lime-800">Planned</button>
+            <button type="button" disabled={saving} onClick={() => onUpdate({ active: false })} className={`rounded-lg border px-3 py-3 text-xs font-black ${!ppm.active ? "border-amber-300 bg-amber-50 text-amber-700" : "border-slate-200 text-slate-600"}`}>Paused</button>
             <button type="button" disabled={saving} onClick={() => onUpdate({ nextDue: new Date().toISOString() })} className="rounded-lg border border-lagoon/30 px-3 py-3 text-xs font-black text-lagoon">Start Now</button>
           </div>
         </div>
@@ -2574,8 +2628,14 @@ function PmPreviewModal({
         <div className="rounded-lg border border-slate-200 bg-white p-4">
           <div className="flex items-center justify-between gap-3">
             <h4 className="font-black">Procedures & Checklist</h4>
-            <button type="button" className="rounded-lg border border-lagoon/30 px-3 py-2 text-xs font-black text-lagoon">Add Procedure</button>
+            <button type="button" onClick={() => setQuickForm(quickForm === "procedure" ? "" : "procedure")} className="rounded-lg border border-lagoon/30 px-3 py-2 text-xs font-black text-lagoon">Add Procedure</button>
           </div>
+          {quickForm === "procedure" && (
+            <div className="mt-3 flex gap-2">
+              <input value={quickValue} onChange={(event) => setQuickValue(event.target.value)} placeholder="Procedure / checklist step" className="h-10 flex-1 rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-lagoon" />
+              <button type="button" onClick={() => savePpmQuick("procedure")} className="rounded-lg bg-lagoon px-4 text-sm font-black text-white">Save</button>
+            </div>
+          )}
           <div className="mt-3 grid gap-2">
             {checklist.map((item, index) => (
               <label key={`${item}-${index}`} className="flex gap-3 rounded-lg bg-slate-50 p-3 text-sm font-bold text-slate-700">
@@ -2588,11 +2648,23 @@ function PmPreviewModal({
         <div className="grid gap-4 lg:grid-cols-[0.7fr_1fr]">
           <div className="grid gap-3">
             <div className="rounded-lg border border-slate-200 bg-white p-4">
-              <div className="flex items-center justify-between"><h4 className="font-black">Parts</h4><button type="button" className="rounded-lg border border-lagoon/30 px-3 py-2 text-xs font-black text-lagoon">Add Part</button></div>
+              <div className="flex items-center justify-between"><h4 className="font-black">Parts</h4><button type="button" onClick={() => setQuickForm(quickForm === "part" ? "" : "part")} className="rounded-lg border border-lagoon/30 px-3 py-2 text-xs font-black text-lagoon">Add Part</button></div>
+              {quickForm === "part" && (
+                <div className="mt-3 flex gap-2">
+                  <input value={quickValue} onChange={(event) => setQuickValue(event.target.value)} placeholder="Part name / quantity" className="h-10 flex-1 rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-lagoon" />
+                  <button type="button" onClick={() => savePpmQuick("part")} className="rounded-lg bg-lagoon px-4 text-sm font-black text-white">Save</button>
+                </div>
+              )}
               <p className="mt-2 text-sm font-bold text-slate-500">No parts reserved yet.</p>
             </div>
             <div className="rounded-lg border border-slate-200 bg-white p-4">
-              <div className="flex items-center justify-between"><h4 className="font-black">Other Costs</h4><button type="button" className="rounded-lg border border-lagoon/30 px-3 py-2 text-xs font-black text-lagoon">Add Cost</button></div>
+              <div className="flex items-center justify-between"><h4 className="font-black">Other Costs</h4><button type="button" onClick={() => setQuickForm(quickForm === "cost" ? "" : "cost")} className="rounded-lg border border-lagoon/30 px-3 py-2 text-xs font-black text-lagoon">Add Cost</button></div>
+              {quickForm === "cost" && (
+                <div className="mt-3 flex gap-2">
+                  <input value={quickValue} onChange={(event) => setQuickValue(event.target.value)} placeholder="Cost amount / note" className="h-10 flex-1 rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-lagoon" />
+                  <button type="button" onClick={() => savePpmQuick("cost")} className="rounded-lg bg-lagoon px-4 text-sm font-black text-white">Save</button>
+                </div>
+              )}
               <p className="mt-2 text-sm font-bold text-slate-500">No cost entries.</p>
             </div>
           </div>

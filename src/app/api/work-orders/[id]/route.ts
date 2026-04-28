@@ -53,7 +53,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     }
     const priority = input.priority && ["LOW", "MEDIUM", "HIGH", "CRITICAL"].includes(input.priority) ? input.priority as any : undefined;
     const status = input.status && ["OPEN", "NEW", "TRIAGED", "APPROVED", "REJECTED", "PENDING_ASSIGNMENT", "ASSIGNED", "ACCEPTED", "IN_PROGRESS", "ON_HOLD", "COMPLETED", "PENDING_SUPERVISOR_REVIEW", "VERIFIED", "REOPENED", "CLOSED"].includes(input.status) ? input.status as any : undefined;
-    const nextStatus = isAssignedTechnician && status === "COMPLETED" ? "PENDING_SUPERVISOR_REVIEW" as any : status;
+    const nextStatus = status === "COMPLETED" ? "PENDING_SUPERVISOR_REVIEW" as any : status;
     const [asset] = await Promise.all([
       input.assetTag ? prisma.asset.findUnique({ where: { tag: input.assetTag } }) : null,
     ]);

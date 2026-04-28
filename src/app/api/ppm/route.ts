@@ -4,6 +4,12 @@ import { z } from "zod";
 import { apiError } from "@/lib/api-response";
 import { prisma } from "@/lib/prisma";
 
+const boolValue = z.preprocess((value) => {
+  if (value === "true") return true;
+  if (value === "false") return false;
+  return value;
+}, z.boolean());
+
 const schema = z.object({
   code: z.string().optional(),
   name: z.string().optional(),
@@ -12,7 +18,7 @@ const schema = z.object({
   nextDue: z.string().optional(),
   durationHrs: z.coerce.number().min(0.25).optional(),
   checklist: z.string().optional(),
-  active: z.coerce.boolean().optional(),
+  active: boolValue.optional(),
 });
 
 export async function GET() {
