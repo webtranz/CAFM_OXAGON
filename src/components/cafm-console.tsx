@@ -3227,14 +3227,14 @@ function BulkUpload({ saving, onSubmit, initialModule }: { saving: boolean; onSu
 
 function Templates() {
   const templates = [
-    ["assets", "Assets", "SITE,ZONE,BLDG,FLOOR,ROOM,Asset Group,ASSET NUMBER,Asset Description,Additional description,Parent Asset,Department,Remarks"],
+    ["assets", "Assets", "Entity Name,Asset Name,Description,Location Name,Asset Type,Model No.,Manufacturer,Serial No.,Purchase Date,QR Code,Parent Asset,Assigned To,Vendors,Asset Code,Parts,URL 1,URL Label 1,URL 2,URL Label 2,Warranty Expiry Date,Life Expectancy (in months),Purchase Cost,Replacement Cost,Salvage Value"],
     ["departments", "Departments", "code,name,siteLocation,description"],
     ["employees", "Employees", "name,email,companyId,nationalityType,departmentCode,siteLocation"],
     ["teams", "Teams", "name,companyIdNumber,departmentCode,service,email,phone"],
     ["services", "Services", "departmentName,departmentCode"],
     ["inventory", "Inventory", "sku,name,category,unit,onHand,reorderPoint,unitCost,vendor,location"],
-    ["requests", "Requests", "ticketNo,title,category,requester,channel,priority,status,location,slaHours,description"],
-    ["workOrders", "Work Orders", "woNo,title,type,assetType,departmentCode,serviceCode,assignedTeamCode,priority,status,assetTag,dueHours,estimatedHours,cost,jobPlan,safetyNotes"],
+    ["requests", "Requests", "ticketNo,title,category,departmentCode,serviceCode,assignedTeamCode,requester,channel,priority,status,location,attachmentUrls,rejectionReason,slaHours,description"],
+    ["workOrders", "Work Orders", "woNo,title,type,assetType,departmentCode,serviceCode,assignedTeamCode,jobPlanCode,priority,status,assetTag,dueHours,estimatedHours,cost,jobPlan,safetyNotes,workNotes,materialRequest,photoUrls,assetsUsed,inventoryUsed,supervisorDecision"],
     ["jobPlans", "Job Plans", "code,name,assetType,departmentCode,serviceCode,estimatedHours,priority,steps,safetyNotes"],
     ["locations", "Locations", "code,site,zone,building,floor,room,type,description"],
     ["inspections", "Inspections", "code,title,area,inspector,risk,score,status,dueAt,findings"],
@@ -3242,6 +3242,10 @@ function Templates() {
 
   return (
     <Panel title="Bulk Upload Templates" icon={ClipboardCheck}>
+      <div className="mb-4 rounded-lg border border-lagoon/20 bg-lagoon/5 p-4">
+        <p className="font-black text-ink">Download CSV data templates</p>
+        <p className="mt-1 text-sm font-bold text-slate-600">Use these files for bulk upload. Each download contains the correct column headers for that module.</p>
+      </div>
       <div className="grid gap-3 text-sm lg:grid-cols-2">
         {templates.map(([type, title, value]) => (
           <Template key={type} type={type} title={title} value={value} />
@@ -3578,10 +3582,10 @@ function AuditLogs({ logs }: { logs: any[] }) {
 
 function Template({ type, title, value }: { type: string; title: string; value: string }) {
   return (
-    <div className="rounded-lg bg-slate-50 p-3">
+    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
       <div className="flex items-center justify-between gap-3">
         <p className="font-black">{title}</p>
-        <a href={`/api/templates/${type}`} className="rounded-lg bg-lagoon px-3 py-2 text-xs font-black text-white">Download CSV</a>
+        <a href={`/api/templates/${type}`} download={`${type}-template.csv`} className="rounded-lg bg-lagoon px-3 py-2 text-xs font-black text-white">Download CSV</a>
       </div>
       <code className="mt-2 block break-words text-xs text-slate-600">{value}</code>
     </div>
