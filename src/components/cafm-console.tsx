@@ -1746,6 +1746,9 @@ function RequestPreviewModal({
   onReject: () => Promise<void> | void;
 }) {
   const images = attachmentList(request.attachmentUrls);
+  const reviewedStatuses = ["TRIAGED", "APPROVED"];
+  const isReviewed = reviewedStatuses.includes(request.status) || Boolean(request.workOrder);
+  const canCreateWorkOrder = canManage && isReviewed && !request.workOrder;
 
   return (
     <RequestModalShell title={`Request Preview: ${request.ticketNo}`} onClose={onClose}>
@@ -1794,22 +1797,33 @@ function RequestPreviewModal({
 
         {canManage && (
           <label className="grid gap-2 text-sm font-black text-slate-600">
-            Assign service team before creating work order
+            Step 2: assign service team before creating work order
             <select
               value={assignment.assignedTeamCode}
               onChange={(event) => onAssignTeam(event.target.value)}
+              disabled={!isReviewed}
               className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-lagoon"
             >
               <option value="">Assign service team</option>
               {teams.map((team) => <option key={team.id} value={team.code}>{team.code} - {team.name}</option>)}
             </select>
+            {!isReviewed && <span className="text-xs font-bold text-amber-700">First change status to Reviewed, then select team and create work order.</span>}
           </label>
         )}
 
+        <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+          <p className="text-xs font-black uppercase text-slate-500">Workflow</p>
+          <div className="mt-2 grid gap-2 md:grid-cols-3">
+            <div className={`rounded-lg p-3 text-sm font-black ${isReviewed ? "bg-emerald-50 text-emerald-700" : "bg-white text-slate-700"}`}>1. Change status to Reviewed</div>
+            <div className={`rounded-lg p-3 text-sm font-black ${isReviewed ? "bg-white text-slate-700" : "bg-slate-100 text-slate-400"}`}>2. Assign service team</div>
+            <div className={`rounded-lg p-3 text-sm font-black ${canCreateWorkOrder ? "bg-white text-slate-700" : "bg-slate-100 text-slate-400"}`}>3. Create Work Order</div>
+          </div>
+        </div>
+
         <div className="flex flex-wrap justify-end gap-2 border-t border-slate-200 pt-4">
           {canManage && <button type="button" onClick={onEdit} className="rounded-lg bg-lagoon px-4 py-3 text-sm font-black text-white">Edit</button>}
-          {canApprove && <button type="button" disabled={savingKey === `${request.id}:review`} onClick={onReview} className="rounded-lg bg-slate-700 px-4 py-3 text-sm font-black text-white disabled:bg-slate-400">{savingKey === `${request.id}:review` ? "Saving..." : "Mark Reviewed"}</button>}
-          {canManage && <button type="button" disabled={Boolean(request.workOrder) || savingKey === `${request.id}:wo`} onClick={onCreateWorkOrder} className="rounded-lg bg-ink px-4 py-3 text-sm font-black text-white disabled:bg-slate-400">{savingKey === `${request.id}:wo` ? "Creating..." : request.workOrder ? "WO Created" : "Create Work Order"}</button>}
+          {canApprove && <button type="button" disabled={isReviewed || savingKey === `${request.id}:review`} onClick={onReview} className="rounded-lg bg-slate-700 px-4 py-3 text-sm font-black text-white disabled:bg-slate-400">{savingKey === `${request.id}:review` ? "Saving..." : isReviewed ? "Status Reviewed" : "Change Status to Reviewed"}</button>}
+          {canManage && <button type="button" disabled={!canCreateWorkOrder || savingKey === `${request.id}:wo`} onClick={onCreateWorkOrder} className="rounded-lg bg-ink px-4 py-3 text-sm font-black text-white disabled:bg-slate-400">{savingKey === `${request.id}:wo` ? "Creating..." : request.workOrder ? "WO Created" : isReviewed ? "Create Work Order" : "Create Work Order Locked"}</button>}
           {canApprove && <button type="button" disabled={savingKey === `${request.id}:reject`} onClick={onReject} className="rounded-lg bg-amber-600 px-4 py-3 text-sm font-black text-white disabled:bg-slate-400">Reject</button>}
         </div>
       </div>
