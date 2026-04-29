@@ -2224,15 +2224,67 @@ function RequestPreviewModal({
   const reviewedStatuses = ["TRIAGED", "APPROVED"];
   const isReviewed = reviewedStatuses.includes(request.status) || Boolean(request.workOrder);
   const canCreateWorkOrder = canManage && isReviewed && !request.workOrder;
+  const [localAssets, setLocalAssets] = useState<any[]>(assets);
+  const [showAssetCreate, setShowAssetCreate] = useState(false);
+  const [assetSaving, setAssetSaving] = useState(false);
+  const [assetName, setAssetName] = useState("");
+  const [assetTag, setAssetTag] = useState("");
   const requestText = `${request.location || ""} ${request.departmentCode || ""} ${request.category || ""}`.toLowerCase();
-  const relatedAssets = assets.filter((asset) => {
+  const relatedAssets = localAssets.filter((asset) => {
     const departmentMatch = !request.departmentCode || asset.departmentCode === request.departmentCode || asset.assignedTeamCode === request.assignedTeamCode || asset.assignedTeamCode === assignment.assignedTeamCode;
     const locationText = `${asset.siteCode || asset.site?.name || ""} ${asset.buildingCode || asset.building?.name || ""} ${asset.floor || ""} ${asset.room || ""}`.toLowerCase();
     const locationMatch = !request.location || requestText.includes(String(asset.room || "").toLowerCase()) || requestText.includes(String(asset.floor || "").toLowerCase()) || requestText.includes(String(asset.buildingCode || "").toLowerCase()) || locationText.split(/\s+/).some((token) => token.length > 2 && requestText.includes(token));
     return departmentMatch || locationMatch;
   });
-  const assetOptions = relatedAssets.length ? relatedAssets : assets;
-  const selectedAsset = assets.find((asset) => asset.tag === assignment.assetTag);
+  const assetOptions = relatedAssets.length ? relatedAssets : localAssets;
+  const selectedAsset = localAssets.find((asset) => asset.tag === assignment.assetTag);
+  const locationParts = String(request.location || "").split("/").map((part) => part.trim()).filter(Boolean);
+
+  async function createAssetForRequest() {
+    const name = assetName.trim() || request.title || "Request Asset";
+    const tag = assetTag.trim() || `REQ-${request.ticketNo || Date.now()}`;
+    setAssetSaving(true);
+    const response = await fetch("/api/assets", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        tag,
+        name,
+        assetDescription: name,
+        additionalDescription: request.description || "",
+        category: request.category || "General",
+        assetGroup: request.category || "General",
+        system: request.serviceCode || request.category || "General",
+        criticality: request.priority || "MEDIUM",
+        status: "ACTIVE",
+        serialNumber: tag,
+        manufacturer: "Unknown",
+        model: "Request-created asset",
+        purchaseCost: 0,
+        salvageValue: 0,
+        conditionScore: 80,
+        departmentCode: request.departmentCode || assignment.assignedTeamCode || "",
+        assignedTeamCode: assignment.assignedTeamCode || request.assignedTeamCode || "",
+        assignedSupervisorEmail: request.assignedSupervisorEmail || "",
+        siteCode: locationParts[0] || "",
+        buildingCode: locationParts[1] || "",
+        floor: locationParts[2] || "",
+        room: locationParts[3] || request.location || "",
+        remarks: `Created by supervisor from service request ${request.ticketNo}.`,
+      }),
+    });
+    const result = await response.json();
+    if (response.ok) {
+      const created = { ...result, site: { name: result.siteCode }, building: { name: result.buildingCode, code: result.buildingCode } };
+      setLocalAssets((current) => [created, ...current.filter((asset) => asset.tag !== created.tag)]);
+      onAssignAsset(created.tag);
+      if (created.assignedTeamCode && !assignment.assignedTeamCode) onAssignTeam(created.assignedTeamCode);
+      setAssetName("");
+      setAssetTag("");
+      setShowAssetCreate(false);
+    }
+    setAssetSaving(false);
+  }
 
   return (
     <RequestModalShell title={`Request Preview: ${request.ticketNo}`} onClose={onClose}>
@@ -2302,6 +2354,22 @@ function RequestPreviewModal({
                 ))}
               </select>
             </label>
+            <button type="button" disabled={!isReviewed} onClick={() => setShowAssetCreate((current) => !current)} className="h-10 rounded-lg border border-lagoon/30 bg-lagoon/5 px-3 text-xs font-black text-lagoon disabled:opacity-50">
+              {showAssetCreate ? "Close Add Asset" : "+ Add Asset for this Request"}
+            </button>
+            {showAssetCreate && (
+              <div className="grid gap-2 rounded-lg bg-slate-50 p-3">
+                <input value={assetName} onChange={(event) => setAssetName(event.target.value)} placeholder="Asset name" className="h-10 rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-lagoon" />
+                <input value={assetTag} onChange={(event) => setAssetTag(event.target.value)} placeholder={`Asset code optional, default REQ-${request.ticketNo}`} className="h-10 rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-lagoon" />
+                <div className="grid gap-1 rounded-lg bg-white p-3 text-xs font-bold text-slate-500">
+                  <span>Department: {request.departmentCode || "-"}</span>
+                  <span>Team: {assignment.assignedTeamCode || request.assignedTeamCode || "-"}</span>
+                  <span>Location: {request.location || "-"}</span>
+                  <span>Category: {request.category || "General"}</span>
+                </div>
+                <button type="button" disabled={assetSaving} onClick={createAssetForRequest} className="h-10 rounded-lg bg-ink text-sm font-black text-white disabled:bg-slate-400">{assetSaving ? "Saving..." : "Save Asset and Select"}</button>
+              </div>
+            )}
             {selectedAsset && (
               <div className="grid gap-2 rounded-lg bg-slate-50 p-3 text-sm font-bold text-slate-600 md:grid-cols-2">
                 <span>Asset type: {selectedAsset.assetGroup || selectedAsset.category || "-"}</span>
