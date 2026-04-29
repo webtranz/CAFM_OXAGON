@@ -6,6 +6,8 @@ import { prisma } from "@/lib/prisma";
 const schema = z.object({
   departmentName: z.string().optional(),
   departmentCode: z.string().optional(),
+  teamCode: z.string().optional(),
+  slaHours: z.coerce.number().optional(),
 });
 
 export async function GET() {
@@ -18,6 +20,7 @@ export async function POST(request: Request) {
     const count = await prisma.serviceCatalog.count();
     const code = input.departmentCode || `SRV-${String(count + 1).padStart(4, "0")}`;
     const name = input.departmentName || "General Service";
+    const team = input.teamCode ? await prisma.team.findUnique({ where: { code: input.teamCode } }) : null;
     const created = await prisma.serviceCatalog.upsert({
       where: { code },
       update: {
@@ -25,7 +28,8 @@ export async function POST(request: Request) {
         category: name,
         type: "Department Service",
         priority: "MEDIUM",
-        slaHours: 24,
+        slaHours: input.slaHours || 24,
+        teamId: team?.id,
         description: `Department ${name}`,
       },
       create: {
@@ -34,7 +38,8 @@ export async function POST(request: Request) {
         category: name,
         type: "Department Service",
         priority: "MEDIUM",
-        slaHours: 24,
+        slaHours: input.slaHours || 24,
+        teamId: team?.id,
         description: `Department ${name}`,
       },
     });

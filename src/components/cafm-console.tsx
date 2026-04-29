@@ -644,6 +644,12 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { id?: st
               submitService={(formData) => postRecord("/api/services", formData, "Service")}
               submitCategory={(formData) => postRecord("/api/asset-categories", formData, "Asset category")}
               submitDepartment={(formData) => postRecord("/api/departments", formData, "Department")}
+              updateTeam={(id, formData) => patchRecord(`/api/teams/${id}`, Object.fromEntries(formData.entries()) as Record<string, string>, "Team updated.")}
+              updateService={(id, formData) => patchRecord(`/api/services/${id}`, Object.fromEntries(formData.entries()) as Record<string, string>, "Service updated.")}
+              updateDepartment={(id, formData) => patchRecord(`/api/departments/${id}`, Object.fromEntries(formData.entries()) as Record<string, string>, "Department updated.")}
+              deleteTeam={(id) => deleteRecord(`/api/teams/${id}`, "Team deleted.")}
+              deleteService={(id) => deleteRecord(`/api/services/${id}`, "Service deleted.")}
+              deleteDepartment={(id) => deleteRecord(`/api/departments/${id}`, "Department deleted.")}
               view={activeView}
             />
           )}
@@ -3342,6 +3348,12 @@ function TeamsServices({
   submitService,
   submitCategory,
   submitDepartment,
+  updateTeam,
+  updateService,
+  updateDepartment,
+  deleteTeam,
+  deleteService,
+  deleteDepartment,
   view,
 }: {
   teams: any[];
@@ -3353,13 +3365,35 @@ function TeamsServices({
   submitService: (formData: FormData) => void;
   submitCategory: (formData: FormData) => void;
   submitDepartment: (formData: FormData) => void;
+  updateTeam: (id: string, formData: FormData) => Promise<void> | void;
+  updateService: (id: string, formData: FormData) => Promise<void> | void;
+  updateDepartment: (id: string, formData: FormData) => Promise<void> | void;
+  deleteTeam: (id: string) => Promise<void> | void;
+  deleteService: (id: string) => Promise<void> | void;
+  deleteDepartment: (id: string) => Promise<void> | void;
   view: string;
 }) {
+  const [editingDepartment, setEditingDepartment] = useState<any | null>(null);
+  const [editingTeam, setEditingTeam] = useState<any | null>(null);
+  const [editingService, setEditingService] = useState<any | null>(null);
   const showAll = !["departments", "team-code", "service-teams", "services-catalog"].includes(view);
   const showDepartments = showAll || view === "departments";
   const showTeamCode = showAll || view === "team-code";
   const showServiceTeams = showAll || view === "service-teams";
   const showServices = showAll || view === "services-catalog";
+  const teamRows = teams.map((team) => ({
+    ...team,
+    companyIdNumber: team.supervisor,
+    departmentCode: team.coverage,
+    departmentName: departments.find((department) => department.code === team.coverage)?.name || team.coverage,
+    service: team.type,
+  }));
+  const serviceRows = services.map((service) => ({
+    ...service,
+    departmentName: service.name,
+    departmentCode: service.code,
+    teamCode: service.team?.code || teams.find((team) => team.id === service.teamId)?.code || "",
+  }));
 
   return (
     <section className="grid gap-5 xl:grid-cols-[1fr_420px]">
@@ -3368,24 +3402,28 @@ function TeamsServices({
           <Panel title="Department Codes" icon={MapPinned}>
             <ReportButtons type="departments" label="Departments report" />
             <DataTable rows={departments} columns={[["code", "Code"], ["name", "Department"], ["siteLocation", "Site"], ["description", "Description"]]} />
+            <SetupActions rows={departments} labelKey="code" onEdit={setEditingDepartment} onDelete={deleteDepartment} saving={saving} />
           </Panel>
         )}
         {showTeamCode && (
           <Panel title="Team Codes" icon={Users}>
             <ReportButtons type="teams" label="Team codes report" />
-            <DataTable rows={teams} columns={[["code", "Team Code"], ["name", "Team Name"], ["departmentName", "Department"], ["departmentCode", "Dept Code"], ["service", "Service"]]} />
+            <DataTable rows={teamRows} columns={[["code", "Team Code"], ["name", "Team Name"], ["departmentName", "Department"], ["departmentCode", "Dept Code"], ["service", "Service"]]} />
+            <SetupActions rows={teamRows} labelKey="code" onEdit={setEditingTeam} onDelete={deleteTeam} saving={saving} />
           </Panel>
         )}
         {showServiceTeams && (
           <Panel title="Service Teams" icon={Users}>
             <ReportButtons type="teams" label="Service teams report" />
-            <DataTable rows={teams} columns={[["code", "Code"], ["name", "Team"], ["companyIdNumber", "Company ID"], ["departmentCode", "Dept"], ["service", "Service"], ["email", "Email"], ["phone", "Phone"]]} />
+            <DataTable rows={teamRows} columns={[["code", "Code"], ["name", "Team"], ["companyIdNumber", "Company ID"], ["departmentCode", "Dept"], ["service", "Service"], ["email", "Email"], ["phone", "Phone"]]} />
+            <SetupActions rows={teamRows} labelKey="code" onEdit={setEditingTeam} onDelete={deleteTeam} saving={saving} />
           </Panel>
         )}
         {showServices && (
           <Panel title="Services Catalog" icon={ClipboardCheck}>
             <ReportButtons type="services" label="Services report" />
-            <DataTable rows={services} columns={[["code", "Code"], ["name", "Service"], ["departmentName", "Department"], ["departmentCode", "Dept"], ["teamCode", "Team Code"], ["slaHours", "SLA hrs"]]} />
+            <DataTable rows={serviceRows} columns={[["code", "Code"], ["name", "Service"], ["departmentName", "Department"], ["departmentCode", "Dept"], ["teamCode", "Team Code"], ["slaHours", "SLA hrs"]]} />
+            <SetupActions rows={serviceRows} labelKey="code" onEdit={setEditingService} onDelete={deleteService} saving={saving} />
           </Panel>
         )}
         {showAll && (
@@ -3402,7 +3440,56 @@ function TeamsServices({
         {showServices && <ServiceForm teams={teams} departments={departments} onSubmit={submitService} saving={saving} />}
         {showAll && <ActionForm title="Add Asset Category" onSubmit={submitCategory} fields={["code", "name", "type", "defaultLifeYrs", "statutory", "description"]} saving={saving} />}
       </div>
+      {editingDepartment && (
+        <RequestModalShell title={`Edit Department ${editingDepartment.code}`} onClose={() => setEditingDepartment(null)}>
+          <DepartmentForm department={editingDepartment} onSubmit={async (formData) => { await updateDepartment(editingDepartment.id, formData); setEditingDepartment(null); }} saving={saving} />
+        </RequestModalShell>
+      )}
+      {editingTeam && (
+        <RequestModalShell title={`Edit Team ${editingTeam.code}`} onClose={() => setEditingTeam(null)}>
+          <TeamForm team={editingTeam} departments={departments} onSubmit={async (formData) => { await updateTeam(editingTeam.id, formData); setEditingTeam(null); }} saving={saving} />
+        </RequestModalShell>
+      )}
+      {editingService && (
+        <RequestModalShell title={`Edit Service ${editingService.code}`} onClose={() => setEditingService(null)}>
+          <ServiceForm service={editingService} teams={teams} departments={departments} onSubmit={async (formData) => { await updateService(editingService.id, formData); setEditingService(null); }} saving={saving} />
+        </RequestModalShell>
+      )}
     </section>
+  );
+}
+
+function SetupActions({ rows, labelKey, onEdit, onDelete, saving }: { rows: any[]; labelKey: string; onEdit: (row: any) => void; onDelete: (id: string) => void; saving: boolean }) {
+  if (!rows.length) return null;
+  return (
+    <div className="mt-4 grid gap-2">
+      {rows.map((row) => (
+        <div key={row.id} className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2">
+          <span className="text-sm font-black">{row[labelKey]} / {row.name}</span>
+          <div className="flex gap-2">
+            <button type="button" onClick={() => onEdit(row)} className="rounded-lg bg-lagoon px-3 py-2 text-xs font-black text-white">Edit</button>
+            <button type="button" disabled={saving} onClick={() => onDelete(row.id)} className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Delete</button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function DepartmentForm({ department, onSubmit, saving }: { department?: any; onSubmit: (formData: FormData) => void; saving: boolean }) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await onSubmit(new FormData(event.currentTarget));
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="grid gap-3">
+      <input name="code" defaultValue={department?.code ?? ""} placeholder="Department code" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
+      <input name="name" defaultValue={department?.name ?? ""} placeholder="Department name" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
+      <input name="siteLocation" defaultValue={department?.siteLocation ?? ""} placeholder="Site location" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
+      <textarea name="description" defaultValue={department?.description ?? ""} placeholder="Description" className="min-h-24 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />
+      <button disabled={saving} className="h-11 rounded-lg bg-ink font-black text-white disabled:bg-slate-400">{saving ? "Saving..." : "Save Department"}</button>
+    </form>
   );
 }
 
@@ -3433,7 +3520,7 @@ function TeamCodeForm({ departments, onSubmit, saving }: { departments: any[]; o
   );
 }
 
-function TeamForm({ departments, onSubmit, saving }: { departments: any[]; onSubmit: (formData: FormData) => void; saving: boolean }) {
+function TeamForm({ team, departments, onSubmit, saving }: { team?: any; departments: any[]; onSubmit: (formData: FormData) => void; saving: boolean }) {
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
@@ -3445,24 +3532,25 @@ function TeamForm({ departments, onSubmit, saving }: { departments: any[]; onSub
     <form onSubmit={handleSubmit} className="rounded-lg border border-white/80 bg-white p-5 shadow-lift">
       <h3 className="text-xl font-black">Add Service Team</h3>
       <div className="mt-4 grid gap-3">
-        <input name="name" placeholder="Name" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
-        <input name="companyIdNumber" placeholder="Company ID number" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
-        <select name="departmentCode" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon">
+        <input name="name" defaultValue={team?.name ?? ""} placeholder="Name" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
+        <input name="teamCode" defaultValue={team?.code ?? ""} placeholder="Team code" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
+        <input name="companyIdNumber" defaultValue={team?.companyIdNumber ?? team?.supervisor ?? ""} placeholder="Company ID number" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
+        <select name="departmentCode" defaultValue={team?.departmentCode ?? team?.coverage ?? ""} className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon">
           <option value="">Select department code</option>
           {departments.map((department) => (
             <option key={department.id} value={department.code}>{department.code} - {department.name}</option>
           ))}
         </select>
-        <input name="service" placeholder="Service" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
-        <input name="email" type="email" placeholder="Email" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
-        <input name="phone" placeholder="Phone number" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
+        <input name="service" defaultValue={team?.service ?? team?.type ?? ""} placeholder="Service" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
+        <input name="email" type="email" defaultValue={team?.email ?? ""} placeholder="Email" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
+        <input name="phone" defaultValue={team?.phone ?? ""} placeholder="Phone number" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
         <button disabled={saving} className="h-11 rounded-lg bg-ink font-black text-white disabled:bg-slate-400">{saving ? "Saving..." : "Submit"}</button>
       </div>
     </form>
   );
 }
 
-function ServiceForm({ teams, departments, onSubmit, saving }: { teams: any[]; departments: any[]; onSubmit: (formData: FormData) => void; saving: boolean }) {
+function ServiceForm({ service, teams, departments, onSubmit, saving }: { service?: any; teams: any[]; departments: any[]; onSubmit: (formData: FormData) => void; saving: boolean }) {
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
@@ -3474,13 +3562,20 @@ function ServiceForm({ teams, departments, onSubmit, saving }: { teams: any[]; d
     <form onSubmit={handleSubmit} className="rounded-lg border border-white/80 bg-white p-5 shadow-lift">
       <h3 className="text-xl font-black">Add Service</h3>
       <div className="mt-4 grid gap-3">
-        <input name="departmentName" placeholder="Department name" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
-        <select name="departmentCode" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon">
+        <input name="departmentName" defaultValue={service?.departmentName ?? service?.name ?? ""} placeholder="Department / service name" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
+        <select name="departmentCode" defaultValue={service?.departmentCode ?? service?.code ?? ""} className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon">
           <option value="">Select department code</option>
           {departments.map((department) => (
             <option key={department.id} value={department.code}>{department.code} - {department.name}</option>
           ))}
         </select>
+        <select name="teamCode" defaultValue={service?.teamCode ?? service?.team?.code ?? ""} className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon">
+          <option value="">Select team code</option>
+          {teams.map((team) => (
+            <option key={team.id} value={team.code}>{team.code} - {team.name}</option>
+          ))}
+        </select>
+        <input name="slaHours" type="number" defaultValue={service?.slaHours ?? 24} placeholder="SLA hours" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
         <button disabled={saving} className="h-11 rounded-lg bg-ink font-black text-white disabled:bg-slate-400">{saving ? "Saving..." : "Submit"}</button>
       </div>
     </form>
