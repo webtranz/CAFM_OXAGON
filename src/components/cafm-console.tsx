@@ -615,6 +615,7 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { id?: st
               requests={records.requests}
               assets={records.assets}
               services={records.services}
+              assetCategories={records.categories}
               departments={records.departments}
               teams={records.teams}
               locations={records.locations}
@@ -1741,6 +1742,7 @@ function Helpdesk({
   requests,
   assets,
   services,
+  assetCategories,
   departments,
   teams,
   locations,
@@ -1755,6 +1757,7 @@ function Helpdesk({
   requests: any[];
   assets: any[];
   services: any[];
+  assetCategories: any[];
   departments: any[];
   teams: any[];
   locations: any[];
@@ -1778,7 +1781,7 @@ function Helpdesk({
   const [categoryFilter, setCategoryFilter] = useState("All");
   const [overdueOnly, setOverdueOnly] = useState(false);
   const isSupervisorView = roleKindLabel(role) === "admin" || roleKindLabel(role) === "supervisor";
-  const categories = ["All", ...Array.from(new Set(requests.map((request) => request.category).filter(Boolean)))];
+  const requestCategories = ["All", ...Array.from(new Set(requests.map((request) => request.category).filter(Boolean)))];
   const filteredRequests = useMemo(() => {
     return requests.filter((request) => {
       const haystack = `${request.ticketNo} ${request.title} ${request.description} ${request.requester} ${request.location} ${request.category} ${request.departmentCode} ${request.serviceCode}`.toLowerCase();
@@ -1854,7 +1857,7 @@ function Helpdesk({
               <option value="CRITICAL">Critical</option>
             </select>
             <select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)} className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold">
-              {categories.map((category) => <option key={category} value={category}>{category === "All" ? "Category" : category}</option>)}
+              {requestCategories.map((category) => <option key={category} value={category}>{category === "All" ? "Category" : category}</option>)}
             </select>
             <button type="button" onClick={() => setOverdueOnly((current) => !current)} className={`h-11 rounded-lg px-3 text-sm font-black ${overdueOnly ? "bg-coral text-white" : "border border-slate-200 bg-white text-slate-600"}`}>Overdue & Due Today</button>
           </div>
@@ -1965,6 +1968,7 @@ function Helpdesk({
           <ServiceRequestForm
             title=""
             services={services}
+            categories={assetCategories}
             departments={departments}
             teams={teams}
             locations={locations}
@@ -1983,6 +1987,7 @@ function Helpdesk({
             title=""
             request={editing}
             services={services}
+            categories={assetCategories}
             departments={departments}
             teams={teams}
             locations={locations}
@@ -2043,7 +2048,7 @@ function requestFormData(request: any, status: string, rejectionReason = "", ove
   return formData;
 }
 
-function ServiceRequestForm({ title, request, services, departments, teams, locations, onSubmit, saving, mode = "panel" }: { title: string; request?: any; services: any[]; departments: any[]; teams: any[]; locations: any[]; onSubmit: (formData: FormData) => void; saving: boolean; mode?: "panel" | "modal" }) {
+function ServiceRequestForm({ title, request, services, categories, departments, teams, locations, onSubmit, saving, mode = "panel" }: { title: string; request?: any; services: any[]; categories: any[]; departments: any[]; teams: any[]; locations: any[]; onSubmit: (formData: FormData) => void; saving: boolean; mode?: "panel" | "modal" }) {
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
@@ -2054,12 +2059,41 @@ function ServiceRequestForm({ title, request, services, departments, teams, loca
   const locationOptions = locations.map((location) => `${location.site} / ${location.building} / ${location.floor} / ${location.room}`);
   const formClass = mode === "modal" ? "" : "rounded-lg border border-white/80 bg-white p-5 shadow-lift";
   const [priority, setPriority] = useState(request?.priority ?? "MEDIUM");
+  const [categoryValue, setCategoryValue] = useState(request?.category ?? "");
+  const [showCategoryCreate, setShowCategoryCreate] = useState(false);
+  const [categoryName, setCategoryName] = useState("");
+  const [categoryCode, setCategoryCode] = useState("");
+  const [categorySaving, setCategorySaving] = useState(false);
+  const [localCategories, setLocalCategories] = useState<any[]>(categories);
+  const categoryOptions = Array.from(new Set([
+    ...localCategories.map((category) => category.name || category.code).filter(Boolean),
+    ...services.map((service) => service.category).filter(Boolean),
+  ]));
   const priorities = [
     { value: "LOW", label: "Low", tone: "bg-emerald-50 text-emerald-700 border-emerald-200" },
     { value: "MEDIUM", label: "Medium", tone: "bg-amber-50 text-amber-700 border-amber-200" },
     { value: "HIGH", label: "High", tone: "bg-orange-50 text-orange-700 border-orange-200" },
     { value: "CRITICAL", label: "Critical", tone: "bg-rose-50 text-rose-700 border-rose-200" },
   ];
+  async function createCategory() {
+    const name = categoryName.trim();
+    if (!name) return;
+    setCategorySaving(true);
+    const response = await fetch("/api/asset-categories", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: categoryCode.trim(), name, type: "Service Request", defaultLifeYrs: 5, description: `Request category ${name}` }),
+    });
+    const result = await response.json();
+    if (response.ok) {
+      setLocalCategories((current) => [...current.filter((item) => item.code !== result.code), result]);
+      setCategoryValue(result.name);
+      setCategoryName("");
+      setCategoryCode("");
+      setShowCategoryCreate(false);
+    }
+    setCategorySaving(false);
+  }
 
   return (
     <form onSubmit={handleSubmit} className={formClass}>
@@ -2092,12 +2126,24 @@ function ServiceRequestForm({ title, request, services, departments, teams, loca
           {locationOptions.map((location) => <option key={location}>{location}</option>)}
         </select>
         <div className="grid gap-3 md:grid-cols-2">
-          <select name="category" defaultValue={request?.category ?? ""} className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon">
+          <div className="grid gap-2">
+          <select name="category" value={categoryValue} onChange={(event) => setCategoryValue(event.target.value)} className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon">
             <option value="">Category</option>
-            {Array.from(new Set(services.map((service) => service.category).filter(Boolean))).map((category) => (
+            {categoryOptions.map((category) => (
               <option key={category} value={category}>{category}</option>
             ))}
           </select>
+          <button type="button" onClick={() => setShowCategoryCreate((current) => !current)} className="h-9 rounded-lg border border-lagoon/30 bg-lagoon/5 px-3 text-xs font-black text-lagoon">
+            {showCategoryCreate ? "Close Category Form" : "+ Add Category"}
+          </button>
+          {showCategoryCreate && (
+            <div className="grid gap-2 rounded-lg bg-slate-50 p-3">
+              <input value={categoryName} onChange={(event) => setCategoryName(event.target.value)} placeholder="New category name" className="h-10 rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-lagoon" />
+              <input value={categoryCode} onChange={(event) => setCategoryCode(event.target.value)} placeholder="Category code optional" className="h-10 rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-lagoon" />
+              <button type="button" disabled={categorySaving || !categoryName.trim()} onClick={createCategory} className="h-10 rounded-lg bg-ink text-sm font-black text-white disabled:bg-slate-400">{categorySaving ? "Saving..." : "Save Category"}</button>
+            </div>
+          )}
+          </div>
           <input name="requester" defaultValue={request?.requester ?? ""} placeholder="Created by / requester" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
         </div>
         <div className="grid gap-3 md:grid-cols-2">
