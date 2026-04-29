@@ -203,6 +203,8 @@ model Asset {
   additionalDescription String?
   parentAsset     String?
   departmentCode  String?
+  assignedTeamCode String?
+  assignedSupervisorEmail String?
   remarks         String?
   manufacturer    String
   model           String

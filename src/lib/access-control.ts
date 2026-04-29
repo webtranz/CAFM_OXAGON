@@ -10,6 +10,7 @@ export function accessRole(user: AccessUser | null) {
   if (role === "admin" || role.includes("super admin")) return "admin";
   if (role.includes("supervisor")) return "supervisor";
   if (role.includes("technician") || role.includes("service team")) return "technician";
+  if (role.includes("read") || role.includes("viewer") || role.includes("view only")) return "readonly";
   return "requester";
 }
 

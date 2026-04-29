@@ -66,6 +66,18 @@ export async function POST(request: Request) {
       },
     });
 
+    if (asset?.id) {
+      await prisma.assetHistory.create({
+        data: {
+          assetId: asset.id,
+          eventType: "WORK_ORDER_CREATED",
+          title: `${created.woNo} created`,
+          details: `${created.title} assigned to ${created.assignedTeamCode || "unassigned team"}.`,
+          actor: user?.name || user?.email || "System",
+        },
+      });
+    }
+
     return NextResponse.json(created, { status: 201 });
   } catch (error) {
     return NextResponse.json(

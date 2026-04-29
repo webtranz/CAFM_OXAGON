@@ -35,11 +35,30 @@ const schema = z.object({
   supervisorDecision: z.string().optional(),
 });
 
+function parseParts(value?: string) {
+  return String(value || "")
+    .split(/\r?\n|,/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [sku, qty] = line.split(":").map((part) => part.trim());
+      return { sku, quantity: Math.max(1, Number.parseInt(qty || "1", 10) || 1) };
+    })
+    .filter((item) => item.sku);
+}
+
+function partQuantities(value?: string) {
+  return parseParts(value).reduce((acc, part) => {
+    acc.set(part.sku, (acc.get(part.sku) ?? 0) + part.quantity);
+    return acc;
+  }, new Map<string, number>());
+}
+
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
     const input = schema.parse(await request.json());
-    const current = await prisma.workOrder.findUnique({ where: { id } });
+    const current = await prisma.workOrder.findUnique({ where: { id }, include: { asset: true } });
     if (!current) throw new Error("Work order not found");
     const user = await getCurrentUser();
     const role = accessRole(user);
@@ -118,6 +137,37 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       where: { id },
       data: updateData,
     });
+
+    if (input.inventoryUsed !== undefined && input.inventoryUsed !== current.inventoryUsed) {
+      const previous = partQuantities(current.inventoryUsed ?? "");
+      const next = partQuantities(input.inventoryUsed);
+      for (const [sku, quantity] of next.entries()) {
+        const delta = quantity - (previous.get(sku) ?? 0);
+        if (delta <= 0) continue;
+        const item = await prisma.inventoryItem.findUnique({ where: { sku } });
+        if (!item) continue;
+        await prisma.$transaction([
+          prisma.inventoryIssue.create({ data: { itemId: item.id, workId: id, quantity: delta } }),
+          prisma.inventoryItem.update({ where: { id: item.id }, data: { onHand: Math.max(0, item.onHand - delta) } }),
+        ]);
+      }
+    }
+
+    if (current.assetId && (status || input.inventoryUsed || input.workNotes)) {
+      await prisma.assetHistory.create({
+        data: {
+          assetId: current.assetId,
+          eventType: status ? "WORK_ORDER_STATUS" : "WORK_ORDER_UPDATE",
+          title: `${updated.woNo} ${status ? `moved to ${String(nextStatus).replaceAll("_", " ")}` : "updated"}`,
+          details: [
+            input.workNotes ? `Notes: ${input.workNotes}` : "",
+            input.inventoryUsed ? `Parts used: ${input.inventoryUsed}` : "",
+            input.materialRequest ? `Material request: ${input.materialRequest}` : "",
+          ].filter(Boolean).join("\n") || `Work order ${updated.woNo} updated.`,
+          actor: user?.name || user?.email || "System",
+        },
+      });
+    }
 
     if (updated.requestId && status === "CLOSED") {
       await prisma.serviceRequest.update({ where: { id: updated.requestId }, data: { status: "CLOSED" } });

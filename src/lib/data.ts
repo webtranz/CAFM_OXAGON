@@ -15,6 +15,7 @@ function roleKind(user: OperatingUser) {
   if (role === "admin" || role.includes("super admin")) return "admin";
   if (role.includes("supervisor")) return "supervisor";
   if (role.includes("technician") || role.includes("service team")) return "technician";
+  if (role.includes("read") || role.includes("viewer") || role.includes("view only")) return "readonly";
   return "requester";
 }
 
@@ -31,7 +32,14 @@ export async function getOperatingData(user: OperatingUser = null) {
     const kind = roleKind(user);
     const departmentsForUser = departmentValues(user);
     const teamCode = user?.team?.code;
-    const visibleAssetWhere = kind === "admin" ? {} : kind === "supervisor" || kind === "technician" ? { departmentCode: { in: departmentsForUser } } : {};
+    const visibleAssetWhere =
+      kind === "admin"
+        ? {}
+        : kind === "supervisor"
+        ? { departmentCode: { in: departmentsForUser } }
+        : kind === "technician"
+        ? { OR: [{ assignedTeamCode: teamCode || "" }, { departmentCode: { in: departmentsForUser } }] }
+        : {};
     const visibleRequestWhere =
       kind === "admin"
         ? {}
@@ -59,6 +67,7 @@ export async function getOperatingData(user: OperatingUser = null) {
         include: {
           site: { select: { name: true } },
           building: { select: { name: true, code: true } },
+          workOrders: { take: 8, orderBy: { updatedAt: "desc" }, select: { woNo: true, title: true, status: true, updatedAt: true, inventoryUsed: true, workNotes: true } },
           history: { take: 8, orderBy: { createdAt: "desc" } },
         },
       }),
@@ -73,6 +82,7 @@ export async function getOperatingData(user: OperatingUser = null) {
         include: {
           assignedTo: { select: { name: true, email: true } },
           asset: { select: { tag: true, name: true, assetDescription: true, buildingCode: true, floor: true, room: true } },
+          inventoryIssues: { include: { item: { select: { sku: true, name: true, unit: true } } }, orderBy: { issuedAt: "desc" } },
           request: { select: { ticketNo: true, title: true, description: true, requester: true, attachmentUrls: true, location: true, category: true, createdAt: true } },
         },
       }),

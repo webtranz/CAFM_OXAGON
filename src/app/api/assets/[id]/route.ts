@@ -19,6 +19,8 @@ const schema = z.object({
   additionalDescription: z.string().optional(),
   parentAsset: z.string().optional(),
   departmentCode: z.string().optional(),
+  assignedTeamCode: z.string().optional(),
+  assignedSupervisorEmail: z.string().optional(),
   remarks: z.string().optional(),
   manufacturer: z.string().optional(),
   model: z.string().optional(),
@@ -65,6 +67,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         additionalDescription: input.additionalDescription || null,
         parentAsset: input.parentAsset || null,
         departmentCode: input.departmentCode || null,
+        assignedTeamCode: input.assignedTeamCode || null,
+        assignedSupervisorEmail: input.assignedSupervisorEmail || null,
         remarks: input.remarks || null,
         manufacturer: input.manufacturer || "Not specified",
         model: input.model || "Not specified",
@@ -80,6 +84,16 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         depreciationRate: input.depreciationRate ?? current.depreciationRate,
         conditionScore: input.conditionScore ?? current.conditionScore,
         qrCode: input.qrCode || `CAFM-ASSET:${tag}`,
+      },
+    });
+
+    await prisma.assetHistory.create({
+      data: {
+        assetId: updated.id,
+        eventType: "ASSET_UPDATE",
+        title: "Asset master updated",
+        details: `Updated asset ${updated.tag}. Status: ${updated.status}. Team: ${updated.assignedTeamCode || "Unassigned"}.`,
+        actor: "Admin",
       },
     });
 

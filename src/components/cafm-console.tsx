@@ -297,6 +297,9 @@ function dashboardSubtitle(role: string, department?: string | null) {
   if (lower.includes("technician") || lower.includes("service team")) {
     return "Technician dashboard: assigned work orders, assigned requests and assigned PPM task execution.";
   }
+  if (lower.includes("read") || lower.includes("viewer") || lower.includes("view only")) {
+    return "Read-only dashboard: view assets, work orders and history without editing records.";
+  }
   return "Requester dashboard: create and track your service requests.";
 }
 
@@ -305,6 +308,7 @@ function roleKindLabel(role: string) {
   if (lower === "admin" || lower.includes("super admin")) return "admin";
   if (lower.includes("supervisor")) return "supervisor";
   if (lower.includes("technician") || lower.includes("service team")) return "technician";
+  if (lower.includes("read") || lower.includes("viewer") || lower.includes("view only")) return "readonly";
   return "requester";
 }
 
@@ -324,13 +328,15 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { id?: st
   }, []);
 
   const filteredAssets = useMemo(() => {
-    return records.assets.filter((asset) => `${asset.tag} ${asset.name} ${asset.category}`.toLowerCase().includes(query.toLowerCase()));
+    return records.assets.filter((asset) => `${asset.tag} ${asset.name} ${asset.category} ${asset.assetDescription} ${asset.assetGroup} ${asset.siteCode} ${asset.buildingCode} ${asset.floor} ${asset.room} ${asset.assignedTeamCode} ${asset.assignedSupervisorEmail}`.toLowerCase().includes(query.toLowerCase()));
   }, [records.assets, query]);
   const permissionCodes = useMemo(() => {
     return new Set(records.rolePermissions.filter((item) => item.role === user.role).map((item) => item.permission.code));
   }, [records.rolePermissions, user.role]);
-  const can = (permission?: string) => user.role === "Admin" || !permission || permissionCodes.has(permission);
-  const canOpenModule = (moduleId: string) => can(modulePermissions[moduleId]);
+  const isReadOnlyUser = roleKindLabel(user.role) === "readonly";
+  const readOnlyModules = new Set(["command", "dashboard", "assets", "work", "ppm", "requests", "reports"]);
+  const can = (permission?: string) => user.role === "Admin" || !permission || (!isReadOnlyUser && permissionCodes.has(permission));
+  const canOpenModule = (moduleId: string) => (isReadOnlyUser && readOnlyModules.has(moduleId)) || can(modulePermissions[moduleId]);
   const canViewActive = canOpenModule(active);
   const actionPermissions = {
     manageRequests: can("requests.manage"),
@@ -585,6 +591,10 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { id?: st
               submitAsset={(formData) => postRecord("/api/assets", formData, "Asset")}
               updateAsset={updateAsset}
               submitWorkOrder={submitWorkOrder}
+              teams={records.teams}
+              users={records.users}
+              locations={records.locations}
+              canManageAssets={can("assets.manage")}
             />
           )}
           {canViewActive && active === "work" && (
@@ -780,6 +790,10 @@ function Assets({
   submitAsset,
   updateAsset,
   submitWorkOrder,
+  teams,
+  users,
+  locations,
+  canManageAssets,
   saving,
 }: {
   assets: any[];
@@ -790,6 +804,10 @@ function Assets({
   submitAsset: (formData: FormData) => void;
   updateAsset: (id: string, formData: FormData) => void;
   submitWorkOrder: (formData: FormData) => void;
+  teams: any[];
+  users: any[];
+  locations: any[];
+  canManageAssets: boolean;
   saving: boolean;
 }) {
   const [previewAsset, setPreviewAsset] = useState<any | null>(null);
@@ -797,9 +815,18 @@ function Assets({
   const [filterOpen, setFilterOpen] = useState(false);
   const [filterField, setFilterField] = useState("name");
   const [filterValue, setFilterValue] = useState("");
+  const [siteFilter, setSiteFilter] = useState("");
+  const [buildingFilter, setBuildingFilter] = useState("");
+  const [floorFilter, setFloorFilter] = useState("");
+  const [roomFilter, setRoomFilter] = useState("");
   const filtered = assets.filter((asset) => {
     const text = String(asset[filterField] ?? asset.assetDescription ?? asset.name ?? "").toLowerCase();
-    return !filterValue || text.includes(filterValue.toLowerCase());
+    const textMatch = !filterValue || text.includes(filterValue.toLowerCase());
+    const siteMatch = !siteFilter || asset.siteCode === siteFilter || asset.site?.name === siteFilter;
+    const buildingMatch = !buildingFilter || asset.buildingCode === buildingFilter || asset.building?.code === buildingFilter || asset.building?.name === buildingFilter;
+    const floorMatch = !floorFilter || asset.floor === floorFilter;
+    const roomMatch = !roomFilter || asset.room === roomFilter;
+    return textMatch && siteMatch && buildingMatch && floorMatch && roomMatch;
   });
   const selectedAsset = assets.find((asset) => asset.id === selectedAssetId) ?? assets[0];
   const [page, setPage] = useState(1);
@@ -819,10 +846,14 @@ function Assets({
     ["qrCode", "QR Code"],
     ["serialNumber", "Serial No."],
   ];
+  const siteOptions = Array.from(new Set([...assets.map((asset) => asset.siteCode || asset.site?.name).filter(Boolean), ...locations.map((location) => location.site).filter(Boolean)]));
+  const buildingOptions = Array.from(new Set([...assets.filter((asset) => !siteFilter || asset.siteCode === siteFilter || asset.site?.name === siteFilter).map((asset) => asset.buildingCode || asset.building?.code || asset.building?.name).filter(Boolean), ...locations.filter((location) => !siteFilter || location.site === siteFilter).map((location) => location.building).filter(Boolean)]));
+  const floorOptions = Array.from(new Set([...assets.filter((asset) => (!siteFilter || asset.siteCode === siteFilter || asset.site?.name === siteFilter) && (!buildingFilter || asset.buildingCode === buildingFilter || asset.building?.code === buildingFilter || asset.building?.name === buildingFilter)).map((asset) => asset.floor).filter(Boolean), ...locations.filter((location) => (!siteFilter || location.site === siteFilter) && (!buildingFilter || location.building === buildingFilter)).map((location) => location.floor).filter(Boolean)]));
+  const roomOptions = Array.from(new Set([...assets.filter((asset) => (!siteFilter || asset.siteCode === siteFilter || asset.site?.name === siteFilter) && (!buildingFilter || asset.buildingCode === buildingFilter || asset.building?.code === buildingFilter || asset.building?.name === buildingFilter) && (!floorFilter || asset.floor === floorFilter)).map((asset) => asset.room).filter(Boolean), ...locations.filter((location) => (!siteFilter || location.site === siteFilter) && (!buildingFilter || location.building === buildingFilter) && (!floorFilter || location.floor === floorFilter)).map((location) => location.room).filter(Boolean)]));
 
   useEffect(() => {
     setPage(1);
-  }, [query, assets.length, filterField, filterValue]);
+  }, [query, assets.length, filterField, filterValue, siteFilter, buildingFilter, floorFilter, roomFilter]);
 
   return (
     <section className="grid gap-5">
@@ -834,7 +865,7 @@ function Assets({
             <Search size={18} className="text-slate-400" />
             <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search Assets" className="h-11 w-full outline-none" />
           </div>
-          <button type="button" onClick={() => setCreateOpen(true)} className="flex h-11 items-center gap-2 rounded-lg bg-lagoon px-4 text-sm font-black text-white"><Plus size={16} /> Asset</button>
+          {canManageAssets && <button type="button" onClick={() => setCreateOpen(true)} className="flex h-11 items-center gap-2 rounded-lg bg-lagoon px-4 text-sm font-black text-white"><Plus size={16} /> Asset</button>}
         </div>
         {filterOpen && (
           <div className="mb-4 rounded-lg border border-slate-200 bg-white p-4 shadow-lift">
@@ -850,6 +881,25 @@ function Assets({
             </div>
           </div>
         )}
+        <div className="mb-4 grid gap-3 rounded-lg bg-slate-50 p-3 md:grid-cols-5">
+          <select value={siteFilter} onChange={(event) => { setSiteFilter(event.target.value); setBuildingFilter(""); setFloorFilter(""); setRoomFilter(""); }} className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold">
+            <option value="">Site</option>
+            {siteOptions.map((site) => <option key={site} value={site}>{site}</option>)}
+          </select>
+          <select value={buildingFilter} onChange={(event) => { setBuildingFilter(event.target.value); setFloorFilter(""); setRoomFilter(""); }} className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold">
+            <option value="">Building</option>
+            {buildingOptions.map((building) => <option key={building} value={building}>{building}</option>)}
+          </select>
+          <select value={floorFilter} onChange={(event) => { setFloorFilter(event.target.value); setRoomFilter(""); }} className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold">
+            <option value="">Floor</option>
+            {floorOptions.map((floor) => <option key={floor} value={floor}>{floor}</option>)}
+          </select>
+          <select value={roomFilter} onChange={(event) => setRoomFilter(event.target.value)} className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold">
+            <option value="">Room</option>
+            {roomOptions.map((room) => <option key={room} value={room}>{room}</option>)}
+          </select>
+          <button type="button" onClick={() => { setSiteFilter(""); setBuildingFilter(""); setFloorFilter(""); setRoomFilter(""); }} className="h-11 rounded-lg bg-white px-3 text-sm font-black text-lagoon">Clear Location</button>
+        </div>
         <div className="overflow-auto rounded-lg border border-slate-200">
           <table className="min-w-[1500px] border-collapse bg-white text-sm">
             <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
@@ -886,10 +936,11 @@ function Assets({
         </div>
         <div className="mt-3"><PaginationControls page={currentPage} totalPages={totalPages} onPageChange={setPage} totalItems={filtered.length} /></div>
       </Panel>
-      {createOpen && <RequestModalShell title="Add Asset" onClose={() => setCreateOpen(false)}><AssetCreateForm onSubmit={async (formData) => { await submitAsset(formData); setCreateOpen(false); }} saving={saving} /></RequestModalShell>}
+      {canManageAssets && createOpen && <RequestModalShell title="Add Asset" onClose={() => setCreateOpen(false)}><AssetCreateForm teams={teams} users={users} locations={locations} onSubmit={async (formData) => { await submitAsset(formData); setCreateOpen(false); }} saving={saving} /></RequestModalShell>}
       {previewAsset && (
         <AssetPreviewModal
           asset={previewAsset}
+          canManageAssets={canManageAssets}
           onClose={() => setPreviewAsset(null)}
           onEdit={() => setPreviewAsset({ ...previewAsset, editing: true })}
           onCreateWorkOrder={() => {
@@ -905,14 +956,14 @@ function Assets({
             submitWorkOrder(formData);
           }}
         >
-          {previewAsset.editing && <AssetEditForm asset={previewAsset} saving={saving} onSubmit={(formData) => updateAsset(previewAsset.id, formData)} />}
+          {canManageAssets && previewAsset.editing && <AssetEditForm asset={previewAsset} teams={teams} users={users} saving={saving} onSubmit={(formData) => updateAsset(previewAsset.id, formData)} />}
         </AssetPreviewModal>
       )}
     </section>
   );
 }
 
-function AssetCreateForm({ onSubmit, saving }: { onSubmit: (formData: FormData) => void; saving: boolean }) {
+function AssetCreateForm({ teams, users, locations, onSubmit, saving }: { teams: any[]; users: any[]; locations: any[]; onSubmit: (formData: FormData) => void; saving: boolean }) {
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
@@ -964,7 +1015,7 @@ function AssetCreateForm({ onSubmit, saving }: { onSubmit: (formData: FormData) 
         <AssetTextField label="Entity Name" name="system" />
         <AssetTextField label="Asset Name" name="assetDescription" />
         <AssetTextField label="Description" name="additionalDescription" />
-        <AssetTextField label="Location Name" name="room" />
+        <AssetLocationSelects locations={locations} />
         <AssetTextField label="Asset Type" name="assetGroup" />
         <div className="grid gap-3 sm:grid-cols-2">
           <AssetTextField label="Model No." name="model" />
@@ -976,7 +1027,8 @@ function AssetCreateForm({ onSubmit, saving }: { onSubmit: (formData: FormData) 
         </div>
         <AssetTextField label="QR Code" name="qrCode" />
         <AssetTextField label="Parent Asset" name="parentAsset" />
-        <AssetTextField label="Assigned To" name="departmentCode" />
+        <AssetTextField label="Department Code" name="departmentCode" />
+        <AssetAssignmentFields teams={teams} users={users} />
         <AssetTextField label="Vendors" name="contractRef" />
         <AssetTextField label="Asset Code" name="tag" />
         <AssetTextField label="Parts" name="remarks" />
@@ -1014,6 +1066,98 @@ function AssetTextField({ label, name, required = false, defaultValue = "", type
         className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon"
       />
     </label>
+  );
+}
+
+function AssetLocationSelects({
+  locations,
+  defaults = {},
+}: {
+  locations: any[];
+  defaults?: { siteCode?: string; buildingCode?: string; floor?: string; room?: string };
+}) {
+  const [site, setSite] = useState(defaults.siteCode ?? "");
+  const [building, setBuilding] = useState(defaults.buildingCode ?? "");
+  const [floor, setFloor] = useState(defaults.floor ?? "");
+  const [room, setRoom] = useState(defaults.room ?? "");
+  const optionValues = (field: "site" | "building" | "floor" | "room") => Array.from(new Set(
+    locations
+      .filter((location) => !site || field === "site" || location.site === site)
+      .filter((location) => !building || field === "site" || field === "building" || location.building === building)
+      .filter((location) => !floor || field === "site" || field === "building" || field === "floor" || location.floor === floor)
+      .map((location) => location[field])
+      .filter(Boolean)
+  ));
+  const fieldClass = "h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold outline-none focus:border-lagoon";
+
+  return (
+    <div className="grid gap-3 rounded-lg bg-slate-50 p-3">
+      <p className="text-xs font-black uppercase text-slate-500">Location drill-down</p>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="grid gap-1 text-sm font-bold text-slate-600">
+          Site
+          <select name="siteCode" value={site} onChange={(event) => { setSite(event.target.value); setBuilding(""); setFloor(""); setRoom(""); }} className={fieldClass}>
+            <option value="">Select site</option>
+            {optionValues("site").map((value) => <option key={value} value={value}>{value}</option>)}
+          </select>
+        </label>
+        <label className="grid gap-1 text-sm font-bold text-slate-600">
+          Building
+          <select name="buildingCode" value={building} onChange={(event) => { setBuilding(event.target.value); setFloor(""); setRoom(""); }} className={fieldClass}>
+            <option value="">Select building</option>
+            {optionValues("building").map((value) => <option key={value} value={value}>{value}</option>)}
+          </select>
+        </label>
+        <label className="grid gap-1 text-sm font-bold text-slate-600">
+          Floor
+          <select name="floor" value={floor} onChange={(event) => { setFloor(event.target.value); setRoom(""); }} className={fieldClass}>
+            <option value="">Select floor</option>
+            {optionValues("floor").map((value) => <option key={value} value={value}>{value}</option>)}
+          </select>
+        </label>
+        <label className="grid gap-1 text-sm font-bold text-slate-600">
+          Room
+          <select name="room" value={room} onChange={(event) => setRoom(event.target.value)} className={fieldClass}>
+            <option value="">Select room</option>
+            {optionValues("room").map((value) => <option key={value} value={value}>{value}</option>)}
+          </select>
+        </label>
+      </div>
+    </div>
+  );
+}
+
+function AssetAssignmentFields({
+  teams,
+  users,
+  defaultTeam = "",
+  defaultSupervisor = "",
+}: {
+  teams: any[];
+  users: any[];
+  defaultTeam?: string;
+  defaultSupervisor?: string;
+}) {
+  const supervisors = users.filter((user) => String(user.role ?? "").toLowerCase().includes("supervisor") || String(user.role ?? "").toLowerCase().includes("admin"));
+  const fieldClass = "h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold outline-none focus:border-lagoon";
+
+  return (
+    <div className="grid gap-3 rounded-lg bg-slate-50 p-3 sm:grid-cols-2">
+      <label className="grid gap-1 text-sm font-bold text-slate-600">
+        Assigned Team
+        <select name="assignedTeamCode" defaultValue={defaultTeam} className={fieldClass}>
+          <option value="">Unassigned</option>
+          {teams.map((team) => <option key={team.id ?? team.code} value={team.code}>{team.code} - {team.name}</option>)}
+        </select>
+      </label>
+      <label className="grid gap-1 text-sm font-bold text-slate-600">
+        Assigned Supervisor
+        <select name="assignedSupervisorEmail" defaultValue={defaultSupervisor} className={fieldClass}>
+          <option value="">Unassigned</option>
+          {supervisors.map((user) => <option key={user.id ?? user.email} value={user.email}>{user.name || user.email} / {user.department || "All departments"}</option>)}
+        </select>
+      </label>
+    </div>
   );
 }
 
@@ -1077,7 +1221,7 @@ function AssetIdentity({ asset }: { asset: any }) {
   );
 }
 
-function AssetEditForm({ asset, saving, onSubmit }: { asset: any; saving: boolean; onSubmit: (formData: FormData) => void }) {
+function AssetEditForm({ asset, teams, users, saving, onSubmit }: { asset: any; teams: any[]; users: any[]; saving: boolean; onSubmit: (formData: FormData) => void }) {
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     await onSubmit(new FormData(event.currentTarget));
@@ -1110,6 +1254,7 @@ function AssetEditForm({ asset, saving, onSubmit }: { asset: any; saving: boolea
             <EditField label="Additional description" name="additionalDescription" defaultValue={textValue(asset.additionalDescription)} />
             <EditField label="Parent Asset" name="parentAsset" defaultValue={textValue(asset.parentAsset)} />
             <EditField label="Department" name="departmentCode" defaultValue={textValue(asset.departmentCode)} />
+            <AssetAssignmentFields teams={teams} users={users} defaultTeam={textValue(asset.assignedTeamCode)} defaultSupervisor={textValue(asset.assignedSupervisorEmail)} />
             <label className="grid gap-1 text-sm font-bold text-slate-600">
               Remarks
               <textarea name="remarks" defaultValue={textValue(asset.remarks)} className="min-h-24 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />
@@ -1434,18 +1579,20 @@ function WorkOrders({
           }}
         />
       )}
-      {selectedWork && canExecute && !canAssignOrEdit && selectedWork.status !== "CLOSED" && selectedWork.status !== "PENDING_SUPERVISOR_REVIEW" && <WorkExecutionForm work={selectedWork} saving={saving} onSubmit={(formData) => updateWorkOrder(selectedWork.id, formData)} />}
+      {selectedWork && canExecute && !canAssignOrEdit && selectedWork.status !== "CLOSED" && selectedWork.status !== "PENDING_SUPERVISOR_REVIEW" && <WorkExecutionForm work={selectedWork} inventory={data.inventory} saving={saving} onSubmit={(formData) => updateWorkOrder(selectedWork.id, formData)} />}
     </section>
   );
 }
 
-function AssetPreviewModal({ asset, onClose, onEdit, onCreateWorkOrder, children }: { asset: any; onClose: () => void; onEdit: () => void; onCreateWorkOrder: () => void; children?: React.ReactNode }) {
+function AssetPreviewModal({ asset, canManageAssets, onClose, onEdit, onCreateWorkOrder, children }: { asset: any; canManageAssets: boolean; onClose: () => void; onEdit: () => void; onCreateWorkOrder: () => void; children?: React.ReactNode }) {
   const image = attachmentList(asset.documentationUrl).find(isImageUrl);
   const docs = attachmentList(asset.documentationUrl);
   const historyData = (asset.history ?? []).slice(0, 8).map((event: any) => ({
     name: new Date(event.createdAt).toLocaleDateString(),
     events: 1,
   }));
+  const workHistory = asset.workOrders ?? [];
+  const partsHistory = workHistory.flatMap((work: any) => String(work.inventoryUsed ?? "").split(/\r?\n|,/).map((part) => part.trim()).filter(Boolean).map((part) => ({ work: work.woNo, part, updatedAt: work.updatedAt })));
 
   return (
     <RequestModalShell title={`Asset | ${asset.assetDescription || asset.name}`} onClose={onClose}>
@@ -1456,8 +1603,8 @@ function AssetPreviewModal({ asset, onClose, onEdit, onCreateWorkOrder, children
             <span className="px-2 pb-3 text-slate-500">Status (Beta) <span className="rounded-full bg-lime-100 px-2 py-1 text-xs text-lime-700">Online</span></span>
           </div>
           <div className="flex gap-2">
-            <button type="button" onClick={onCreateWorkOrder} className="rounded-lg bg-lagoon px-4 py-3 text-sm font-black text-white"><Plus size={16} className="inline" /> Work Order</button>
-            <button type="button" onClick={onEdit} className="rounded-lg border border-slate-200 px-4 py-3 text-sm font-black text-lagoon">Edit</button>
+            {canManageAssets && <button type="button" onClick={onCreateWorkOrder} className="rounded-lg bg-lagoon px-4 py-3 text-sm font-black text-white"><Plus size={16} className="inline" /> Work Order</button>}
+            {canManageAssets && <button type="button" onClick={onEdit} className="rounded-lg border border-slate-200 px-4 py-3 text-sm font-black text-lagoon">Edit</button>}
           </div>
         </div>
         <div>
@@ -1484,6 +1631,8 @@ function AssetPreviewModal({ asset, onClose, onEdit, onCreateWorkOrder, children
             <PreviewField label="Parent" value={asset.parentAsset} />
             <PreviewField label="QR Code" value={asset.qrCode} />
             <PreviewField label="Warranty" value={formatDateCell(asset.warrantyExpiry)} />
+            <PreviewField label="Assigned Team" value={asset.assignedTeamCode} />
+            <PreviewField label="Supervisor" value={asset.assignedSupervisorEmail} />
           </div>
         </div>
         <div className="border-t border-slate-200 pt-5">
@@ -1495,10 +1644,33 @@ function AssetPreviewModal({ asset, onClose, onEdit, onCreateWorkOrder, children
             <span>{asset.assetDescription || asset.name}</span>
             <span className="rounded-full bg-lime-100 px-2 py-1 text-xs text-lime-700">Online</span>
           </div>
-          <button type="button" onClick={onEdit} className="mt-3 rounded-lg border border-slate-200 px-4 py-3 text-sm font-black text-lagoon">+ Sub Asset</button>
+          {canManageAssets && <button type="button" onClick={onEdit} className="mt-3 rounded-lg border border-slate-200 px-4 py-3 text-sm font-black text-lagoon">+ Sub Asset</button>}
         </div>
         <div className="border-t border-slate-200 pt-5">
           <h4 className="font-black">Work Order History</h4>
+          <div className="mt-3 grid gap-2">
+            {workHistory.length ? workHistory.map((work: any) => (
+              <div key={work.woNo} className="rounded-lg bg-slate-50 p-3 text-sm">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="font-black text-ink">{work.woNo} / {work.title}</p>
+                  <span className="rounded-full bg-white px-2 py-1 text-xs font-black text-lagoon">{work.status}</span>
+                </div>
+                <p className="mt-1 text-slate-600">{work.workNotes || "No technician notes recorded."}</p>
+                <p className="mt-1 text-xs font-bold text-slate-400">Updated {formatDateCell(work.updatedAt)}</p>
+              </div>
+            )) : <p className="text-sm font-bold text-slate-500">No linked work orders yet.</p>}
+          </div>
+          <div className="mt-4 rounded-lg border border-slate-200 bg-white p-3">
+            <p className="text-sm font-black">Parts Replaced / Used</p>
+            <div className="mt-2 grid gap-2">
+              {partsHistory.length ? partsHistory.map((part: any, index: number) => (
+                <div key={`${part.work}-${part.part}-${index}`} className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 text-sm font-bold">
+                  <span>{part.part}</span>
+                  <span className="text-xs text-slate-400">{part.work}</span>
+                </div>
+              )) : <span className="text-sm text-slate-500">No parts usage recorded.</span>}
+            </div>
+          </div>
           <div className="mt-3 h-52 rounded-lg bg-slate-50 p-3">
             {historyData.length ? (
               <ResponsiveContainer>
@@ -1511,6 +1683,21 @@ function AssetPreviewModal({ asset, onClose, onEdit, onCreateWorkOrder, children
                 </BarChart>
               </ResponsiveContainer>
             ) : <div className="grid h-full place-items-center text-sm font-black text-slate-400">Not Enough Data</div>}
+          </div>
+        </div>
+        <div className="border-t border-slate-200 pt-5">
+          <h4 className="font-black">Asset History Timeline</h4>
+          <div className="mt-3 grid gap-3">
+            {(asset.history ?? []).length ? (asset.history ?? []).map((event: any) => (
+              <div key={event.id} className="border-l-4 border-lagoon bg-slate-50 p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="font-black">{event.title}</p>
+                  <span className="text-xs font-bold text-slate-400">{formatDateCell(event.createdAt)}</span>
+                </div>
+                <p className="mt-1 text-sm text-slate-600">{event.details}</p>
+                <p className="mt-1 text-xs font-black text-lagoon">{event.eventType} / {event.actor}</p>
+              </div>
+            )) : <p className="text-sm font-bold text-slate-500">No history recorded yet.</p>}
           </div>
         </div>
         {children}
@@ -2560,7 +2747,7 @@ function WorkOrderForm({ title, work, data, onSubmit, saving }: { title: string;
             <input name="resolutionAt" type="datetime-local" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
             <input name="finishedAt" type="datetime-local" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
             <textarea name="assetsUsed" defaultValue={work.assetsUsed ?? ""} placeholder="Assets added or used" className="min-h-20 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />
-            <textarea name="inventoryUsed" defaultValue={work.inventoryUsed ?? ""} placeholder="Inventory/spares used" className="min-h-20 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />
+            <PartsSelector inventory={data.inventory} defaultValue={work.inventoryUsed ?? ""} />
             <textarea name="workNotes" defaultValue={work.workNotes ?? ""} placeholder="Work notes / execution log" className="min-h-20 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />
             <textarea name="materialRequest" defaultValue={work.materialRequest ?? ""} placeholder="Material request to supervisor" className="min-h-20 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />
             <textarea name="rejectionReason" defaultValue={work.rejectionReason ?? ""} placeholder="Technician reject reason, if rejected" className="min-h-20 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />
@@ -2580,7 +2767,68 @@ function WorkOrderForm({ title, work, data, onSubmit, saving }: { title: string;
   );
 }
 
-function WorkExecutionForm({ work, onSubmit, saving }: { work: any; onSubmit: (formData: FormData) => void; saving: boolean }) {
+function PartsSelector({ inventory, defaultValue = "" }: { inventory: any[]; defaultValue?: string }) {
+  const parseDefault = () => String(defaultValue || "")
+    .split(/\r?\n|,/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [sku, qty] = line.split(":").map((part) => part.trim());
+      return { sku, quantity: Math.max(1, Number.parseInt(qty || "1", 10) || 1) };
+    });
+  const [rows, setRows] = useState(parseDefault);
+  const [sku, setSku] = useState("");
+  const [quantity, setQuantity] = useState(1);
+  const value = rows.map((row) => `${row.sku}:${row.quantity}`).join("\n");
+  const selectedItem = inventory.find((item) => item.sku === sku);
+
+  return (
+    <div className="grid gap-2 rounded-lg border border-slate-200 bg-white p-3">
+      <input type="hidden" name="inventoryUsed" value={value} />
+      <p className="text-sm font-black text-slate-700">Parts Used</p>
+      <div className="grid gap-2 md:grid-cols-[1fr_120px_auto]">
+        <select value={sku} onChange={(event) => setSku(event.target.value)} className="h-11 rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-lagoon">
+          <option value="">Select part from stock</option>
+          {inventory.map((item) => <option key={item.id ?? item.sku} value={item.sku}>{item.sku} - {item.name} ({item.onHand ?? 0} {item.unit ?? ""})</option>)}
+        </select>
+        <input type="number" min={1} value={quantity} onChange={(event) => setQuantity(Math.max(1, Number(event.target.value) || 1))} className="h-11 rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-lagoon" />
+        <button
+          type="button"
+          onClick={() => {
+            if (!sku) return;
+            setRows((current) => {
+              const existing = current.find((row) => row.sku === sku);
+              if (existing) return current.map((row) => row.sku === sku ? { ...row, quantity: row.quantity + quantity } : row);
+              return [...current, { sku, quantity }];
+            });
+            setSku("");
+            setQuantity(1);
+          }}
+          className="h-11 rounded-lg bg-lagoon px-4 text-sm font-black text-white"
+        >
+          Add Part
+        </button>
+      </div>
+      {selectedItem && <p className="text-xs font-bold text-slate-500">Available stock: {selectedItem.onHand ?? 0} {selectedItem.unit ?? ""}</p>}
+      <div className="grid gap-2">
+        {rows.length ? rows.map((row) => {
+          const item = inventory.find((stock) => stock.sku === row.sku);
+          return (
+            <div key={row.sku} className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 text-sm">
+              <span className="font-bold">{row.sku} - {item?.name ?? "Part"}</span>
+              <div className="flex items-center gap-3">
+                <span className="font-black">Qty {row.quantity}</span>
+                <button type="button" onClick={() => setRows((current) => current.filter((itemRow) => itemRow.sku !== row.sku))} className="text-xs font-black text-coral">Remove</button>
+              </div>
+            </div>
+          );
+        }) : <p className="text-xs font-bold text-slate-400">No parts selected.</p>}
+      </div>
+    </div>
+  );
+}
+
+function WorkExecutionForm({ work, inventory, onSubmit, saving }: { work: any; inventory: any[]; onSubmit: (formData: FormData) => void; saving: boolean }) {
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     await onSubmit(new FormData(event.currentTarget));
@@ -2600,7 +2848,7 @@ function WorkExecutionForm({ work, onSubmit, saving }: { work: any; onSubmit: (f
         <ImageUploadField name="photoUrls" defaultValue={work.photoUrls ?? ""} />
         <textarea name="materialRequest" defaultValue={work.materialRequest ?? ""} placeholder="Parts request for supervisor approval" className="min-h-20 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />
         <textarea name="assetsUsed" defaultValue={work.assetsUsed ?? ""} placeholder="Assets requested or used" className="min-h-20 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />
-        <textarea name="inventoryUsed" defaultValue={work.inventoryUsed ?? ""} placeholder="Parts/inventory used after approval" className="min-h-20 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />
+        <PartsSelector inventory={inventory} defaultValue={work.inventoryUsed ?? ""} />
         <button disabled={saving} className="h-11 rounded-lg bg-ink font-black text-white disabled:bg-slate-400">{saving ? "Saving..." : "Submit Update"}</button>
       </div>
     </form>
