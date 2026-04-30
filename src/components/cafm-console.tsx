@@ -2439,7 +2439,7 @@ function WorkOrderPreviewModal({
   const files = attachments.filter((item) => !isImageUrl(item));
   const [activeImage, setActiveImage] = useState(images[0] ?? "");
   const [zoom, setZoom] = useState(1);
-  const [quickForm, setQuickForm] = useState<"" | "procedure" | "part" | "cost">("");
+  const [quickForm, setQuickForm] = useState<"" | "procedure" | "part">("");
   const [quickValue, setQuickValue] = useState("");
   const [quickPartSku, setQuickPartSku] = useState("");
   const [quickPartQty, setQuickPartQty] = useState(1);
@@ -2461,12 +2461,11 @@ function WorkOrderPreviewModal({
     ["Closed", work.finishedAt, work.supervisorDecision || "Final supervisor review pending."],
   ].filter(([, date]) => Boolean(date));
 
-  async function saveQuick(kind: "procedure" | "part" | "cost") {
+  async function saveQuick(kind: "procedure" | "part") {
     const value = quickValue.trim();
     if (!value) return;
     if (kind === "procedure") await onPatch?.({ jobPlan: [work.jobPlan, value].filter(Boolean).join("\n") });
     if (kind === "part") await onPatch?.({ inventoryUsed: [work.inventoryUsed, value].filter(Boolean).join("\n") });
-    if (kind === "cost") await onPatch?.({ cost: value });
     setQuickValue("");
     setQuickForm("");
   }
@@ -2639,16 +2638,6 @@ function WorkOrderPreviewModal({
                 {String(work.inventoryUsed || "").split(/\r?\n|,/).map((part) => part.trim()).filter(Boolean).map((part) => <span key={part} className="rounded-lg bg-slate-50 px-3 py-2">{part}</span>)}
                 {!work.inventoryUsed && <span>No parts added.</span>}
               </div>
-            </div>
-            <div className="rounded-lg border border-slate-200 bg-white p-4">
-              <div className="flex items-center justify-between"><h4 className="font-black">Other Costs</h4><button type="button" onClick={() => setQuickForm(quickForm === "cost" ? "" : "cost")} disabled={!onPatch} className="rounded-lg border border-lagoon/30 px-3 py-2 text-xs font-black text-lagoon disabled:opacity-50">Add Cost</button></div>
-              {quickForm === "cost" && (
-                <div className="mt-3 flex gap-2">
-                  <input value={quickValue} onChange={(event) => setQuickValue(event.target.value)} type="number" placeholder="Cost amount" className="h-10 flex-1 rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-lagoon" />
-                  <button type="button" onClick={() => saveQuick("cost")} className="rounded-lg bg-lagoon px-4 text-sm font-black text-white">Save</button>
-                </div>
-              )}
-              <p className="mt-2 text-sm font-black text-slate-700">{work.cost ? `$${work.cost}` : "No extra costs."}</p>
             </div>
           </div>
         </div>
@@ -2995,7 +2984,7 @@ function WorkOrderForm({ title, work, data, onSubmit, saving }: { title: string;
             <textarea name="supervisorDecision" defaultValue={work.supervisorDecision ?? ""} placeholder="Approve, reject, reopen or reassign decision notes" className="min-h-20 rounded-lg border border-emerald-100 p-3 outline-none focus:border-lagoon" />
           </div>
         )}
-        {work && <div className="grid grid-cols-2 gap-3"><input name="estimatedHours" type="number" defaultValue={work.estimatedHours ?? ""} className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" /><input name="cost" type="number" defaultValue={work.cost ?? ""} className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" /></div>}
+        {work && <input name="estimatedHours" type="number" defaultValue={work.estimatedHours ?? ""} placeholder="Estimated hours" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />}
         <button disabled={saving} className="h-11 rounded-lg bg-ink font-black text-white disabled:bg-slate-400">{saving ? "Saving..." : "Save Work Order"}</button>
       </div>
     </form>
@@ -3191,7 +3180,7 @@ function Ppm({
           </div>
         )}
       </Panel>
-      <ActionForm title="Create PPM" onSubmit={submitPpm} fields={["code", "name", "assetTag", "frequency", "durationHrs", "checklist"]} saving={saving} />
+      <PpmCreateForm assets={assets} onSubmit={submitPpm} saving={saving} />
       {previewPpm && (
         <PmPreviewModal
           ppm={previewPpm}
@@ -3206,6 +3195,65 @@ function Ppm({
         />
       )}
     </section>
+  );
+}
+
+function PpmCreateForm({ assets, onSubmit, saving }: { assets: any[]; onSubmit: (formData: FormData) => void; saving: boolean }) {
+  const [selectedAssetTag, setSelectedAssetTag] = useState("");
+  const selectedAsset = assets.find((asset) => asset.tag === selectedAssetTag);
+  const selectedLocation = selectedAsset ? [selectedAsset.siteCode || selectedAsset.site?.name, selectedAsset.buildingCode || selectedAsset.building?.name, selectedAsset.floor, selectedAsset.room].filter(Boolean).join(" > ") : "";
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    await onSubmit(new FormData(form));
+    form.reset();
+    setSelectedAssetTag("");
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="rounded-lg border border-white/80 bg-white p-5 shadow-lift">
+      <div className="mb-4 flex items-center gap-3">
+        <div className="grid h-10 w-10 place-items-center rounded-lg bg-sun/50 text-amber-700">
+          <CalendarCheck size={20} />
+        </div>
+        <h3 className="text-xl font-black">Create PPM</h3>
+      </div>
+      <div className="grid gap-3">
+        <input name="code" placeholder="PPM code" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
+        <input name="name" placeholder="PPM title" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
+        <select name="assetTag" value={selectedAssetTag} onChange={(event) => setSelectedAssetTag(event.target.value)} className="h-11 rounded-lg border border-slate-200 bg-white px-3 outline-none focus:border-lagoon">
+          <option value="">Select asset from register</option>
+          {assets.map((asset) => (
+            <option key={asset.id ?? asset.tag} value={asset.tag}>
+              {asset.tag} - {asset.assetDescription || asset.name} / {asset.assetGroup || asset.category || "Asset"}
+            </option>
+          ))}
+        </select>
+        {selectedAsset && (
+          <div className="grid gap-1 rounded-lg bg-slate-50 p-3 text-xs font-bold text-slate-600">
+            <span>Location: {selectedLocation || "-"}</span>
+            <span>Department: {selectedAsset.departmentCode || "-"}</span>
+            <span>Team: {selectedAsset.assignedTeamCode || "-"}</span>
+          </div>
+        )}
+        <select name="frequency" className="h-11 rounded-lg border border-slate-200 bg-white px-3 outline-none focus:border-lagoon">
+          <option value="">Select frequency</option>
+          <option>Daily</option>
+          <option>Weekly</option>
+          <option>Monthly</option>
+          <option>Quarterly</option>
+          <option>Semi Annual</option>
+          <option>Annual</option>
+        </select>
+        <input name="durationHrs" type="number" min={0} step="0.5" placeholder="Duration hours" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
+        <textarea name="checklist" placeholder="Checklist / preventive maintenance procedure" className="min-h-28 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />
+        <button disabled={saving} className="mt-2 flex h-11 items-center justify-center gap-2 rounded-lg bg-ink px-4 font-black text-white disabled:cursor-not-allowed disabled:bg-slate-400">
+          <Plus size={18} />
+          {saving ? "Saving..." : "Submit"}
+        </button>
+      </div>
+    </form>
   );
 }
 
@@ -3226,7 +3274,7 @@ function PmPreviewModal({
 }) {
   const checklist = checklistItems(ppm.checklist);
   const [tab, setTab] = useState<"comments" | "history">("history");
-  const [quickForm, setQuickForm] = useState<"" | "procedure" | "part" | "cost">("");
+  const [quickForm, setQuickForm] = useState<"" | "procedure" | "part">("");
   const [quickValue, setQuickValue] = useState("");
   const priority = ppm.durationHrs >= 8 ? "CRITICAL" : ppm.durationHrs >= 4 ? "HIGH" : "MEDIUM";
   const historyData = workOrders.slice(0, 8).map((work) => ({
@@ -3235,10 +3283,10 @@ function PmPreviewModal({
     completed: ["CLOSED", "COMPLETED", "PENDING_SUPERVISOR_REVIEW"].includes(work.status) ? 1 : 0,
   }));
 
-  async function savePpmQuick(kind: "procedure" | "part" | "cost") {
+  async function savePpmQuick(kind: "procedure" | "part") {
     const value = quickValue.trim();
     if (!value) return;
-    const line = kind === "procedure" ? value : `${kind === "part" ? "Part" : "Cost"}: ${value}`;
+    const line = kind === "procedure" ? value : `Part: ${value}`;
     await onUpdate({ checklist: [ppm.checklist, line].filter(Boolean).join("\n") });
     setQuickValue("");
     setQuickForm("");
@@ -3304,16 +3352,6 @@ function PmPreviewModal({
                 </div>
               )}
               <p className="mt-2 text-sm font-bold text-slate-500">No parts reserved yet.</p>
-            </div>
-            <div className="rounded-lg border border-slate-200 bg-white p-4">
-              <div className="flex items-center justify-between"><h4 className="font-black">Other Costs</h4><button type="button" onClick={() => setQuickForm(quickForm === "cost" ? "" : "cost")} className="rounded-lg border border-lagoon/30 px-3 py-2 text-xs font-black text-lagoon">Add Cost</button></div>
-              {quickForm === "cost" && (
-                <div className="mt-3 flex gap-2">
-                  <input value={quickValue} onChange={(event) => setQuickValue(event.target.value)} placeholder="Cost amount / note" className="h-10 flex-1 rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-lagoon" />
-                  <button type="button" onClick={() => savePpmQuick("cost")} className="rounded-lg bg-lagoon px-4 text-sm font-black text-white">Save</button>
-                </div>
-              )}
-              <p className="mt-2 text-sm font-bold text-slate-500">No cost entries.</p>
             </div>
           </div>
           <div className="rounded-lg border border-slate-200 bg-white p-4">
