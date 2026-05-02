@@ -4199,6 +4199,12 @@ function HousingOperations({
 }) {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("All");
+  const [companyFilter, setCompanyFilter] = useState("All");
+  const [buildingFilter, setBuildingFilter] = useState("All");
+  const [floorFilter, setFloorFilter] = useState("All");
+  const [categoryFilter, setCategoryFilter] = useState("All");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [selected, setSelected] = useState<{ type: string; record: any } | null>(null);
   const rooms = housing?.rooms ?? [];
   const bookings = housing?.bookings ?? [];
@@ -4208,10 +4214,93 @@ function HousingOperations({
   const approvals = housing?.approvals ?? [];
   const notifications = housing?.notifications ?? [];
   const history = housing?.history ?? [];
-  const occupancy = rooms.reduce((sum, room) => sum + Number(room.occupancy || 0), 0);
-  const capacity = rooms.reduce((sum, room) => sum + Number(room.capacity || 0), 0);
-  const openApprovals = approvals.filter((approval) => approval.status === "PENDING").length;
-  const overdueInspections = inspections.filter((inspection) => new Date(inspection.dueAt).getTime() < Date.now() && !["PASSED", "CLOSED"].includes(inspection.status)).length;
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const roomBuilding = (room: any) => room?.block?.name || room?.property?.name || "Unassigned";
+  const roomMatchesLocationFilters = (room: any) => {
+    if (buildingFilter !== "All" && roomBuilding(room) !== buildingFilter) return false;
+    if (floorFilter !== "All" && String(room?.floor ?? "") !== floorFilter) return false;
+    if (categoryFilter !== "All" && String(room?.roomType ?? "") !== categoryFilter) return false;
+    return true;
+  };
+  const inDashboardDateRange = (value: unknown) => {
+    if (!dateFrom && !dateTo) return true;
+    if (!value) return false;
+    const time = new Date(String(value)).getTime();
+    if (Number.isNaN(time)) return false;
+    if (dateFrom && time < new Date(`${dateFrom}T00:00:00`).getTime()) return false;
+    if (dateTo && time > new Date(`${dateTo}T23:59:59`).getTime()) return false;
+    return true;
+  };
+  const activeBookingStatuses = new Set(["APPROVED", "CHECKED_IN", "PENDING_APPROVAL", "REQUESTED"]);
+  const bookingCompany = (booking: any) => booking?.resident?.companyId || booking?.departmentCode || "Unassigned";
+  const bookingMatchesFilters = (booking: any) => {
+    if (!roomMatchesLocationFilters(booking.room)) return false;
+    if (companyFilter !== "All" && bookingCompany(booking) !== companyFilter) return false;
+    return inDashboardDateRange(booking.checkIn || booking.createdAt);
+  };
+  const filteredBookings = bookings.filter(bookingMatchesFilters);
+  const companyRoomIds = new Set(filteredBookings.map((booking) => booking.roomId || booking.room?.id).filter(Boolean));
+  const dashboardRooms = rooms.filter((room) => roomMatchesLocationFilters(room) && (companyFilter === "All" || companyRoomIds.has(room.id)));
+  const dashboardRoomIds = new Set(dashboardRooms.map((room) => room.id));
+  const dashboardInspections = inspections.filter((inspection) => dashboardRoomIds.has(inspection.roomId || inspection.room?.id) && inDashboardDateRange(inspection.dueAt || inspection.createdAt));
+  const dashboardAssets = assets.filter((asset) => !asset.roomId || dashboardRoomIds.has(asset.roomId || asset.room?.id));
+  const dashboardInventory = inventory.filter((item) => !item.roomId || dashboardRoomIds.has(item.roomId || item.room?.id));
+  const dashboardApprovals = approvals.filter((approval) => inDashboardDateRange(approval.createdAt || approval.updatedAt));
+  const occupancy = dashboardRooms.reduce((sum, room) => sum + Number(room.occupancy || 0), 0);
+  const capacity = dashboardRooms.reduce((sum, room) => sum + Number(room.capacity || 0), 0);
+  const availableRooms = dashboardRooms.filter((room) => room.status === "AVAILABLE").length;
+  const occupiedRooms = dashboardRooms.filter((room) => room.status === "OCCUPIED" || Number(room.occupancy || 0) >= Number(room.capacity || 0)).length;
+  const vacantRooms = dashboardRooms.filter((room) => room.status === "AVAILABLE" && Number(room.occupancy || 0) === 0).length;
+  const blockedRooms = dashboardRooms.filter((room) => room.status === "BLOCKED").length;
+  const maintenanceRooms = dashboardRooms.filter((room) => room.status === "MAINTENANCE").length;
+  const checkInsToday = filteredBookings.filter((booking) => String(booking.checkIn || "").slice(0, 10) === todayKey).length;
+  const checkOutsToday = filteredBookings.filter((booking) => String(booking.checkOut || "").slice(0, 10) === todayKey).length;
+  const openApprovals = dashboardApprovals.filter((approval) => approval.status === "PENDING").length;
+  const overdueInspections = dashboardInspections.filter((inspection) => new Date(inspection.dueAt).getTime() < Date.now() && !["PASSED", "CLOSED"].includes(inspection.status)).length;
+  const safetyObservations = dashboardInspections.filter((inspection) => inspection.status === "FAILED" || Number(inspection.score || 100) < 80).length + notifications.filter((notification) => ["HIGH", "CRITICAL"].includes(notification.severity)).length;
+  const housekeepingOpen = dashboardInspections.filter((inspection) => String(inspection.inspectionType || "").toLowerCase().includes("housekeeping") && !["PASSED", "CLOSED"].includes(inspection.status)).length;
+  const dashboardCompanies = Array.from(new Set(bookings.map(bookingCompany))).filter(Boolean).sort();
+  const dashboardBuildings = Array.from(new Set(rooms.map(roomBuilding))).filter(Boolean).sort();
+  const dashboardFloors = Array.from(new Set(rooms.map((room) => String(room.floor ?? "")))).filter(Boolean).sort();
+  const dashboardCategories = Array.from(new Set(rooms.map((room) => String(room.roomType ?? "")))).filter(Boolean).sort();
+  const groupRooms = (rows: any[], keyFn: (row: any) => string) => {
+    const map = new Map<string, { name: string; capacity: number; occupied: number; rooms: number }>();
+    rows.forEach((room) => {
+      const key = keyFn(room) || "Unassigned";
+      const current = map.get(key) || { name: key, capacity: 0, occupied: 0, rooms: 0 };
+      current.capacity += Number(room.capacity || 0);
+      current.occupied += Number(room.occupancy || 0);
+      current.rooms += 1;
+      map.set(key, current);
+    });
+    return Array.from(map.values()).map((item) => ({ ...item, occupancy: item.capacity ? Math.round((item.occupied / item.capacity) * 100) : 0 }));
+  };
+  const groupCount = (rows: any[], keyFn: (row: any) => string) => {
+    const map = new Map<string, number>();
+    rows.forEach((row) => {
+      const key = keyFn(row) || "Unassigned";
+      map.set(key, (map.get(key) || 0) + 1);
+    });
+    return Array.from(map.entries()).map(([name, value]) => ({ name, value }));
+  };
+  const companyOccupancyData = groupCount(filteredBookings.filter((booking) => activeBookingStatuses.has(booking.status)), bookingCompany);
+  const buildingOccupancyData = groupRooms(dashboardRooms, roomBuilding);
+  const categoryOccupancyData = groupRooms(dashboardRooms, (room) => room.roomType || "Unassigned");
+  const ticketSummary = [
+    { metric: "Open booking requests", value: filteredBookings.filter((booking) => ["REQUESTED", "PENDING_APPROVAL"].includes(booking.status)).length, status: "Open" },
+    { metric: "Approved / checked-in", value: filteredBookings.filter((booking) => ["APPROVED", "CHECKED_IN"].includes(booking.status)).length, status: "Active" },
+    { metric: "Inspection findings", value: overdueInspections, status: overdueInspections ? "Action" : "Clear" },
+    { metric: "Safety observations", value: safetyObservations, status: safetyObservations ? "Action" : "Clear" },
+  ];
+  const assetStatusSummary = groupCount(dashboardAssets, (asset) => asset.status || "Unknown");
+  const housekeepingSummary = [
+    { metric: "Open housekeeping checks", value: housekeepingOpen, status: housekeepingOpen ? "Action" : "Clear" },
+    { metric: "Completed inspections", value: dashboardInspections.filter((inspection) => ["PASSED", "CLOSED"].includes(inspection.status)).length, status: "Completed" },
+    { metric: "Failed inspections", value: dashboardInspections.filter((inspection) => inspection.status === "FAILED").length, status: "Failed" },
+  ];
+  const todayMovements = filteredBookings
+    .filter((booking) => String(booking.checkIn || "").slice(0, 10) === todayKey || String(booking.checkOut || "").slice(0, 10) === todayKey)
+    .map((booking) => ({ ...booking, movement: String(booking.checkIn || "").slice(0, 10) === todayKey ? "Check-in" : "Check-out" }));
   const filterText = search.toLowerCase();
   const visibleBookings = bookings.filter((booking) => {
     const haystack = `${booking.bookingNo} ${booking.residentName} ${booking.departmentCode} ${booking.status} ${booking.room?.roomNumber} ${booking.bed?.label}`.toLowerCase();
@@ -4253,10 +4342,18 @@ function HousingOperations({
     <section className="grid gap-5">
       <Panel title="Housing Operations Command" icon={Building2}>
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <HousingKpi label="Occupancy" value={`${occupancy}/${capacity}`} detail={`${capacity ? Math.round((occupancy / capacity) * 100) : 0}% occupied`} />
-          <HousingKpi label="Available Rooms" value={String(rooms.filter((room) => room.status === "AVAILABLE").length)} detail="ready for allocation" />
-          <HousingKpi label="Pending Approvals" value={String(openApprovals)} detail="requires supervisor action" />
-          <HousingKpi label="Inspection Alerts" value={String(overdueInspections)} detail="overdue or open findings" />
+          <HousingKpi label="Available Rooms" value={String(availableRooms)} detail="ready for allocation" onClick={() => setStatus("AVAILABLE")} />
+          <HousingKpi label="Occupied Rooms" value={String(occupiedRooms)} detail={`${capacity ? Math.round((occupancy / capacity) * 100) : 0}% bed occupancy`} onClick={() => setStatus("OCCUPIED")} />
+          <HousingKpi label="Vacant Rooms" value={String(vacantRooms)} detail="empty and assignable" onClick={() => setStatus("AVAILABLE")} />
+          <HousingKpi label="Blocked Rooms" value={String(blockedRooms)} detail="blocked for allocation" onClick={() => setStatus("BLOCKED")} />
+          <HousingKpi label="Under Maintenance" value={String(maintenanceRooms)} detail="repair or shutdown" onClick={() => setStatus("MAINTENANCE")} />
+          <HousingKpi label="Check-ins Today" value={String(checkInsToday)} detail="scheduled arrivals" onClick={() => setStatus("CHECKED_IN")} />
+          <HousingKpi label="Check-outs Today" value={String(checkOutsToday)} detail="scheduled departures" onClick={() => setStatus("CHECKED_OUT")} />
+          <HousingKpi label="Pending Approvals" value={String(openApprovals)} detail="requires action" onClick={() => setStatus("PENDING")} />
+          <HousingKpi label="Ticket Summary" value={String(ticketSummary.reduce((sum, item) => sum + item.value, 0))} detail="requests and findings" />
+          <HousingKpi label="Asset Status" value={String(dashboardAssets.length)} detail={`${assetStatusSummary.length} active statuses`} />
+          <HousingKpi label="Housekeeping" value={String(housekeepingOpen)} detail="open housekeeping checks" />
+          <HousingKpi label="Safety / Incidents" value={String(safetyObservations)} detail="observations requiring review" />
         </div>
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <div className="flex min-w-[260px] flex-1 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3">
@@ -4281,20 +4378,61 @@ function HousingOperations({
             <option>ACTIVE</option>
             <option>PENDING</option>
           </select>
-          <ReportButtons type="housing-bookings" label="Housing bookings report" />
+          <select value={companyFilter} onChange={(event) => setCompanyFilter(event.target.value)} className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold">
+            <option>All</option>
+            {dashboardCompanies.map((company) => <option key={company}>{company}</option>)}
+          </select>
+          <select value={buildingFilter} onChange={(event) => setBuildingFilter(event.target.value)} className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold">
+            <option>All</option>
+            {dashboardBuildings.map((building) => <option key={building}>{building}</option>)}
+          </select>
+          <select value={floorFilter} onChange={(event) => setFloorFilter(event.target.value)} className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold">
+            <option>All</option>
+            {dashboardFloors.map((floor) => <option key={floor}>{floor}</option>)}
+          </select>
+          <select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)} className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold">
+            <option>All</option>
+            {dashboardCategories.map((category) => <option key={category}>{category}</option>)}
+          </select>
+          <input value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} type="date" className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold" />
+          <input value={dateTo} onChange={(event) => setDateTo(event.target.value)} type="date" className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold" />
+          <ReportButtons type="housing-dashboard" label="Housing dashboard PDF" />
         </div>
       </Panel>
 
       {activePanel === "dashboard" && (
-        <section className="grid gap-5 xl:grid-cols-[1.3fr_0.7fr]">
-          <HousingTable
-            title="Accommodation & Occupancy"
-            rows={visibleRooms}
-            columns={[["code", "Code"], ["roomNumber", "Room"], ["roomType", "Type"], ["floor", "Floor"], ["occupancy", "Occ"], ["capacity", "Cap"], ["status", "Status"], ["qrCode", "QR"]]}
-            onSelect={(record) => setSelected({ type: "room", record })}
-            reportType="housing-rooms"
-          />
-          <HousingAlerts notifications={notifications} approvals={approvals} onApprove={(id, nextStatus) => updateHousing("approval", id, { status: nextStatus })} canApprove={canApprove} />
+        <section className="grid gap-5">
+          <div className="grid gap-5 xl:grid-cols-3">
+            <HousingChart title="Company-wise Occupancy" data={companyOccupancyData} dataKey="value" />
+            <HousingChart title="Building-wise Occupancy" data={buildingOccupancyData} dataKey="occupancy" suffix="%" />
+            <HousingChart title="Room Category Occupancy" data={categoryOccupancyData} dataKey="occupancy" suffix="%" />
+          </div>
+          <div className="grid gap-5 xl:grid-cols-[1.3fr_0.7fr]">
+            <HousingTable
+              title="Accommodation & Occupancy Drill-down"
+              rows={dashboardRooms}
+              columns={[["code", "Code"], ["roomNumber", "Room"], ["roomType", "Type"], ["floor", "Floor"], ["occupancy", "Occ"], ["capacity", "Cap"], ["status", "Status"], ["qrCode", "QR"]]}
+              onSelect={(record) => setSelected({ type: "room", record })}
+              reportType="housing-rooms"
+            />
+            <div className="grid gap-5">
+              <HousingSummaryTable title="Ticket Summary" rows={ticketSummary} />
+              <HousingSummaryTable title="Asset Status Summary" rows={assetStatusSummary.map((item) => ({ metric: item.name, value: item.value, status: "Assets" }))} />
+              <HousingSummaryTable title="Housekeeping Status Summary" rows={housekeepingSummary} />
+              <HousingSummaryTable title="Pending Approvals Summary" rows={[{ metric: "Pending approvals", value: openApprovals, status: "Pending" }]} />
+              <HousingSummaryTable title="Safety Observations & Incidents" rows={[{ metric: "Open observations / incidents", value: safetyObservations, status: safetyObservations ? "Action" : "Clear" }]} />
+            </div>
+          </div>
+          <div className="grid gap-5 xl:grid-cols-[1fr_0.8fr]">
+            <HousingTable
+              title="Today Check-in / Check-out Movement"
+              rows={todayMovements}
+              columns={[["movement", "Movement"], ["bookingNo", "Booking"], ["residentName", "Resident"], ["departmentCode", "Company / Dept"], ["status", "Status"], ["priority", "Priority"]]}
+              onSelect={(record) => setSelected({ type: "booking", record })}
+              reportType="housing-bookings"
+            />
+            <HousingAlerts notifications={notifications} approvals={dashboardApprovals} onApprove={(id, nextStatus) => updateHousing("approval", id, { status: nextStatus })} canApprove={canApprove} />
+          </div>
         </section>
       )}
 
@@ -4386,13 +4524,59 @@ function HousingOperations({
   );
 }
 
-function HousingKpi({ label, value, detail }: { label: string; value: string; detail: string }) {
+function HousingKpi({ label, value, detail, onClick }: { label: string; value: string; detail: string; onClick?: () => void }) {
+  const className = "rounded-lg border border-slate-100 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-lagoon/40 hover:shadow-lift";
+  if (onClick) {
+    return (
+      <button type="button" onClick={onClick} className={className}>
+        <p className="text-sm font-bold text-slate-500">{label}</p>
+        <p className="mt-2 text-3xl font-black">{value}</p>
+        <p className="mt-1 text-sm font-bold text-lagoon">{detail}</p>
+      </button>
+    );
+  }
   return (
-    <div className="rounded-lg border border-slate-100 bg-white p-4 shadow-sm">
+    <div className={className}>
       <p className="text-sm font-bold text-slate-500">{label}</p>
       <p className="mt-2 text-3xl font-black">{value}</p>
       <p className="mt-1 text-sm font-bold text-lagoon">{detail}</p>
     </div>
+  );
+}
+
+function HousingChart({ title, data, dataKey, suffix = "" }: { title: string; data: any[]; dataKey: string; suffix?: string }) {
+  const chartData = data.length ? data.slice(0, 8) : [{ name: "No data", [dataKey]: 0 }];
+  return (
+    <Panel title={title} icon={Gauge}>
+      <div className="h-64">
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={chartData} margin={{ top: 10, right: 10, left: -18, bottom: 5 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+            <XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} angle={-15} height={52} />
+            <YAxis tick={{ fontSize: 11 }} />
+            <Tooltip formatter={(value) => [`${value}${suffix}`, title]} />
+            <Bar dataKey={dataKey} radius={[6, 6, 0, 0]} fill="#0f8b8d" />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    </Panel>
+  );
+}
+
+function HousingSummaryTable({ title, rows }: { title: string; rows: Array<{ metric: string; value: number; status: string }> }) {
+  return (
+    <Panel title={title} icon={TicketCheck}>
+      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+        {rows.map((row) => (
+          <div key={`${title}-${row.metric}`} className="grid grid-cols-[1fr_auto_auto] items-center gap-3 border-b border-slate-100 px-3 py-3 last:border-b-0">
+            <span className="text-sm font-bold text-slate-700">{row.metric}</span>
+            <span className="text-lg font-black text-ink">{row.value}</span>
+            <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-black uppercase text-slate-600">{row.status}</span>
+          </div>
+        ))}
+        {!rows.length && <div className="px-3 py-6 text-center text-sm font-bold text-slate-500">No summary records found.</div>}
+      </div>
+    </Panel>
   );
 }
 

@@ -130,6 +130,74 @@ async function reportRows(type: string, filters: ReturnType<typeof reportFilters
     const rows = await prisma.iotAlert.findMany({ orderBy: { detectedAt: "desc" } });
     return rows.map((row) => ({ source: row.source, assetTag: row.assetTag, severity: row.severity, message: row.message, status: row.status, detectedAt: dateValue(row.detectedAt) }));
   }
+  if (type === "housing-dashboard") {
+    const [rooms, bookings, inspections, assets, inventory, approvals, notifications] = await Promise.all([
+      prisma.housingRoom.findMany({ include: { property: true, block: true } }),
+      prisma.housingBooking.findMany({ include: { room: { include: { property: true, block: true } }, resident: true } }),
+      prisma.housingInspection.findMany({ include: { room: { include: { property: true, block: true } } } }),
+      prisma.housingAsset.findMany({ include: { room: { include: { property: true, block: true } } } }),
+      prisma.housingInventory.findMany({ include: { room: { include: { property: true, block: true } } } }),
+      prisma.housingApproval.findMany(),
+      prisma.housingNotification.findMany(),
+    ]);
+    const today = new Date().toISOString().slice(0, 10);
+    const capacity = rooms.reduce((sum, room) => sum + room.capacity, 0);
+    const occupancy = rooms.reduce((sum, room) => sum + room.occupancy, 0);
+    const metricRows: ReportRow[] = [
+      { section: "Summary", metric: "Total available rooms", value: rooms.filter((room) => room.status === "AVAILABLE").length, detail: "Rooms ready for allocation" },
+      { section: "Summary", metric: "Total occupied rooms", value: rooms.filter((room) => room.status === "OCCUPIED" || room.occupancy >= room.capacity).length, detail: "Rooms currently occupied" },
+      { section: "Summary", metric: "Total vacant rooms", value: rooms.filter((room) => room.status === "AVAILABLE" && room.occupancy === 0).length, detail: "Vacant rooms" },
+      { section: "Summary", metric: "Total blocked rooms", value: rooms.filter((room) => room.status === "BLOCKED").length, detail: "Blocked rooms" },
+      { section: "Summary", metric: "Total under-maintenance rooms", value: rooms.filter((room) => room.status === "MAINTENANCE").length, detail: "Rooms under maintenance" },
+      { section: "Summary", metric: "Total check-ins today", value: bookings.filter((booking) => dateValue(booking.checkIn).slice(0, 10) === today).length, detail: today },
+      { section: "Summary", metric: "Total check-outs today", value: bookings.filter((booking) => dateValue(booking.checkOut).slice(0, 10) === today).length, detail: today },
+      { section: "Summary", metric: "Bed occupancy percentage", value: capacity ? Math.round((occupancy / capacity) * 100) : 0, detail: `${occupancy}/${capacity} beds occupied` },
+      { section: "Summary", metric: "Ticket summary", value: bookings.filter((booking) => ["REQUESTED", "PENDING_APPROVAL"].includes(booking.status)).length + inspections.filter((inspection) => inspection.status === "FAILED").length, detail: "Open booking requests and inspection findings" },
+      { section: "Summary", metric: "Asset status summary", value: assets.length, detail: "Housing assets tracked" },
+      { section: "Summary", metric: "Housekeeping status summary", value: inspections.filter((inspection) => inspection.inspectionType.toLowerCase().includes("housekeeping") && !["PASSED", "CLOSED"].includes(inspection.status)).length, detail: "Open housekeeping checks" },
+      { section: "Summary", metric: "Pending approvals summary", value: approvals.filter((approval) => approval.status === "PENDING").length, detail: "Awaiting approval" },
+      { section: "Summary", metric: "Safety observations and incidents summary", value: inspections.filter((inspection) => inspection.status === "FAILED" || inspection.score < 80).length + notifications.filter((notification) => ["HIGH", "CRITICAL"].includes(notification.severity)).length, detail: "Open safety observations or high alerts" },
+      { section: "Inventory", metric: "Housing inventory items", value: inventory.length, detail: "Inventory SKUs in housing" },
+    ];
+    const buildingRows = Array.from(rooms.reduce((map, room) => {
+      const key = room.block?.name ?? room.property.name;
+      const current = map.get(key) ?? { capacity: 0, occupancy: 0, rooms: 0 };
+      current.capacity += room.capacity;
+      current.occupancy += room.occupancy;
+      current.rooms += 1;
+      map.set(key, current);
+      return map;
+    }, new Map<string, { capacity: number; occupancy: number; rooms: number }>()).entries()).map(([building, values]) => ({
+      section: "Building-wise occupancy",
+      metric: building,
+      value: values.capacity ? Math.round((values.occupancy / values.capacity) * 100) : 0,
+      detail: `${values.occupancy}/${values.capacity} beds, ${values.rooms} rooms`,
+    }));
+    const categoryRows = Array.from(rooms.reduce((map, room) => {
+      const current = map.get(room.roomType) ?? { capacity: 0, occupancy: 0, rooms: 0 };
+      current.capacity += room.capacity;
+      current.occupancy += room.occupancy;
+      current.rooms += 1;
+      map.set(room.roomType, current);
+      return map;
+    }, new Map<string, { capacity: number; occupancy: number; rooms: number }>()).entries()).map(([category, values]) => ({
+      section: "Room category occupancy",
+      metric: category,
+      value: values.capacity ? Math.round((values.occupancy / values.capacity) * 100) : 0,
+      detail: `${values.occupancy}/${values.capacity} beds, ${values.rooms} rooms`,
+    }));
+    const companyRows = Array.from(bookings.reduce((map, booking) => {
+      const key = booking.resident?.companyId || booking.departmentCode || "Unassigned";
+      map.set(key, (map.get(key) ?? 0) + 1);
+      return map;
+    }, new Map<string, number>()).entries()).map(([company, count]) => ({
+      section: "Company-wise occupancy",
+      metric: company,
+      value: count,
+      detail: "Active or requested housing bookings",
+    }));
+    return [...metricRows, ...companyRows, ...buildingRows, ...categoryRows];
+  }
   if (type === "housing-rooms") {
     const rows = await prisma.housingRoom.findMany({ include: { property: true, block: true, beds: true }, orderBy: { roomNumber: "asc" } });
     return rows.map((row) => ({ code: row.code, property: row.property.name, block: row.block?.name ?? "", floor: row.floor, roomNumber: row.roomNumber, roomType: row.roomType, capacity: row.capacity, occupancy: row.occupancy, status: row.status, qrCode: row.qrCode, remarks: row.remarks, createdAt: dateValue(row.createdAt) }));
