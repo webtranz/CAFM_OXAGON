@@ -6,7 +6,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
 const bodySchema = z.record(z.unknown());
-const closedBookingStatuses = ["CHECKED_OUT", "REJECTED", "CANCELLED"];
+const closedBookingStatuses = ["CHECKED_OUT", "REJECTED", "CANCELLED", "NO_SHOW", "TRANSFERRED"];
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ type: string; id: string }> }) {
   try {
@@ -36,17 +36,54 @@ export async function DELETE(_: Request, { params }: { params: Promise<{ type: s
 async function updateHousingRecord(type: string, id: string, input: Record<string, unknown>, actor: string) {
   if (type === "booking") {
     const status = text(input.status);
+    const current = await prisma.housingBooking.findUnique({ where: { id }, include: { bed: true, room: true } });
+    if (!current) throw new Error("Booking not found.");
+    const nextRoomId = text(input.roomId) || current.roomId;
+    const nextRoom = nextRoomId !== current.roomId ? await prisma.housingRoom.findUnique({ where: { id: nextRoomId } }) : current.room;
+    if (!nextRoom) throw new Error("Selected room does not exist.");
+    if (["CHECKED_IN", "APPROVED", "PENDING_APPROVAL"].includes(status || current.status) && ["BLOCKED", "MAINTENANCE"].includes(nextRoom.status)) {
+      throw new Error("Blocked or under-maintenance rooms cannot be allocated.");
+    }
+    const nextBedId = text(input.bedId) || current.bedId || undefined;
+    const nextBed = nextBedId ? await prisma.housingBed.findUnique({ where: { id: nextBedId } }) : null;
+    if (nextBed && nextBed.roomId !== nextRoom.id) throw new Error("Selected bed does not belong to the selected room.");
+    if (nextBed && nextBed.id !== current.bedId && ["RESERVED", "OCCUPIED"].includes(nextBed.status)) throw new Error("Occupied beds cannot be assigned twice.");
     const booking = await prisma.housingBooking.update({
       where: { id },
       data: {
         status: (status || undefined) as any,
+        roomId: nextRoom.id,
+        bedId: nextBed?.id || current.bedId,
         approvedBy: text(input.approvedBy) || undefined,
         notes: text(input.notes) || undefined,
         attachmentUrls: text(input.attachmentUrls) || undefined,
         checkOut: input.checkOut ? new Date(String(input.checkOut)) : undefined,
+        employeeId: text(input.employeeId) || undefined,
+        companyName: text(input.companyName) || undefined,
+        nationality: text(input.nationality) || undefined,
+        contactNumber: text(input.contactNumber) || undefined,
+        gender: text(input.gender) || undefined,
+        buildingNumber: text(input.buildingNumber) || undefined,
+        floorNumber: text(input.floorNumber) || undefined,
+        roomNumber: text(input.roomNumber) || nextRoom.roomNumber,
+        bedNumber: text(input.bedNumber) || nextBed?.label || undefined,
+        bookingType: text(input.bookingType) || undefined,
+        allocationType: text(input.allocationType) || undefined,
+        keyHandoverBy: text(input.keyHandoverBy) || undefined,
+        keyHandoverAt: input.keyHandoverAt ? new Date(String(input.keyHandoverAt)) : undefined,
+        campIdNumber: text(input.campIdNumber) || undefined,
+        campIdIssuedAt: input.campIdIssuedAt ? new Date(String(input.campIdIssuedAt)) : undefined,
+        cancellationReason: text(input.cancellationReason) || undefined,
+        transferReason: text(input.transferReason) || undefined,
+        blacklistReason: text(input.blacklistReason) || undefined,
+        noShowAt: status === "NO_SHOW" ? new Date() : input.noShowAt ? new Date(String(input.noShowAt)) : undefined,
       },
       include: { bed: true, room: true },
     });
+    if (current.bedId && current.bedId !== booking.bedId) {
+      await prisma.housingBed.update({ where: { id: current.bedId }, data: { status: "AVAILABLE", occupant: "", occupantId: "" } });
+      await refreshRoomOccupancy(current.roomId);
+    }
     if (booking.bedId) {
       await prisma.housingBed.update({
         where: { id: booking.bedId },
@@ -69,6 +106,7 @@ async function updateHousingRecord(type: string, id: string, input: Record<strin
         roomNumber: text(input.roomNumber) || undefined,
         floor: text(input.floor) || undefined,
         roomType: text(input.roomType) || undefined,
+        genderRestriction: text(input.genderRestriction) || undefined,
         capacity: numberValue(input.capacity),
         status: text(input.status) as any,
         remarks: text(input.remarks) || text(input.notes) || undefined,

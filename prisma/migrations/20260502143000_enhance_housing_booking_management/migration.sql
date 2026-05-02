@@ -1,0 +1,34 @@
+ALTER TYPE "HousingBookingStatus" ADD VALUE IF NOT EXISTS 'NO_SHOW';
+ALTER TYPE "HousingBookingStatus" ADD VALUE IF NOT EXISTS 'TRANSFERRED';
+
+ALTER TABLE "HousingRoom"
+ADD COLUMN IF NOT EXISTS "genderRestriction" TEXT NOT NULL DEFAULT 'MIXED';
+
+ALTER TABLE "HousingResident"
+ADD COLUMN IF NOT EXISTS "companyName" TEXT,
+ADD COLUMN IF NOT EXISTS "gender" TEXT;
+
+ALTER TABLE "HousingBooking"
+ADD COLUMN IF NOT EXISTS "employeeId" TEXT,
+ADD COLUMN IF NOT EXISTS "companyName" TEXT,
+ADD COLUMN IF NOT EXISTS "nationality" TEXT,
+ADD COLUMN IF NOT EXISTS "contactNumber" TEXT,
+ADD COLUMN IF NOT EXISTS "gender" TEXT,
+ADD COLUMN IF NOT EXISTS "buildingNumber" TEXT,
+ADD COLUMN IF NOT EXISTS "floorNumber" TEXT,
+ADD COLUMN IF NOT EXISTS "roomNumber" TEXT,
+ADD COLUMN IF NOT EXISTS "bedNumber" TEXT,
+ADD COLUMN IF NOT EXISTS "bookingType" TEXT NOT NULL DEFAULT 'TEMPORARY',
+ADD COLUMN IF NOT EXISTS "allocationType" TEXT NOT NULL DEFAULT 'STANDARD',
+ADD COLUMN IF NOT EXISTS "keyHandoverBy" TEXT,
+ADD COLUMN IF NOT EXISTS "keyHandoverAt" TIMESTAMP(3),
+ADD COLUMN IF NOT EXISTS "campIdNumber" TEXT,
+ADD COLUMN IF NOT EXISTS "campIdIssuedAt" TIMESTAMP(3),
+ADD COLUMN IF NOT EXISTS "cancellationReason" TEXT,
+ADD COLUMN IF NOT EXISTS "transferReason" TEXT,
+ADD COLUMN IF NOT EXISTS "blacklistReason" TEXT,
+ADD COLUMN IF NOT EXISTS "noShowAt" TIMESTAMP(3);
+
+CREATE INDEX IF NOT EXISTS "HousingBooking_companyName_status_idx" ON "HousingBooking"("companyName", "status");
+CREATE INDEX IF NOT EXISTS "HousingBooking_gender_status_idx" ON "HousingBooking"("gender", "status");
+CREATE INDEX IF NOT EXISTS "HousingBooking_bookingType_status_idx" ON "HousingBooking"("bookingType", "status");

@@ -4232,7 +4232,7 @@ function HousingOperations({
     return true;
   };
   const activeBookingStatuses = new Set(["APPROVED", "CHECKED_IN", "PENDING_APPROVAL", "REQUESTED"]);
-  const bookingCompany = (booking: any) => booking?.resident?.companyId || booking?.departmentCode || "Unassigned";
+  const bookingCompany = (booking: any) => booking?.companyName || booking?.resident?.companyName || booking?.resident?.companyId || booking?.departmentCode || "Unassigned";
   const bookingMatchesFilters = (booking: any) => {
     if (!roomMatchesLocationFilters(booking.room)) return false;
     if (companyFilter !== "All" && bookingCompany(booking) !== companyFilter) return false;
@@ -4438,20 +4438,31 @@ function HousingOperations({
 
       {activePanel === "bookings" && (
         <section className="grid gap-5 xl:grid-cols-[1fr_380px]">
-          <HousingTable
-            title="Accommodation & Booking Management"
-            rows={visibleBookings}
-            columns={[["bookingNo", "Booking"], ["residentName", "Resident"], ["departmentCode", "Dept"], ["status", "Status"], ["priority", "Priority"], ["requestedBy", "Requested By"]]}
-            onSelect={(record) => setSelected({ type: "booking", record })}
-            reportType="housing-bookings"
-            actions={(record) => canApprove && (
-              <div className="flex gap-2">
-                <button type="button" onClick={(event) => { event.stopPropagation(); updateHousing("booking", record.id, { status: "APPROVED", approvedBy: "Housing Supervisor" }); }} className="rounded-lg bg-leaf px-3 py-2 text-xs font-black text-white">Approve</button>
-                <button type="button" onClick={(event) => { event.stopPropagation(); updateHousing("booking", record.id, { status: "REJECTED", notes: "Rejected by supervisor" }); }} className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white">Reject</button>
+          <div className="grid gap-3">
+            {canManage && (
+              <div className="flex flex-wrap gap-2 rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+                <button type="button" onClick={() => visibleBookings.filter((booking) => booking.status === "APPROVED").forEach((booking) => updateHousing("booking", booking.id, { status: "CHECKED_IN", notes: "Bulk check-in completed" }))} className="rounded-lg bg-lagoon px-4 py-2 text-xs font-black text-white">Bulk Check-in Approved</button>
+                <button type="button" onClick={() => visibleBookings.filter((booking) => booking.status === "CHECKED_IN").forEach((booking) => updateHousing("booking", booking.id, { status: "CHECKED_OUT", checkOut: new Date().toISOString(), notes: "Bulk check-out completed" }))} className="rounded-lg bg-ink px-4 py-2 text-xs font-black text-white">Bulk Check-out Active</button>
+                <button type="button" onClick={() => visibleBookings.filter((booking) => booking.status === "PENDING_APPROVAL").forEach((booking) => updateHousing("booking", booking.id, { status: "NO_SHOW", noShowAt: new Date().toISOString(), notes: "Marked no-show in bulk review" }))} className="rounded-lg bg-amber-600 px-4 py-2 text-xs font-black text-white">Mark Pending No-show</button>
               </div>
             )}
-          />
-          {canManage && <HousingBookingForm rooms={rooms} residents={housing.residents ?? []} saving={saving} onSubmit={submitHousing} />}
+            <HousingTable
+              title="Accommodation & Booking Management"
+              rows={visibleBookings}
+              columns={[["bookingNo", "Booking"], ["employeeId", "Employee ID"], ["residentName", "Employee"], ["companyName", "Company"], ["gender", "Gender"], ["buildingNumber", "Building"], ["floorNumber", "Floor"], ["roomNumber", "Room"], ["bedNumber", "Bed"], ["bookingType", "Type"], ["allocationType", "Allocation"], ["status", "Status"], ["priority", "Priority"]]}
+              onSelect={(record) => setSelected({ type: "booking", record })}
+              reportType="housing-bookings"
+              actions={(record) => canApprove && (
+                <div className="flex flex-wrap gap-2">
+                  <button type="button" onClick={(event) => { event.stopPropagation(); updateHousing("booking", record.id, { status: "APPROVED", approvedBy: "Housing Supervisor" }); }} className="rounded-lg bg-leaf px-3 py-2 text-xs font-black text-white">Approve</button>
+                  <button type="button" onClick={(event) => { event.stopPropagation(); updateHousing("booking", record.id, { status: "CHECKED_IN", keyHandoverBy: "Housing Desk", keyHandoverAt: new Date().toISOString() }); }} className="rounded-lg bg-lagoon px-3 py-2 text-xs font-black text-white">Check-in</button>
+                  <button type="button" onClick={(event) => { event.stopPropagation(); updateHousing("booking", record.id, { status: "CHECKED_OUT", checkOut: new Date().toISOString() }); }} className="rounded-lg bg-ink px-3 py-2 text-xs font-black text-white">Check-out</button>
+                  <button type="button" onClick={(event) => { event.stopPropagation(); updateHousing("booking", record.id, { status: "CANCELLED", cancellationReason: "Cancelled by housing admin" }); }} className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white">Cancel</button>
+                </div>
+              )}
+            />
+          </div>
+          {canManage && <HousingBookingForm rooms={rooms} beds={housing.beds ?? []} residents={housing.residents ?? []} saving={saving} onSubmit={submitHousing} />}
         </section>
       )}
 
@@ -4675,23 +4686,70 @@ function HousingAlerts({ notifications, approvals, onApprove, canApprove }: { no
   );
 }
 
-function HousingBookingForm({ rooms, residents, saving, onSubmit }: { rooms: any[]; residents: any[]; saving: boolean; onSubmit: (formData: FormData) => void }) {
+function HousingBookingForm({ rooms, beds, residents, saving, onSubmit }: { rooms: any[]; beds: any[]; residents: any[]; saving: boolean; onSubmit: (formData: FormData) => void }) {
+  const allocatableRooms = rooms.filter((room) => !["BLOCKED", "MAINTENANCE"].includes(room.status));
+  const allocatableBeds = beds.filter((bed) => bed.status === "AVAILABLE");
   return (
-    <HousingForm title="Create Booking" type="booking" saving={saving} onSubmit={onSubmit}>
+    <HousingForm title="Accommodation & Booking Management" type="booking" saving={saving} onSubmit={onSubmit}>
       <select name="residentId" className={HOUSING_FIELD_CLASS}>
-        <option value="">Select resident</option>
-        {residents.map((resident) => <option key={resident.id} value={resident.id}>{resident.residentNo} - {resident.name}</option>)}
+        <option value="">New employee / select existing</option>
+        {residents.map((resident) => <option key={resident.id} value={resident.id}>{resident.residentNo} - {resident.name} - {resident.companyName || resident.companyId || "Company"}</option>)}
       </select>
-      <input name="residentName" placeholder="Resident name" className={HOUSING_FIELD_CLASS} />
-      <input name="departmentCode" placeholder="Department code" className={HOUSING_FIELD_CLASS} />
+      <div className="grid gap-3 md:grid-cols-2">
+        <input name="employeeId" placeholder="Employee ID" className={HOUSING_FIELD_CLASS} />
+        <input name="residentName" placeholder="Employee name" className={HOUSING_FIELD_CLASS} />
+        <input name="companyName" placeholder="Company name" className={HOUSING_FIELD_CLASS} />
+        <input name="departmentCode" placeholder="Department" className={HOUSING_FIELD_CLASS} />
+        <input name="nationality" placeholder="Nationality" className={HOUSING_FIELD_CLASS} />
+        <input name="contactNumber" placeholder="Contact number" className={HOUSING_FIELD_CLASS} />
+      </div>
+      <div className="grid gap-3 md:grid-cols-2">
+        <select name="gender" className={HOUSING_FIELD_CLASS}>
+          <option value="">Gender</option>
+          <option>MALE</option>
+          <option>FEMALE</option>
+        </select>
+        <select name="bookingType" className={HOUSING_FIELD_CLASS}>
+          <option value="TEMPORARY">Temporary booking</option>
+          <option value="PERMANENT">Permanent booking</option>
+        </select>
+        <select name="allocationType" className={HOUSING_FIELD_CLASS}>
+          <option value="STANDARD">Standard allocation</option>
+          <option value="VIP">VIP room allocation</option>
+          <option value="VISITOR">Visitor room allocation</option>
+        </select>
+        <select name="status" className={HOUSING_FIELD_CLASS}>
+          <option value="REQUESTED">Submit request</option>
+          <option value="PENDING_APPROVAL">Pending approval</option>
+          <option value="APPROVED">Approved / reserve bed</option>
+          <option value="CHECKED_IN">Check-in now</option>
+        </select>
+      </div>
       <select name="roomId" className={HOUSING_FIELD_CLASS}>
-        <option value="">Select room</option>
-        {rooms.map((room) => <option key={room.id} value={room.id}>{room.property?.name} / {room.block?.name} / {room.roomNumber} ({room.occupancy}/{room.capacity})</option>)}
+        <option value="">Select room by company / building / floor</option>
+        {allocatableRooms.map((room) => <option key={room.id} value={room.id}>{room.property?.name} / {room.block?.name} / Floor {room.floor} / Room {room.roomNumber} / {room.roomType} / {room.genderRestriction || "MIXED"} ({room.occupancy}/{room.capacity})</option>)}
       </select>
-      <input name="checkIn" type="datetime-local" className={HOUSING_FIELD_CLASS} />
+      <select name="bedId" className={HOUSING_FIELD_CLASS}>
+        <option value="">Auto-assign available bed</option>
+        {allocatableBeds.map((bed) => <option key={bed.id} value={bed.id}>{bed.room?.roomNumber || "Room"} / {bed.label} / available</option>)}
+      </select>
+      <div className="grid gap-3 md:grid-cols-2">
+        <input name="buildingNumber" placeholder="Building number / override" className={HOUSING_FIELD_CLASS} />
+        <input name="floorNumber" placeholder="Floor / override" className={HOUSING_FIELD_CLASS} />
+        <input name="roomNumber" placeholder="Room number / override" className={HOUSING_FIELD_CLASS} />
+        <input name="bedNumber" placeholder="Bed number / override" className={HOUSING_FIELD_CLASS} />
+        <input name="checkIn" type="datetime-local" className={HOUSING_FIELD_CLASS} />
+        <input name="checkOut" type="datetime-local" className={HOUSING_FIELD_CLASS} />
+      </div>
+      <div className="grid gap-3 md:grid-cols-2">
+        <input name="keyHandoverBy" placeholder="Digital room key handed over by" className={HOUSING_FIELD_CLASS} />
+        <input name="keyHandoverAt" type="datetime-local" className={HOUSING_FIELD_CLASS} />
+        <input name="campIdNumber" placeholder="Camp ID number" className={HOUSING_FIELD_CLASS} />
+        <input name="campIdIssuedAt" type="datetime-local" className={HOUSING_FIELD_CLASS} />
+      </div>
       <select name="priority" className={HOUSING_FIELD_CLASS}><option>LOW</option><option>MEDIUM</option><option>HIGH</option><option>CRITICAL</option></select>
       <ImageUploadField name="attachmentUrls" />
-      <textarea name="notes" placeholder="Booking notes / approval justification" className="min-h-24 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />
+      <textarea name="notes" placeholder="Booking request, transfer reason, blacklist/no-show comments, approval justification" className="min-h-24 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />
     </HousingForm>
   );
 }
@@ -4846,6 +4904,7 @@ function Reports() {
             <option value="requests">Service Requests</option>
             <option value="inventory">Inventory</option>
             <option value="ppm">PPM</option>
+            <option value="housing-dashboard">Housing Dashboard</option>
             <option value="housing-rooms">Housing Rooms</option>
             <option value="housing-bookings">Housing Bookings</option>
             <option value="housing-inspections">Housing Inspections</option>

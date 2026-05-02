@@ -54,6 +54,8 @@ enum HousingBookingStatus {
   CHECKED_OUT
   REJECTED
   CANCELLED
+  NO_SHOW
+  TRANSFERRED
 }
 
 enum HousingInspectionStatus {
@@ -522,6 +524,7 @@ model HousingRoom {
   blockId      String?
   floor        String
   roomType     String
+  genderRestriction String             @default("MIXED")
   capacity     Int
   occupancy    Int                    @default(0)
   status       HousingOccupancyStatus @default(AVAILABLE)
@@ -560,6 +563,8 @@ model HousingResident {
   email          String?
   phone          String?
   companyId      String?
+  companyName    String?
+  gender         String?
   nationality    String?
   departmentCode String?
   status         String           @default("ACTIVE")
@@ -574,6 +579,17 @@ model HousingBooking {
   residentId     String?
   residentName   String
   departmentCode String?
+  employeeId     String?
+  companyName    String?
+  nationality    String?
+  contactNumber  String?
+  gender         String?
+  buildingNumber String?
+  floorNumber    String?
+  roomNumber     String?
+  bedNumber      String?
+  bookingType    String               @default("TEMPORARY")
+  allocationType String               @default("STANDARD")
   roomId         String
   bedId          String?
   checkIn        DateTime
@@ -585,6 +601,14 @@ model HousingBooking {
   approvalLevel  String               @default("Supervisor")
   attachmentUrls String?
   notes          String?
+  keyHandoverBy  String?
+  keyHandoverAt  DateTime?
+  campIdNumber   String?
+  campIdIssuedAt DateTime?
+  cancellationReason String?
+  transferReason String?
+  blacklistReason String?
+  noShowAt       DateTime?
   resident       HousingResident?     @relation(fields: [residentId], references: [id])
   room           HousingRoom          @relation(fields: [roomId], references: [id])
   bed            HousingBed?          @relation(fields: [bedId], references: [id])

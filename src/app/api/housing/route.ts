@@ -21,16 +21,26 @@ const housingSchema = z.object({
   roomNumber: z.string().optional(),
   floor: z.string().optional(),
   roomType: z.string().optional(),
+  genderRestriction: z.string().optional(),
   capacity: z.coerce.number().int().min(1).optional(),
   status: z.string().optional(),
   residentId: z.string().optional(),
   residentNo: z.string().optional(),
   residentName: z.string().optional(),
+  employeeId: z.string().optional(),
   email: z.string().optional(),
   phone: z.string().optional(),
   companyId: z.string().optional(),
+  companyName: z.string().optional(),
+  gender: z.string().optional(),
   nationality: z.string().optional(),
+  contactNumber: z.string().optional(),
   departmentCode: z.string().optional(),
+  buildingNumber: z.string().optional(),
+  floorNumber: z.string().optional(),
+  bedNumber: z.string().optional(),
+  bookingType: z.string().optional(),
+  allocationType: z.string().optional(),
   checkIn: z.string().optional(),
   checkOut: z.string().optional(),
   priority: z.string().optional(),
@@ -40,6 +50,14 @@ const housingSchema = z.object({
   attachmentUrls: z.string().optional(),
   notes: z.string().optional(),
   remarks: z.string().optional(),
+  keyHandoverBy: z.string().optional(),
+  keyHandoverAt: z.string().optional(),
+  campIdNumber: z.string().optional(),
+  campIdIssuedAt: z.string().optional(),
+  cancellationReason: z.string().optional(),
+  transferReason: z.string().optional(),
+  blacklistReason: z.string().optional(),
+  noShowAt: z.string().optional(),
   inspectionType: z.string().optional(),
   inspector: z.string().optional(),
   score: z.coerce.number().int().min(0).max(100).optional(),
@@ -159,6 +177,7 @@ async function createHousingRecord(input: z.infer<typeof housingSchema>, actor: 
         blockId: block?.id,
         floor: input.floor || "Ground",
         roomType: input.roomType || "Standard",
+        genderRestriction: input.genderRestriction || "MIXED",
         capacity,
         status: input.status === "MAINTENANCE" ? "MAINTENANCE" : "AVAILABLE",
         qrCode: input.code || `QR:${code}`,
@@ -171,6 +190,7 @@ async function createHousingRecord(input: z.infer<typeof housingSchema>, actor: 
         blockId: block?.id,
         floor: input.floor || "Ground",
         roomType: input.roomType || "Standard",
+        genderRestriction: input.genderRestriction || "MIXED",
         capacity,
         qrCode: `QR:${code}`,
         remarks: input.remarks || input.notes || "",
@@ -294,8 +314,21 @@ async function createHousingRecord(input: z.infer<typeof housingSchema>, actor: 
 
 async function createBooking(input: z.infer<typeof housingSchema>, actor: string) {
   const room = await firstRoom(input.roomId);
+  if (["BLOCKED", "MAINTENANCE"].includes(room.status)) {
+    throw new Error("Blocked or under-maintenance rooms cannot be allocated.");
+  }
+  const resident = await resolveResident(input);
+  if (resident?.status === "BLACKLISTED") {
+    throw new Error("Blacklisted occupants cannot receive a new accommodation allocation.");
+  }
+  const occupantGender = (input.gender || resident?.gender || "").toUpperCase();
+  if (room.genderRestriction && room.genderRestriction !== "MIXED" && occupantGender && occupantGender !== room.genderRestriction.toUpperCase()) {
+    throw new Error("Male and female occupants cannot be assigned to this gender-restricted room.");
+  }
   const bed = input.bedId ? await prisma.housingBed.findUnique({ where: { id: input.bedId } }) : await prisma.housingBed.findFirst({ where: { roomId: room.id, status: "AVAILABLE" } });
   if (!bed && room.capacity > 1) throw new Error("No available bed found for this room.");
+  if (bed && bed.roomId !== room.id) throw new Error("Selected bed does not belong to the selected room.");
+  if (bed && ["RESERVED", "OCCUPIED"].includes(bed.status)) throw new Error("Occupied beds cannot be assigned twice.");
 
   const duplicate = await prisma.housingBooking.findFirst({
     where: {
@@ -313,9 +346,20 @@ async function createBooking(input: z.infer<typeof housingSchema>, actor: string
     const created = await tx.housingBooking.create({
       data: {
         bookingNo,
-        residentId: input.residentId,
-        residentName: input.residentName || input.name || "Resident",
-        departmentCode: input.departmentCode || "",
+        residentId: resident?.id || input.residentId,
+        residentName: input.residentName || input.name || resident?.name || "Resident",
+        departmentCode: input.departmentCode || resident?.departmentCode || "",
+        employeeId: input.employeeId || input.residentNo || resident?.residentNo || "",
+        companyName: input.companyName || resident?.companyName || input.companyId || "",
+        nationality: input.nationality || resident?.nationality || "",
+        contactNumber: input.contactNumber || input.phone || resident?.phone || "",
+        gender: occupantGender || "",
+        buildingNumber: input.buildingNumber || room.block?.name || room.property?.name || "",
+        floorNumber: input.floorNumber || room.floor,
+        roomNumber: input.roomNumber || room.roomNumber,
+        bedNumber: input.bedNumber || bed?.label || "",
+        bookingType: input.bookingType || "TEMPORARY",
+        allocationType: input.allocationType || "STANDARD",
         roomId: room.id,
         bedId: bed?.id,
         checkIn: input.checkIn ? new Date(input.checkIn) : new Date(),
@@ -327,6 +371,10 @@ async function createBooking(input: z.infer<typeof housingSchema>, actor: string
         approvalLevel: input.approvalLevel || "Housing Supervisor",
         attachmentUrls: input.attachmentUrls || "",
         notes: input.notes || "",
+        keyHandoverBy: input.keyHandoverBy || "",
+        keyHandoverAt: input.keyHandoverAt ? new Date(input.keyHandoverAt) : undefined,
+        campIdNumber: input.campIdNumber || "",
+        campIdIssuedAt: input.campIdIssuedAt ? new Date(input.campIdIssuedAt) : undefined,
       },
     });
     await tx.housingApproval.create({
@@ -349,12 +397,24 @@ async function createBooking(input: z.infer<typeof housingSchema>, actor: string
         bookingId: created.id,
       },
     });
-    if (bed) await tx.housingBed.update({ where: { id: bed.id }, data: { status: "RESERVED", occupant: created.residentName, occupantId: input.residentId } });
+    if (bed) await tx.housingBed.update({ where: { id: bed.id }, data: { status: "RESERVED", occupant: created.residentName, occupantId: resident?.id || input.residentId || "" } });
     return created;
   });
   await refreshRoomOccupancy(room.id);
   await housingHistory("booking", booking.id, actor, "Booking created", booking.notes, { roomId: room.id, bookingId: booking.id });
   return booking;
+}
+
+async function resolveResident(input: z.infer<typeof housingSchema>) {
+  if (input.residentId) return prisma.housingResident.findUnique({ where: { id: input.residentId } });
+  const employeeId = input.employeeId || input.residentNo;
+  if (!employeeId && !(input.residentName || input.name)) return null;
+  const residentNo = employeeId || `RES-${String((await prisma.housingResident.count()) + 1).padStart(5, "0")}`;
+  return prisma.housingResident.upsert({
+    where: { residentNo },
+    update: residentData(input, residentNo),
+    create: residentData(input, residentNo),
+  });
 }
 
 function residentData(input: z.infer<typeof housingSchema>, residentNo: string) {
@@ -363,7 +423,9 @@ function residentData(input: z.infer<typeof housingSchema>, residentNo: string) 
     name: input.name || input.residentName || residentNo,
     email: input.email || "",
     phone: input.phone || "",
-    companyId: input.companyId || "",
+    companyId: input.companyId || input.companyName || "",
+    companyName: input.companyName || input.companyId || "",
+    gender: input.gender || "",
     nationality: input.nationality || "",
     departmentCode: input.departmentCode || "",
     status: input.status || "ACTIVE",
@@ -390,7 +452,9 @@ async function firstProperty(propertyId?: string) {
 }
 
 async function firstRoom(roomId?: string) {
-  const room = roomId ? await prisma.housingRoom.findUnique({ where: { id: roomId } }) : await prisma.housingRoom.findFirst();
+  const room = roomId
+    ? await prisma.housingRoom.findUnique({ where: { id: roomId }, include: { property: true, block: true } })
+    : await prisma.housingRoom.findFirst({ include: { property: true, block: true } });
   if (!room) throw new Error("Create a housing room before using this function.");
   return room;
 }
