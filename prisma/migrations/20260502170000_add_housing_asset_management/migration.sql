@@ -1,0 +1,28 @@
+ALTER TABLE "HousingAsset"
+ADD COLUMN IF NOT EXISTS "description" TEXT,
+ADD COLUMN IF NOT EXISTS "brand" TEXT,
+ADD COLUMN IF NOT EXISTS "model" TEXT,
+ADD COLUMN IF NOT EXISTS "purchaseDate" TIMESTAMP(3),
+ADD COLUMN IF NOT EXISTS "supplierName" TEXT,
+ADD COLUMN IF NOT EXISTS "assetValue" DECIMAL(65,30) NOT NULL DEFAULT 0,
+ADD COLUMN IF NOT EXISTS "buildingLocation" TEXT,
+ADD COLUMN IF NOT EXISTS "roomLocation" TEXT,
+ADD COLUMN IF NOT EXISTS "custodianName" TEXT,
+ADD COLUMN IF NOT EXISTS "custodianContact" TEXT,
+ADD COLUMN IF NOT EXISTS "issuedTo" TEXT,
+ADD COLUMN IF NOT EXISTS "issuedAt" TIMESTAMP(3),
+ADD COLUMN IF NOT EXISTS "transferredFrom" TEXT,
+ADD COLUMN IF NOT EXISTS "transferredTo" TEXT,
+ADD COLUMN IF NOT EXISTS "transferredAt" TIMESTAMP(3),
+ADD COLUMN IF NOT EXISTS "replacementOf" TEXT,
+ADD COLUMN IF NOT EXISTS "replacedAt" TIMESTAMP(3),
+ADD COLUMN IF NOT EXISTS "pmSchedule" TEXT,
+ADD COLUMN IF NOT EXISTS "nextPmDue" TIMESTAMP(3),
+ADD COLUMN IF NOT EXISTS "depreciationRate" DECIMAL(65,30) NOT NULL DEFAULT 0,
+ADD COLUMN IF NOT EXISTS "currentValue" DECIMAL(65,30) NOT NULL DEFAULT 0,
+ADD COLUMN IF NOT EXISTS "lastInspectionAt" TIMESTAMP(3);
+
+CREATE INDEX IF NOT EXISTS "HousingAsset_status_category_idx" ON "HousingAsset"("status", "category");
+CREATE INDEX IF NOT EXISTS "HousingAsset_roomId_status_idx" ON "HousingAsset"("roomId", "status");
+CREATE INDEX IF NOT EXISTS "HousingAsset_warrantyExpiry_idx" ON "HousingAsset"("warrantyExpiry");
+CREATE INDEX IF NOT EXISTS "HousingAsset_nextPmDue_idx" ON "HousingAsset"("nextPmDue");

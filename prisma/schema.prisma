@@ -678,6 +678,28 @@ model HousingAsset {
   tag            String   @unique
   name           String
   category       String
+  description    String?
+  brand          String?
+  model          String?
+  purchaseDate   DateTime?
+  supplierName   String?
+  assetValue     Decimal  @default(0)
+  buildingLocation String?
+  roomLocation   String?
+  custodianName  String?
+  custodianContact String?
+  issuedTo       String?
+  issuedAt       DateTime?
+  transferredFrom String?
+  transferredTo  String?
+  transferredAt  DateTime?
+  replacementOf  String?
+  replacedAt     DateTime?
+  pmSchedule     String?
+  nextPmDue      DateTime?
+  depreciationRate Decimal @default(0)
+  currentValue   Decimal  @default(0)
+  lastInspectionAt DateTime?
   roomId         String?
   status         String   @default("ACTIVE")
   serialNumber   String?

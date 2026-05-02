@@ -4496,7 +4496,21 @@ function HousingOperations({
 
       {activePanel === "assets" && (
         <section className="grid gap-5 xl:grid-cols-[1fr_380px]">
-          <HousingTable title="Housing Asset Management" rows={visibleAssets} columns={[["tag", "Tag"], ["name", "Name"], ["category", "Category"], ["status", "Status"], ["serialNumber", "Serial"], ["qrCode", "QR"]]} onSelect={(record) => setSelected({ type: "asset", record })} reportType="housing-assets" />
+          <HousingTable
+            title="Housing Asset Management"
+            rows={visibleAssets}
+            columns={[["tag", "Asset Code"], ["qrCode", "QR"], ["description", "Description"], ["category", "Category"], ["brand", "Brand"], ["model", "Model"], ["serialNumber", "Serial"], ["buildingLocation", "Building"], ["roomLocation", "Room"], ["status", "Status"], ["custodianName", "Custodian"], ["warrantyExpiry", "Warranty"], ["currentValue", "Current Value"]]}
+            onSelect={(record) => setSelected({ type: "asset", record })}
+            reportType="housing-assets"
+            actions={(record) => canManage && (
+              <div className="flex flex-wrap gap-2">
+                <button type="button" onClick={(event) => { event.stopPropagation(); updateHousing("asset", record.id, { status: "INSTALLED", issuedAt: new Date().toISOString(), movementAction: "Asset issuance" }); }} className="rounded-lg bg-leaf px-3 py-2 text-xs font-black text-white">Issue</button>
+                <button type="button" onClick={(event) => { event.stopPropagation(); updateHousing("asset", record.id, { status: "TRANSFERRED", transferredAt: new Date().toISOString(), transferredFrom: record.roomLocation || record.room?.roomNumber || "", transferredTo: "Transfer pending location", movementAction: "Asset transfer" }); }} className="rounded-lg bg-lagoon px-3 py-2 text-xs font-black text-white">Transfer</button>
+                <button type="button" onClick={(event) => { event.stopPropagation(); updateHousing("asset", record.id, { status: "UNDER_REPAIR", replacementOf: record.tag, replacedAt: new Date().toISOString(), movementAction: "Asset replacement" }); }} className="rounded-lg bg-ink px-3 py-2 text-xs font-black text-white">Replace</button>
+                <button type="button" onClick={(event) => { event.stopPropagation(); updateHousing("asset", record.id, { status: "MISSING", movementAction: "Missing asset tracking" }); }} className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white">Missing</button>
+              </div>
+            )}
+          />
           {canManage && <HousingAssetForm rooms={rooms} saving={saving} onSubmit={submitHousing} />}
         </section>
       )}
@@ -4838,15 +4852,60 @@ function HousingInspectionForm({ rooms, beds, bookings, assets, saving, onSubmit
 }
 
 function HousingAssetForm({ rooms, saving, onSubmit }: { rooms: any[]; saving: boolean; onSubmit: (formData: FormData) => void }) {
+  const categories = ["Furniture", "Beds", "Mattresses", "TVs", "Refrigerators", "Air conditioners", "Curtains", "Water dispensers", "Fire extinguishers", "Smoke detectors", "Office equipment", "Housekeeping tools", "Electrical items"];
+  const statuses = ["AVAILABLE", "INSTALLED", "UNDER_REPAIR", "MISSING", "DAMAGED", "SCRAPPED", "TRANSFERRED"];
   return (
-    <HousingForm title="Add Housing Asset" type="asset" saving={saving} onSubmit={onSubmit}>
-      <input name="tag" placeholder="Asset tag / barcode" className={HOUSING_FIELD_CLASS} />
-      <input name="name" placeholder="Asset name" className={HOUSING_FIELD_CLASS} />
-      <input name="category" placeholder="Category" className={HOUSING_FIELD_CLASS} />
-      <select name="roomId" className={HOUSING_FIELD_CLASS}><option value="">Assign room</option>{rooms.map((room) => <option key={room.id} value={room.id}>{room.roomNumber} / {room.roomType}</option>)}</select>
-      <input name="serialNumber" placeholder="Serial number" className={HOUSING_FIELD_CLASS} />
-      <input name="warrantyExpiry" type="date" className={HOUSING_FIELD_CLASS} />
+    <HousingForm title="Housing Asset Management" type="asset" saving={saving} onSubmit={onSubmit}>
+      <input name="tag" placeholder="Asset code" className={HOUSING_FIELD_CLASS} />
+      <input name="qrCode" placeholder="Barcode / QR code" className={HOUSING_FIELD_CLASS} />
+      <textarea name="description" placeholder="Asset description" className="min-h-20 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />
+      <select name="category" className={HOUSING_FIELD_CLASS}>{categories.map((category) => <option key={category}>{category}</option>)}</select>
+      <div className="grid gap-3 md:grid-cols-2">
+        <input name="serialNumber" placeholder="Serial number" className={HOUSING_FIELD_CLASS} />
+        <input name="brand" placeholder="Brand" className={HOUSING_FIELD_CLASS} />
+        <input name="model" placeholder="Model" className={HOUSING_FIELD_CLASS} />
+        <input name="supplierName" placeholder="Supplier name" className={HOUSING_FIELD_CLASS} />
+        <input name="purchaseDate" type="date" className={HOUSING_FIELD_CLASS} />
+        <input name="warrantyExpiry" type="date" className={HOUSING_FIELD_CLASS} />
+        <input name="assetValue" type="number" step="0.01" placeholder="Asset value" className={HOUSING_FIELD_CLASS} />
+        <input name="depreciationRate" type="number" step="0.01" placeholder="Depreciation % per year" className={HOUSING_FIELD_CLASS} />
+        <input name="currentValue" type="number" step="0.01" placeholder="Current value / override" className={HOUSING_FIELD_CLASS} />
+        <select name="status" className={HOUSING_FIELD_CLASS}>{statuses.map((status) => <option key={status}>{status}</option>)}</select>
+      </div>
+      <select name="roomId" className={HOUSING_FIELD_CLASS}><option value="">Assign room / room profile</option>{rooms.map((room) => <option key={room.id} value={room.id}>{room.property?.name} / {room.block?.name} / Floor {room.floor} / Room {room.roomNumber}</option>)}</select>
+      <div className="grid gap-3 md:grid-cols-2">
+        <input name="buildingLocation" placeholder="Building location" className={HOUSING_FIELD_CLASS} />
+        <input name="roomLocation" placeholder="Room location" className={HOUSING_FIELD_CLASS} />
+        <input name="custodianName" placeholder="Custodian name" className={HOUSING_FIELD_CLASS} />
+        <input name="custodianContact" placeholder="Custodian contact" className={HOUSING_FIELD_CLASS} />
+      </div>
+      <div className="grid gap-3 rounded-lg bg-slate-50 p-3">
+        <select name="movementAction" className={HOUSING_FIELD_CLASS}>
+          <option>Asset saved</option>
+          <option>Asset issuance</option>
+          <option>Asset transfer</option>
+          <option>Asset replacement</option>
+          <option>Missing asset tracking</option>
+          <option>Asset inspection</option>
+          <option>Preventive maintenance schedule</option>
+          <option>Warranty tracking</option>
+          <option>Depreciation tracking</option>
+        </select>
+        <div className="grid gap-3 md:grid-cols-2">
+          <input name="issuedTo" placeholder="Issued to" className={HOUSING_FIELD_CLASS} />
+          <input name="issuedAt" type="datetime-local" className={HOUSING_FIELD_CLASS} />
+          <input name="transferredFrom" placeholder="Transferred from" className={HOUSING_FIELD_CLASS} />
+          <input name="transferredTo" placeholder="Transferred to" className={HOUSING_FIELD_CLASS} />
+          <input name="transferredAt" type="datetime-local" className={HOUSING_FIELD_CLASS} />
+          <input name="replacementOf" placeholder="Replacement of asset code" className={HOUSING_FIELD_CLASS} />
+          <input name="replacedAt" type="datetime-local" className={HOUSING_FIELD_CLASS} />
+          <input name="lastInspectionAt" type="datetime-local" className={HOUSING_FIELD_CLASS} />
+          <input name="pmSchedule" placeholder="Preventive maintenance schedule" className={HOUSING_FIELD_CLASS} />
+          <input name="nextPmDue" type="date" className={HOUSING_FIELD_CLASS} />
+        </div>
+      </div>
       <ImageUploadField name="photoUrls" />
+      <textarea name="notes" placeholder="Asset audit notes / movement remarks" className="min-h-20 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />
     </HousingForm>
   );
 }

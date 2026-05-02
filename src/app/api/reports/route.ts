@@ -254,7 +254,39 @@ async function reportRows(type: string, filters: ReturnType<typeof reportFilters
   }
   if (type === "housing-assets") {
     const rows = await prisma.housingAsset.findMany({ include: { room: { include: { property: true, block: true } } }, orderBy: { tag: "asc" } });
-    return rows.map((row) => ({ tag: row.tag, name: row.name, category: row.category, property: row.room?.property.name ?? "", block: row.room?.block?.name ?? "", room: row.room?.roomNumber ?? "", status: row.status, serialNumber: row.serialNumber, warrantyExpiry: dateValue(row.warrantyExpiry), qrCode: row.qrCode }));
+    return rows.map((row) => ({
+      assetCode: row.tag,
+      barcodeQrCode: row.qrCode,
+      description: row.description ?? row.name,
+      category: row.category,
+      serialNumber: row.serialNumber,
+      brand: row.brand,
+      model: row.model,
+      purchaseDate: dateValue(row.purchaseDate),
+      warrantyExpiry: dateValue(row.warrantyExpiry),
+      supplierName: row.supplierName,
+      assetValue: Number(row.assetValue),
+      currentValue: Number(row.currentValue),
+      depreciationRate: Number(row.depreciationRate),
+      property: row.room?.property.name ?? "",
+      buildingLocation: row.buildingLocation ?? row.room?.block?.name ?? "",
+      roomLocation: row.roomLocation ?? row.room?.roomNumber ?? "",
+      room: row.room?.roomNumber ?? "",
+      status: row.status,
+      custodianName: row.custodianName,
+      custodianContact: row.custodianContact,
+      issuedTo: row.issuedTo,
+      issuedAt: dateValue(row.issuedAt),
+      transferredFrom: row.transferredFrom,
+      transferredTo: row.transferredTo,
+      transferredAt: dateValue(row.transferredAt),
+      replacementOf: row.replacementOf,
+      replacedAt: dateValue(row.replacedAt),
+      pmSchedule: row.pmSchedule,
+      nextPmDue: dateValue(row.nextPmDue),
+      lastInspectionAt: dateValue(row.lastInspectionAt),
+      missingOrDamaged: ["MISSING", "DAMAGED"].includes(String(row.status).toUpperCase()),
+    }));
   }
   if (type === "housing-inventory") {
     const rows = await prisma.housingInventory.findMany({ include: { room: { include: { property: true, block: true } } }, orderBy: { sku: "asc" } });

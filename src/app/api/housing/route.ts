@@ -102,7 +102,31 @@ const housingSchema = z.object({
   dueAt: z.string().optional(),
   completedAt: z.string().optional(),
   tag: z.string().optional(),
+  qrCode: z.string().optional(),
   category: z.string().optional(),
+  description: z.string().optional(),
+  brand: z.string().optional(),
+  model: z.string().optional(),
+  purchaseDate: z.string().optional(),
+  supplierName: z.string().optional(),
+  assetValue: z.coerce.number().optional(),
+  buildingLocation: z.string().optional(),
+  roomLocation: z.string().optional(),
+  custodianName: z.string().optional(),
+  custodianContact: z.string().optional(),
+  issuedTo: z.string().optional(),
+  issuedAt: z.string().optional(),
+  transferredFrom: z.string().optional(),
+  transferredTo: z.string().optional(),
+  transferredAt: z.string().optional(),
+  replacementOf: z.string().optional(),
+  replacedAt: z.string().optional(),
+  pmSchedule: z.string().optional(),
+  nextPmDue: z.string().optional(),
+  depreciationRate: z.coerce.number().optional(),
+  currentValue: z.coerce.number().optional(),
+  lastInspectionAt: z.string().optional(),
+  movementAction: z.string().optional(),
   serialNumber: z.string().optional(),
   warrantyExpiry: z.string().optional(),
   sku: z.string().optional(),
@@ -295,31 +319,13 @@ async function createHousingRecord(input: z.infer<typeof housingSchema>, actor: 
     const room = input.roomId ? await prisma.housingRoom.findUnique({ where: { id: input.roomId } }) : await prisma.housingRoom.findFirst();
     const count = await prisma.housingAsset.count();
     const tag = input.tag || input.code || `HSA-${String(count + 1).padStart(5, "0")}`;
+    const assetData = housingAssetData(input, tag, room?.id);
     const asset = await prisma.housingAsset.upsert({
       where: { tag },
-      update: {
-        name: input.name || tag,
-        category: input.category || "Room Asset",
-        roomId: room?.id,
-        status: input.status || "ACTIVE",
-        serialNumber: input.serialNumber || "",
-        warrantyExpiry: input.warrantyExpiry ? new Date(input.warrantyExpiry) : undefined,
-        qrCode: `QR:${tag}`,
-        photoUrls: input.photoUrls || input.attachmentUrls || "",
-      },
-      create: {
-        tag,
-        name: input.name || tag,
-        category: input.category || "Room Asset",
-        roomId: room?.id,
-        status: input.status || "ACTIVE",
-        serialNumber: input.serialNumber || "",
-        warrantyExpiry: input.warrantyExpiry ? new Date(input.warrantyExpiry) : undefined,
-        qrCode: `QR:${tag}`,
-        photoUrls: input.photoUrls || input.attachmentUrls || "",
-      },
+      update: assetData,
+      create: assetData,
     });
-    await housingHistory("asset", asset.id, actor, "Housing asset saved", asset.name, { roomId: room?.id, assetId: asset.id });
+    await handleAssetOutputs(asset, input, room, actor, true);
     return asset;
   }
 
@@ -552,6 +558,59 @@ function inventoryData(input: z.infer<typeof housingSchema>, sku: string, roomId
     unit: input.unit || "Each",
     qrCode: `QR:${sku}`,
   };
+}
+
+function housingAssetData(input: z.infer<typeof housingSchema>, tag: string, roomId?: string) {
+  const assetValue = input.assetValue ?? 0;
+  const depreciationRate = input.depreciationRate ?? 0;
+  const purchaseDate = input.purchaseDate ? new Date(input.purchaseDate) : null;
+  const years = purchaseDate ? Math.max(0, (Date.now() - purchaseDate.getTime()) / (365 * 24 * 60 * 60 * 1000)) : 0;
+  const currentValue = input.currentValue ?? Math.max(0, Math.round((assetValue * Math.max(0, 1 - (depreciationRate / 100) * years)) * 100) / 100);
+  return {
+    tag,
+    name: input.name || input.description || tag,
+    category: input.category || "Furniture",
+    description: input.description || input.notes || "",
+    brand: input.brand || "",
+    model: input.model || "",
+    purchaseDate: purchaseDate || undefined,
+    supplierName: input.supplierName || "",
+    assetValue,
+    buildingLocation: input.buildingLocation || roomId || "",
+    roomLocation: input.roomLocation || "",
+    custodianName: input.custodianName || "",
+    custodianContact: input.custodianContact || "",
+    issuedTo: input.issuedTo || "",
+    issuedAt: input.issuedAt ? new Date(input.issuedAt) : undefined,
+    transferredFrom: input.transferredFrom || "",
+    transferredTo: input.transferredTo || "",
+    transferredAt: input.transferredAt ? new Date(input.transferredAt) : undefined,
+    replacementOf: input.replacementOf || "",
+    replacedAt: input.replacedAt ? new Date(input.replacedAt) : undefined,
+    pmSchedule: input.pmSchedule || "",
+    nextPmDue: input.nextPmDue ? new Date(input.nextPmDue) : undefined,
+    depreciationRate,
+    currentValue,
+    lastInspectionAt: input.lastInspectionAt ? new Date(input.lastInspectionAt) : undefined,
+    roomId,
+    status: input.status || "AVAILABLE",
+    serialNumber: input.serialNumber || "",
+    warrantyExpiry: input.warrantyExpiry ? new Date(input.warrantyExpiry) : undefined,
+    qrCode: input.qrCode || `QR:${tag}`,
+    photoUrls: input.photoUrls || input.attachmentUrls || "",
+  };
+}
+
+async function handleAssetOutputs(asset: any, input: z.infer<typeof housingSchema>, room: any, actor: string, created = false) {
+  const action = input.movementAction || (created ? "Asset saved" : "Asset updated");
+  await housingHistory("asset", asset.id, actor, action, `${asset.tag} / ${asset.status}`, { roomId: room?.id || asset.roomId, assetId: asset.id });
+  if (input.issuedTo || input.issuedAt) await housingHistory("asset", asset.id, actor, "Asset issued", input.issuedTo || asset.issuedTo, { roomId: room?.id || asset.roomId, assetId: asset.id });
+  if (input.transferredTo || input.transferredAt) await housingHistory("asset", asset.id, actor, "Asset transferred", `${input.transferredFrom || asset.transferredFrom || "-"} -> ${input.transferredTo || asset.transferredTo || "-"}`, { roomId: room?.id || asset.roomId, assetId: asset.id });
+  if (input.replacementOf || input.replacedAt) await housingHistory("asset", asset.id, actor, "Asset replacement recorded", input.replacementOf || asset.replacementOf, { roomId: room?.id || asset.roomId, assetId: asset.id });
+  if (["MISSING", "DAMAGED"].includes(String(asset.status).toUpperCase())) await housingHistory("asset", asset.id, actor, `${asset.status} asset tracking`, input.notes || input.remarks || asset.description, { roomId: room?.id || asset.roomId, assetId: asset.id });
+  if (asset.warrantyExpiry && new Date(asset.warrantyExpiry).getTime() <= Date.now() + 30 * 24 * 60 * 60 * 1000) {
+    await prisma.housingNotification.create({ data: { title: "Housing asset warranty alert", message: `${asset.tag} warranty expires on ${new Date(asset.warrantyExpiry).toISOString().slice(0, 10)}.`, recipient: "Housing Asset Manager", severity: "HIGH" } });
+  }
 }
 
 async function firstProperty(propertyId?: string) {

@@ -168,19 +168,45 @@ async function updateHousingRecord(type: string, id: string, input: Record<strin
   }
 
   if (type === "asset") {
+    const current = await prisma.housingAsset.findUnique({ where: { id }, include: { room: true } });
+    if (!current) throw new Error("Asset not found.");
     const asset = await prisma.housingAsset.update({
       where: { id },
       data: {
+        tag: text(input.tag) || undefined,
         name: text(input.name) || undefined,
         category: text(input.category) || undefined,
+        description: text(input.description) || text(input.notes) || undefined,
+        brand: text(input.brand) || undefined,
+        model: text(input.model) || undefined,
+        purchaseDate: input.purchaseDate ? new Date(String(input.purchaseDate)) : undefined,
+        supplierName: text(input.supplierName) || undefined,
+        assetValue: numberValue(input.assetValue),
+        buildingLocation: text(input.buildingLocation) || undefined,
+        roomLocation: text(input.roomLocation) || undefined,
+        custodianName: text(input.custodianName) || undefined,
+        custodianContact: text(input.custodianContact) || undefined,
+        issuedTo: text(input.issuedTo) || undefined,
+        issuedAt: input.issuedAt ? new Date(String(input.issuedAt)) : undefined,
+        transferredFrom: text(input.transferredFrom) || undefined,
+        transferredTo: text(input.transferredTo) || undefined,
+        transferredAt: input.transferredAt ? new Date(String(input.transferredAt)) : undefined,
+        replacementOf: text(input.replacementOf) || undefined,
+        replacedAt: input.replacedAt ? new Date(String(input.replacedAt)) : undefined,
+        pmSchedule: text(input.pmSchedule) || undefined,
+        nextPmDue: input.nextPmDue ? new Date(String(input.nextPmDue)) : undefined,
+        depreciationRate: numberValue(input.depreciationRate),
+        currentValue: numberValue(input.currentValue),
+        lastInspectionAt: input.lastInspectionAt ? new Date(String(input.lastInspectionAt)) : undefined,
         status: text(input.status) || undefined,
         roomId: text(input.roomId) || undefined,
         serialNumber: text(input.serialNumber) || undefined,
         warrantyExpiry: input.warrantyExpiry ? new Date(String(input.warrantyExpiry)) : undefined,
+        qrCode: text(input.qrCode) || undefined,
         photoUrls: text(input.photoUrls) || text(input.attachmentUrls) || undefined,
       },
     });
-    await prisma.housingHistory.create({ data: { entity: "asset", entityId: id, assetId: id, roomId: asset.roomId, actor, action: "Asset updated", details: asset.name } });
+    await housingAssetHistory(asset, current, input, actor);
     return asset;
   }
 
@@ -292,6 +318,29 @@ function text(value: unknown) {
 function numberValue(value: unknown) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+async function housingAssetHistory(asset: any, current: any, input: Record<string, unknown>, actor: string) {
+  const movement = text(input.movementAction) || "Asset updated";
+  await prisma.housingHistory.create({ data: { entity: "asset", entityId: asset.id, assetId: asset.id, roomId: asset.roomId, actor, action: movement, details: `${asset.tag} / ${asset.status}` } });
+  if (asset.roomId !== current.roomId) {
+    await prisma.housingHistory.create({ data: { entity: "asset", entityId: asset.id, assetId: asset.id, roomId: asset.roomId, actor, action: "Asset room assignment changed", details: `${current.roomId || "-"} -> ${asset.roomId || "-"}` } });
+  }
+  if (text(input.issuedTo) || input.issuedAt) {
+    await prisma.housingHistory.create({ data: { entity: "asset", entityId: asset.id, assetId: asset.id, roomId: asset.roomId, actor, action: "Asset issued", details: text(input.issuedTo) || asset.issuedTo || "" } });
+  }
+  if (text(input.transferredTo) || input.transferredAt) {
+    await prisma.housingHistory.create({ data: { entity: "asset", entityId: asset.id, assetId: asset.id, roomId: asset.roomId, actor, action: "Asset transferred", details: `${text(input.transferredFrom) || current.roomLocation || "-"} -> ${text(input.transferredTo) || asset.roomLocation || "-"}` } });
+  }
+  if (text(input.replacementOf) || input.replacedAt) {
+    await prisma.housingHistory.create({ data: { entity: "asset", entityId: asset.id, assetId: asset.id, roomId: asset.roomId, actor, action: "Asset replacement recorded", details: text(input.replacementOf) || asset.replacementOf || "" } });
+  }
+  if (["MISSING", "DAMAGED"].includes(String(asset.status || "").toUpperCase())) {
+    await prisma.housingHistory.create({ data: { entity: "asset", entityId: asset.id, assetId: asset.id, roomId: asset.roomId, actor, action: `${asset.status} asset tracking`, details: text(input.notes) || text(input.remarks) || asset.description || "" } });
+  }
+  if (asset.warrantyExpiry && new Date(asset.warrantyExpiry).getTime() <= Date.now() + 30 * 24 * 60 * 60 * 1000) {
+    await prisma.housingNotification.create({ data: { title: "Housing asset warranty alert", message: `${asset.tag} warranty expires on ${new Date(asset.warrantyExpiry).toISOString().slice(0, 10)}.`, recipient: "Housing Asset Manager", severity: "HIGH" } });
+  }
 }
 
 function booleanValue(value: unknown) {
