@@ -1,0 +1,36 @@
+ALTER TABLE "HousingInspection"
+ADD COLUMN IF NOT EXISTS "bedId" TEXT,
+ADD COLUMN IF NOT EXISTS "occupantId" TEXT,
+ADD COLUMN IF NOT EXISTS "occupantName" TEXT,
+ADD COLUMN IF NOT EXISTS "assetId" TEXT,
+ADD COLUMN IF NOT EXISTS "workOrderRef" TEXT,
+ADD COLUMN IF NOT EXISTS "checklistJson" TEXT,
+ADD COLUMN IF NOT EXISTS "furnitureCondition" TEXT,
+ADD COLUMN IF NOT EXISTS "mattressCondition" TEXT,
+ADD COLUMN IF NOT EXISTS "bedSheetCondition" TEXT,
+ADD COLUMN IF NOT EXISTS "tvCondition" TEXT,
+ADD COLUMN IF NOT EXISTS "refrigeratorCondition" TEXT,
+ADD COLUMN IF NOT EXISTS "acCondition" TEXT,
+ADD COLUMN IF NOT EXISTS "waterLeakageCheck" TEXT,
+ADD COLUMN IF NOT EXISTS "lightingCondition" TEXT,
+ADD COLUMN IF NOT EXISTS "curtainCondition" TEXT,
+ADD COLUMN IF NOT EXISTS "doorLockCondition" TEXT,
+ADD COLUMN IF NOT EXISTS "smokeDetectorCondition" TEXT,
+ADD COLUMN IF NOT EXISTS "fireExtinguisherAvailability" TEXT,
+ADD COLUMN IF NOT EXISTS "bathroomCleanliness" TEXT,
+ADD COLUMN IF NOT EXISTS "generalRoomCleanliness" TEXT,
+ADD COLUMN IF NOT EXISTS "missingAssetVerification" TEXT,
+ADD COLUMN IF NOT EXISTS "damageFound" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN IF NOT EXISTS "damageReport" TEXT,
+ADD COLUMN IF NOT EXISTS "missingAssetFound" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN IF NOT EXISTS "missingAssetReport" TEXT,
+ADD COLUMN IF NOT EXISTS "repairRequired" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN IF NOT EXISTS "estimatedRepairCost" DECIMAL(65,30) NOT NULL DEFAULT 0,
+ADD COLUMN IF NOT EXISTS "occupantLiability" TEXT,
+ADD COLUMN IF NOT EXISTS "beforePhotoUrls" TEXT,
+ADD COLUMN IF NOT EXISTS "afterPhotoUrls" TEXT,
+ADD COLUMN IF NOT EXISTS "maintenanceTicketNo" TEXT;
+
+CREATE INDEX IF NOT EXISTS "HousingInspection_roomId_status_idx" ON "HousingInspection"("roomId", "status");
+CREATE INDEX IF NOT EXISTS "HousingInspection_assetId_status_idx" ON "HousingInspection"("assetId", "status");
+CREATE INDEX IF NOT EXISTS "HousingInspection_occupantId_status_idx" ON "HousingInspection"("occupantId", "status");

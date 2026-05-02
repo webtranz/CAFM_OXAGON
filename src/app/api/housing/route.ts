@@ -66,6 +66,36 @@ const housingSchema = z.object({
   noShowAt: z.string().optional(),
   inspectionType: z.string().optional(),
   inspector: z.string().optional(),
+  occupantId: z.string().optional(),
+  occupantName: z.string().optional(),
+  assetId: z.string().optional(),
+  workOrderRef: z.string().optional(),
+  furnitureCondition: z.string().optional(),
+  mattressCondition: z.string().optional(),
+  bedSheetCondition: z.string().optional(),
+  tvCondition: z.string().optional(),
+  refrigeratorCondition: z.string().optional(),
+  acCondition: z.string().optional(),
+  waterLeakageCheck: z.string().optional(),
+  lightingCondition: z.string().optional(),
+  curtainCondition: z.string().optional(),
+  doorLockCondition: z.string().optional(),
+  smokeDetectorCondition: z.string().optional(),
+  fireExtinguisherAvailability: z.string().optional(),
+  bathroomCleanliness: z.string().optional(),
+  generalRoomCleanliness: z.string().optional(),
+  missingAssetVerification: z.string().optional(),
+  damageFound: z.coerce.boolean().optional(),
+  damageReport: z.string().optional(),
+  missingAssetFound: z.coerce.boolean().optional(),
+  missingAssetReport: z.string().optional(),
+  repairRequired: z.coerce.boolean().optional(),
+  estimatedRepairCost: z.coerce.number().optional(),
+  occupantLiability: z.string().optional(),
+  beforePhotoUrls: z.string().optional(),
+  afterPhotoUrls: z.string().optional(),
+  maintenanceTicketNo: z.string().optional(),
+  createMaintenanceTicket: z.coerce.boolean().optional(),
   score: z.coerce.number().int().min(0).max(100).optional(),
   findings: z.string().optional(),
   photoUrls: z.string().optional(),
@@ -223,24 +253,42 @@ async function createHousingRecord(input: z.infer<typeof housingSchema>, actor: 
 
   if (input.type === "inspection") {
     const room = await firstRoom(input.roomId);
+    const checklist = inspectionChecklist(input);
     const count = await prisma.housingInspection.count();
     const inspectionNo = input.code || `HIN-${String(count + 1).padStart(5, "0")}`;
     const inspection = await prisma.housingInspection.create({
       data: {
         inspectionNo,
         roomId: room.id,
+        bedId: input.bedId || undefined,
+        occupantId: input.occupantId || input.residentId || undefined,
+        occupantName: input.occupantName || input.residentName || input.name || "",
+        assetId: input.assetId || undefined,
+        workOrderRef: input.workOrderRef || "",
         inspector: input.inspector || actor,
         inspectionType: input.inspectionType || input.category || "Room Condition",
         status: (input.status as any) || "SCHEDULED",
         score: input.score ?? 100,
+        checklistJson: JSON.stringify(checklist),
+        ...checklist,
+        damageFound: Boolean(input.damageFound),
+        damageReport: input.damageReport || "",
+        missingAssetFound: Boolean(input.missingAssetFound),
+        missingAssetReport: input.missingAssetReport || "",
+        repairRequired: Boolean(input.repairRequired || input.createMaintenanceTicket),
+        estimatedRepairCost: input.estimatedRepairCost || 0,
+        occupantLiability: input.occupantLiability || "",
+        beforePhotoUrls: input.beforePhotoUrls || "",
+        afterPhotoUrls: input.afterPhotoUrls || "",
         findings: input.findings || input.notes || "",
-        photoUrls: input.photoUrls || input.attachmentUrls || "",
+        photoUrls: input.photoUrls || input.attachmentUrls || [input.beforePhotoUrls, input.afterPhotoUrls].filter(Boolean).join(","),
         dueAt: input.dueAt ? new Date(input.dueAt) : new Date(),
         completedAt: input.completedAt ? new Date(input.completedAt) : undefined,
       },
     });
+    await handleInspectionOutputs(inspection, input, room, actor);
     await housingHistory("inspection", inspection.id, actor, "Inspection created", input.findings || input.notes, { roomId: room.id, inspectionId: inspection.id });
-    return inspection;
+    return prisma.housingInspection.findUniqueOrThrow({ where: { id: inspection.id }, include: { room: { include: { property: true, block: true } } } });
   }
 
   if (input.type === "asset") {
@@ -316,6 +364,61 @@ async function createHousingRecord(input: z.infer<typeof housingSchema>, actor: 
   }
 
   throw new Error(`Unsupported housing record type: ${input.type}`);
+}
+
+function inspectionChecklist(input: z.infer<typeof housingSchema>) {
+  return {
+    furnitureCondition: input.furnitureCondition || "Good",
+    mattressCondition: input.mattressCondition || "Good",
+    bedSheetCondition: input.bedSheetCondition || "Good",
+    tvCondition: input.tvCondition || "Good",
+    refrigeratorCondition: input.refrigeratorCondition || "Good",
+    acCondition: input.acCondition || "Good",
+    waterLeakageCheck: input.waterLeakageCheck || "No Leak",
+    lightingCondition: input.lightingCondition || "Good",
+    curtainCondition: input.curtainCondition || "Good",
+    doorLockCondition: input.doorLockCondition || "Good",
+    smokeDetectorCondition: input.smokeDetectorCondition || "Good",
+    fireExtinguisherAvailability: input.fireExtinguisherAvailability || "Available",
+    bathroomCleanliness: input.bathroomCleanliness || "Clean",
+    generalRoomCleanliness: input.generalRoomCleanliness || "Clean",
+    missingAssetVerification: input.missingAssetVerification || "No Missing Asset",
+  };
+}
+
+async function handleInspectionOutputs(inspection: any, input: z.infer<typeof housingSchema>, room: any, actor: string) {
+  if (input.damageFound) {
+    await housingHistory("damage", inspection.id, actor, "Damage record created", input.damageReport || input.findings || "", { roomId: room.id, inspectionId: inspection.id });
+  }
+  if (input.missingAssetFound) {
+    if (input.assetId) {
+      await prisma.housingAsset.update({ where: { id: input.assetId }, data: { status: "MISSING" } });
+      await housingHistory("asset", input.assetId, actor, "Asset marked missing", input.missingAssetReport || input.missingAssetVerification, { roomId: room.id, assetId: input.assetId });
+    }
+    await housingHistory("missing-asset", inspection.id, actor, "Missing asset report created", input.missingAssetReport || input.missingAssetVerification, { roomId: room.id, inspectionId: inspection.id });
+  }
+  if (input.repairRequired || input.createMaintenanceTicket) {
+    const count = await prisma.serviceRequest.count();
+    const request = await prisma.serviceRequest.create({
+      data: {
+        ticketNo: `SR-${String(count + 24001).padStart(5, "0")}`,
+        title: `Housing repair required - ${room.roomNumber}`,
+        category: "Housing Maintenance",
+        departmentCode: "HOUSING",
+        requester: actor,
+        channel: "Inspection",
+        priority: input.priority as any || "MEDIUM",
+        status: "NEW",
+        location: `${room.property?.name || "Housing"} / ${room.block?.name || ""} / ${room.roomNumber}`,
+        attachmentUrls: [input.beforePhotoUrls, input.afterPhotoUrls, input.photoUrls, input.attachmentUrls].filter(Boolean).join(","),
+        slaHours: 24,
+        dueAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        description: [input.damageReport, input.missingAssetReport, input.findings, `Estimated repair cost: ${input.estimatedRepairCost || 0}`, `Occupant liability: ${input.occupantLiability || "-"}`].filter(Boolean).join("\n"),
+      },
+    });
+    await prisma.housingInspection.update({ where: { id: inspection.id }, data: { maintenanceTicketNo: request.ticketNo } });
+    await housingHistory("inspection", inspection.id, actor, "Converted to maintenance ticket", request.ticketNo, { roomId: room.id, inspectionId: inspection.id });
+  }
 }
 
 async function createBooking(input: z.infer<typeof housingSchema>, actor: string) {

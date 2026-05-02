@@ -208,7 +208,49 @@ async function reportRows(type: string, filters: ReturnType<typeof reportFilters
   }
   if (type === "housing-inspections") {
     const rows = await prisma.housingInspection.findMany({ include: { room: { include: { property: true, block: true } } }, orderBy: { dueAt: "asc" } });
-    return rows.map((row) => ({ inspectionNo: row.inspectionNo, property: row.room.property.name, block: row.room.block?.name ?? "", room: row.room.roomNumber, inspector: row.inspector, inspectionType: row.inspectionType, status: row.status, score: row.score, dueAt: dateValue(row.dueAt), completedAt: dateValue(row.completedAt), findings: row.findings }));
+    return rows.map((row) => ({
+      inspectionNo: row.inspectionNo,
+      property: row.room.property.name,
+      block: row.room.block?.name ?? "",
+      floor: row.room.floor,
+      room: row.room.roomNumber,
+      bedId: row.bedId,
+      occupant: row.occupantName,
+      assetId: row.assetId,
+      workOrderRef: row.workOrderRef,
+      inspector: row.inspector,
+      inspectionType: row.inspectionType,
+      status: row.status,
+      score: row.score,
+      furnitureCondition: row.furnitureCondition,
+      mattressCondition: row.mattressCondition,
+      bedSheetCondition: row.bedSheetCondition,
+      tvCondition: row.tvCondition,
+      refrigeratorCondition: row.refrigeratorCondition,
+      acCondition: row.acCondition,
+      waterLeakageCheck: row.waterLeakageCheck,
+      lightingCondition: row.lightingCondition,
+      curtainCondition: row.curtainCondition,
+      doorLockCondition: row.doorLockCondition,
+      smokeDetectorCondition: row.smokeDetectorCondition,
+      fireExtinguisherAvailability: row.fireExtinguisherAvailability,
+      bathroomCleanliness: row.bathroomCleanliness,
+      generalRoomCleanliness: row.generalRoomCleanliness,
+      missingAssetVerification: row.missingAssetVerification,
+      damageFound: row.damageFound,
+      damageReport: row.damageReport,
+      missingAssetFound: row.missingAssetFound,
+      missingAssetReport: row.missingAssetReport,
+      repairRequired: row.repairRequired,
+      estimatedRepairCost: Number(row.estimatedRepairCost),
+      occupantLiability: row.occupantLiability,
+      maintenanceTicketNo: row.maintenanceTicketNo,
+      dueAt: dateValue(row.dueAt),
+      completedAt: dateValue(row.completedAt),
+      beforePhotoUrls: row.beforePhotoUrls,
+      afterPhotoUrls: row.afterPhotoUrls,
+      findings: row.findings,
+    }));
   }
   if (type === "housing-assets") {
     const rows = await prisma.housingAsset.findMany({ include: { room: { include: { property: true, block: true } } }, orderBy: { tag: "asc" } });

@@ -628,10 +628,41 @@ model HousingInspection {
   id             String                  @id @default(cuid())
   inspectionNo   String                  @unique
   roomId         String
+  bedId          String?
+  occupantId     String?
+  occupantName   String?
+  assetId        String?
+  workOrderRef   String?
   inspector      String
   inspectionType String
   status         HousingInspectionStatus @default(SCHEDULED)
   score          Int                     @default(100)
+  checklistJson  String?
+  furnitureCondition String?
+  mattressCondition String?
+  bedSheetCondition String?
+  tvCondition    String?
+  refrigeratorCondition String?
+  acCondition    String?
+  waterLeakageCheck String?
+  lightingCondition String?
+  curtainCondition String?
+  doorLockCondition String?
+  smokeDetectorCondition String?
+  fireExtinguisherAvailability String?
+  bathroomCleanliness String?
+  generalRoomCleanliness String?
+  missingAssetVerification String?
+  damageFound   Boolean                 @default(false)
+  damageReport  String?
+  missingAssetFound Boolean             @default(false)
+  missingAssetReport String?
+  repairRequired Boolean                @default(false)
+  estimatedRepairCost Decimal           @default(0)
+  occupantLiability String?
+  beforePhotoUrls String?
+  afterPhotoUrls String?
+  maintenanceTicketNo String?
   findings       String?
   photoUrls      String?
   dueAt          DateTime

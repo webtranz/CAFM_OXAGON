@@ -129,16 +129,40 @@ async function updateHousingRecord(type: string, id: string, input: Record<strin
   }
 
   if (type === "inspection") {
+    const current = await prisma.housingInspection.findUnique({ where: { id }, include: { room: { include: { property: true, block: true } } } });
+    if (!current) throw new Error("Inspection not found.");
+    const checklist = inspectionChecklist(input);
     const inspection = await prisma.housingInspection.update({
       where: { id },
       data: {
+        roomId: text(input.roomId) || undefined,
+        bedId: text(input.bedId) || undefined,
+        occupantId: text(input.occupantId) || undefined,
+        occupantName: text(input.occupantName) || undefined,
+        assetId: text(input.assetId) || undefined,
+        inspector: text(input.inspector) || undefined,
+        inspectionType: text(input.inspectionType) || undefined,
         status: text(input.status) as any,
         score: numberValue(input.score),
+        checklistJson: Object.keys(checklist).length ? JSON.stringify(checklist) : undefined,
+        ...checklist,
+        damageFound: booleanValue(input.damageFound),
+        damageReport: text(input.damageReport) || undefined,
+        missingAssetFound: booleanValue(input.missingAssetFound),
+        missingAssetReport: text(input.missingAssetReport) || undefined,
+        repairRequired: booleanValue(input.repairRequired) || booleanValue(input.createMaintenanceTicket),
+        estimatedRepairCost: numberValue(input.estimatedRepairCost),
+        occupantLiability: text(input.occupantLiability) || undefined,
+        beforePhotoUrls: text(input.beforePhotoUrls) || undefined,
+        afterPhotoUrls: text(input.afterPhotoUrls) || undefined,
+        workOrderRef: text(input.workOrderRef) || undefined,
         findings: text(input.findings) || text(input.notes) || undefined,
         photoUrls: text(input.photoUrls) || text(input.attachmentUrls) || undefined,
+        dueAt: input.dueAt ? new Date(String(input.dueAt)) : undefined,
         completedAt: input.completedAt ? new Date(String(input.completedAt)) : text(input.status) === "CLOSED" || text(input.status) === "PASSED" ? new Date() : undefined,
       },
     });
+    await handleInspectionOutputs(inspection, input, current.room, actor);
     await prisma.housingHistory.create({ data: { entity: "inspection", entityId: id, inspectionId: id, roomId: inspection.roomId, actor, action: `Inspection ${inspection.status}`, details: inspection.findings || "" } });
     return inspection;
   }
@@ -268,4 +292,67 @@ function text(value: unknown) {
 function numberValue(value: unknown) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function booleanValue(value: unknown) {
+  if (value === undefined || value === null || value === "") return undefined;
+  if (typeof value === "boolean") return value;
+  return ["true", "on", "yes", "1"].includes(String(value).toLowerCase());
+}
+
+function inspectionChecklist(input: Record<string, unknown>) {
+  const keys = [
+    "furnitureCondition",
+    "mattressCondition",
+    "bedSheetCondition",
+    "tvCondition",
+    "refrigeratorCondition",
+    "acCondition",
+    "waterLeakageCheck",
+    "lightingCondition",
+    "curtainCondition",
+    "doorLockCondition",
+    "smokeDetectorCondition",
+    "fireExtinguisherAvailability",
+    "bathroomCleanliness",
+    "generalRoomCleanliness",
+    "missingAssetVerification",
+  ];
+  return Object.fromEntries(keys.map((key) => [key, text(input[key]) || undefined]).filter(([, value]) => value));
+}
+
+async function handleInspectionOutputs(inspection: any, input: Record<string, unknown>, room: any, actor: string) {
+  if (booleanValue(input.damageFound)) {
+    await prisma.housingHistory.create({ data: { entity: "damage", entityId: inspection.id, inspectionId: inspection.id, roomId: inspection.roomId, actor, action: "Damage record created", details: text(input.damageReport) || text(input.findings) } });
+  }
+  if (booleanValue(input.missingAssetFound)) {
+    const assetId = text(input.assetId);
+    if (assetId) {
+      await prisma.housingAsset.update({ where: { id: assetId }, data: { status: "MISSING" } });
+      await prisma.housingHistory.create({ data: { entity: "asset", entityId: assetId, assetId, roomId: inspection.roomId, actor, action: "Asset marked missing", details: text(input.missingAssetReport) || text(input.missingAssetVerification) } });
+    }
+    await prisma.housingHistory.create({ data: { entity: "missing-asset", entityId: inspection.id, inspectionId: inspection.id, roomId: inspection.roomId, actor, action: "Missing asset report created", details: text(input.missingAssetReport) || text(input.missingAssetVerification) } });
+  }
+  if (booleanValue(input.repairRequired) || booleanValue(input.createMaintenanceTicket)) {
+    const count = await prisma.serviceRequest.count();
+    const request = await prisma.serviceRequest.create({
+      data: {
+        ticketNo: `SR-${String(count + 24001).padStart(5, "0")}`,
+        title: `Housing repair required - ${room.roomNumber}`,
+        category: "Housing Maintenance",
+        departmentCode: "HOUSING",
+        requester: actor,
+        channel: "Inspection",
+        priority: text(input.priority) as any || "MEDIUM",
+        status: "NEW",
+        location: `${room.property?.name || "Housing"} / ${room.block?.name || ""} / ${room.roomNumber}`,
+        attachmentUrls: [text(input.beforePhotoUrls), text(input.afterPhotoUrls), text(input.photoUrls), text(input.attachmentUrls)].filter(Boolean).join(","),
+        slaHours: 24,
+        dueAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        description: [text(input.damageReport), text(input.missingAssetReport), text(input.findings), `Estimated repair cost: ${numberValue(input.estimatedRepairCost) || 0}`, `Occupant liability: ${text(input.occupantLiability) || "-"}`].filter(Boolean).join("\n"),
+      },
+    });
+    await prisma.housingInspection.update({ where: { id: inspection.id }, data: { maintenanceTicketNo: request.ticketNo } });
+    await prisma.housingHistory.create({ data: { entity: "inspection", entityId: inspection.id, inspectionId: inspection.id, roomId: inspection.roomId, actor, action: "Converted to maintenance ticket", details: request.ticketNo } });
+  }
 }

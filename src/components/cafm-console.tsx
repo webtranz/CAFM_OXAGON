@@ -4485,12 +4485,12 @@ function HousingOperations({
           <HousingTable
             title="Room Inspection Management"
             rows={visibleInspections}
-            columns={[["inspectionNo", "Inspection"], ["inspectionType", "Type"], ["inspector", "Inspector"], ["status", "Status"], ["score", "Score"], ["dueAt", "Due"]]}
+            columns={[["inspectionNo", "Inspection"], ["inspectionType", "Type"], ["occupantName", "Occupant"], ["assetId", "Asset"], ["damageFound", "Damage"], ["missingAssetFound", "Missing"], ["estimatedRepairCost", "Repair Cost"], ["maintenanceTicketNo", "Ticket"], ["status", "Status"], ["score", "Score"], ["dueAt", "Due"]]}
             onSelect={(record) => setSelected({ type: "inspection", record })}
             reportType="housing-inspections"
             actions={(record) => canManage && <button type="button" onClick={(event) => { event.stopPropagation(); updateHousing("inspection", record.id, { status: "CLOSED", completedAt: new Date().toISOString() }); }} className="rounded-lg bg-lagoon px-3 py-2 text-xs font-black text-white">Close</button>}
           />
-          {canManage && <HousingInspectionForm rooms={rooms} saving={saving} onSubmit={submitHousing} />}
+          {canManage && <HousingInspectionForm rooms={rooms} beds={housing.beds ?? []} bookings={bookings} assets={assets} saving={saving} onSubmit={submitHousing} />}
         </section>
       )}
 
@@ -4770,16 +4770,69 @@ function HousingBookingForm({ rooms, beds, residents, saving, onSubmit }: { room
   );
 }
 
-function HousingInspectionForm({ rooms, saving, onSubmit }: { rooms: any[]; saving: boolean; onSubmit: (formData: FormData) => void }) {
+function HousingInspectionForm({ rooms, beds, bookings, assets, saving, onSubmit }: { rooms: any[]; beds: any[]; bookings: any[]; assets: any[]; saving: boolean; onSubmit: (formData: FormData) => void }) {
+  const conditionOptions = ["Good", "Fair", "Damaged", "Missing", "Needs Repair", "Not Applicable"];
+  const checklistFields = [
+    ["furnitureCondition", "Furniture condition"],
+    ["mattressCondition", "Mattress condition"],
+    ["bedSheetCondition", "Bed sheet condition"],
+    ["tvCondition", "TV condition"],
+    ["refrigeratorCondition", "Refrigerator condition"],
+    ["acCondition", "AC condition"],
+    ["waterLeakageCheck", "Water leakage check"],
+    ["lightingCondition", "Lighting condition"],
+    ["curtainCondition", "Curtain condition"],
+    ["doorLockCondition", "Door lock condition"],
+    ["smokeDetectorCondition", "Smoke detector condition"],
+    ["fireExtinguisherAvailability", "Fire extinguisher availability"],
+    ["bathroomCleanliness", "Bathroom cleanliness"],
+    ["generalRoomCleanliness", "General room cleanliness"],
+    ["missingAssetVerification", "Missing asset verification"],
+  ] as const;
   return (
-    <HousingForm title="Create Room Inspection" type="inspection" saving={saving} onSubmit={onSubmit}>
-      <select name="roomId" className={HOUSING_FIELD_CLASS}><option value="">Select room</option>{rooms.map((room) => <option key={room.id} value={room.id}>{room.roomNumber} / {room.roomType}</option>)}</select>
-      <input name="inspectionType" placeholder="Inspection type" className={HOUSING_FIELD_CLASS} />
+    <HousingForm title="Room Inspection Management" type="inspection" saving={saving} onSubmit={onSubmit}>
+      <select name="inspectionType" className={HOUSING_FIELD_CLASS}>
+        <option>Pre-check-in inspection</option>
+        <option>Occupied room inspection</option>
+        <option>Check-out inspection</option>
+        <option>Damage inspection</option>
+        <option>Deep cleaning inspection</option>
+        <option>Monthly inspection</option>
+        <option>Safety inspection</option>
+      </select>
+      <select name="roomId" className={HOUSING_FIELD_CLASS}><option value="">Select building / room</option>{rooms.map((room) => <option key={room.id} value={room.id}>{room.property?.name} / {room.block?.name} / Floor {room.floor} / Room {room.roomNumber} / {room.roomType}</option>)}</select>
+      <select name="bedId" className={HOUSING_FIELD_CLASS}><option value="">Link bed</option>{beds.map((bed) => <option key={bed.id} value={bed.id}>{bed.room?.roomNumber || "Room"} / {bed.label} / {bed.status}</option>)}</select>
+      <select name="occupantId" className={HOUSING_FIELD_CLASS}><option value="">Link occupant / booking</option>{bookings.map((booking) => <option key={booking.id} value={booking.residentId || booking.id}>{booking.bookingNo} / {booking.residentName} / {booking.status}</option>)}</select>
+      <input name="occupantName" placeholder="Occupant name" className={HOUSING_FIELD_CLASS} />
+      <select name="assetId" className={HOUSING_FIELD_CLASS}><option value="">Link asset</option>{assets.map((asset) => <option key={asset.id} value={asset.id}>{asset.tag} / {asset.name} / {asset.status}</option>)}</select>
+      <input name="workOrderRef" placeholder="Linked work order / reference" className={HOUSING_FIELD_CLASS} />
       <input name="inspector" placeholder="Inspector" className={HOUSING_FIELD_CLASS} />
       <input name="dueAt" type="datetime-local" className={HOUSING_FIELD_CLASS} />
       <input name="score" type="number" placeholder="Score" className={HOUSING_FIELD_CLASS} />
+      <div className="grid gap-3 md:grid-cols-2">
+        {checklistFields.map(([name, label]) => (
+          <label key={name} className="grid gap-1 text-xs font-black uppercase text-slate-500">
+            {label}
+            <select name={name} className={HOUSING_FIELD_CLASS}>
+              {conditionOptions.map((option) => <option key={option}>{option}</option>)}
+            </select>
+          </label>
+        ))}
+      </div>
+      <div className="grid gap-3 rounded-lg bg-slate-50 p-3 text-sm font-bold text-slate-700">
+        <label className="flex items-center gap-2"><input type="checkbox" name="damageFound" /> Damage found, create damage record</label>
+        <textarea name="damageReport" placeholder="Damage report" className="min-h-20 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />
+        <label className="flex items-center gap-2"><input type="checkbox" name="missingAssetFound" /> Missing asset found, mark selected asset missing</label>
+        <textarea name="missingAssetReport" placeholder="Missing asset report" className="min-h-20 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />
+        <label className="flex items-center gap-2"><input type="checkbox" name="repairRequired" /> Repair required</label>
+        <label className="flex items-center gap-2"><input type="checkbox" name="createMaintenanceTicket" /> Convert into maintenance ticket</label>
+        <input name="estimatedRepairCost" type="number" step="0.01" placeholder="Estimated repair cost" className={HOUSING_FIELD_CLASS} />
+        <textarea name="occupantLiability" placeholder="Occupant liability record" className="min-h-20 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />
+      </div>
+      <ImageUploadField name="beforePhotoUrls" />
+      <ImageUploadField name="afterPhotoUrls" />
       <ImageUploadField name="photoUrls" />
-      <textarea name="findings" placeholder="Findings and corrective actions" className="min-h-24 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />
+      <textarea name="findings" placeholder="Inspection report, findings and corrective actions" className="min-h-24 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />
     </HousingForm>
   );
 }
