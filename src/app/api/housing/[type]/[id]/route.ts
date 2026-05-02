@@ -211,18 +211,41 @@ async function updateHousingRecord(type: string, id: string, input: Record<strin
   }
 
   if (type === "inventory") {
+    const current = await prisma.housingInventory.findUnique({ where: { id } });
+    if (!current) throw new Error("Inventory item not found.");
+    const stock = inventoryStock(input, current.onHand);
+    const shouldGeneratePurchaseRequest = booleanValue(input.generatePurchaseRequest) || stock.onHand <= (numberValue(input.minimumStock) ?? current.minimumStock ?? numberValue(input.reorderPoint) ?? current.reorderPoint ?? 0);
+    const purchaseRequestNo = text(input.purchaseRequestNo) || (shouldGeneratePurchaseRequest ? current.purchaseRequestNo || `HPR-${Date.now()}` : undefined);
     const item = await prisma.housingInventory.update({
       where: { id },
       data: {
         name: text(input.name) || undefined,
         category: text(input.category) || undefined,
+        description: text(input.description) || text(input.notes) || undefined,
         roomId: text(input.roomId) || undefined,
-        onHand: numberValue(input.onHand),
+        storeLocation: text(input.storeLocation) || undefined,
+        onHand: stock.onHand,
+        minimumStock: numberValue(input.minimumStock),
         reorderPoint: numberValue(input.reorderPoint),
         unit: text(input.unit) || undefined,
+        unitCost: numberValue(input.unitCost),
+        supplierName: text(input.supplierName) || undefined,
+        supplierContact: text(input.supplierContact) || undefined,
+        preferredSupplier: text(input.preferredSupplier) || text(input.supplierName) || undefined,
+        expiryDate: input.expiryDate ? new Date(String(input.expiryDate)) : undefined,
+        lastMovementType: stock.movementType,
+        lastMovementQty: stock.movementQty,
+        lastMovementAt: new Date(),
+        lastMovementBy: text(input.movementBy) || actor,
+        transferFrom: text(input.transferFrom) || undefined,
+        transferTo: text(input.transferTo) || undefined,
+        adjustmentReason: text(input.adjustmentReason) || undefined,
+        purchaseRequestNo,
+        purchaseRequestStatus: text(input.purchaseRequestStatus) || (purchaseRequestNo ? "REQUESTED" : undefined),
+        qrCode: text(input.qrCode) || undefined,
       },
     });
-    await prisma.housingHistory.create({ data: { entity: "inventory", entityId: id, inventoryId: id, roomId: item.roomId, actor, action: "Inventory updated", details: item.name } });
+    await housingInventoryHistoryAndAlerts(item, current.onHand, stock.movementType, stock.movementQty, input, actor);
     return item;
   }
 
@@ -318,6 +341,37 @@ function text(value: unknown) {
 function numberValue(value: unknown) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function inventoryStock(input: Record<string, unknown>, currentOnHand: number) {
+  const movementType = (text(input.movementType) || "ADJUSTMENT").toUpperCase();
+  const movementQty = numberValue(input.movementQty) ?? 0;
+  let onHand = numberValue(input.onHand) ?? currentOnHand;
+  if (movementQty > 0) {
+    if (movementType === "RECEIPT") onHand = currentOnHand + movementQty;
+    if (movementType === "ISSUE") onHand = currentOnHand - movementQty;
+    if (movementType === "ADJUSTMENT") onHand = movementQty;
+  }
+  if (onHand < 0) throw new Error("Stock cannot go below zero.");
+  return { onHand, movementType, movementQty };
+}
+
+async function housingInventoryHistoryAndAlerts(item: any, previousOnHand: number, movementType: string, movementQty: number, input: Record<string, unknown>, actor: string) {
+  await prisma.housingHistory.create({ data: { entity: "inventory", entityId: item.id, inventoryId: item.id, roomId: item.roomId, actor, action: `Stock ${movementType.toLowerCase()}`, details: `${item.name}: ${previousOnHand} -> ${item.onHand}${movementQty ? ` (${movementQty})` : ""}` } });
+  if (movementType === "TRANSFER") {
+    await prisma.housingHistory.create({ data: { entity: "inventory", entityId: item.id, inventoryId: item.id, roomId: item.roomId, actor, action: "Stock transfer", details: `${text(input.transferFrom) || item.transferFrom || "-"} -> ${text(input.transferTo) || item.transferTo || "-"}` } });
+  }
+  if (item.onHand <= item.minimumStock) {
+    await prisma.housingNotification.create({ data: { title: "Housing inventory minimum stock alert", message: `${item.name} is at ${item.onHand} ${item.unit}; minimum stock is ${item.minimumStock}.`, recipient: "Housing Inventory Manager", severity: "HIGH" } });
+  } else if (item.onHand <= item.reorderPoint) {
+    await prisma.housingNotification.create({ data: { title: "Housing inventory reorder alert", message: `${item.name} is at ${item.onHand} ${item.unit}; reorder point is ${item.reorderPoint}.`, recipient: "Housing Inventory Manager", severity: "MEDIUM" } });
+  }
+  if (item.expiryDate && new Date(item.expiryDate).getTime() <= Date.now()) {
+    await prisma.housingNotification.create({ data: { title: "Housing inventory expired item alert", message: `${item.name} expired on ${new Date(item.expiryDate).toISOString().slice(0, 10)}.`, recipient: "Housing Inventory Manager", severity: "HIGH" } });
+  }
+  if (item.purchaseRequestNo) {
+    await prisma.housingHistory.create({ data: { entity: "inventory", entityId: item.id, inventoryId: item.id, roomId: item.roomId, actor, action: "Purchase request generated", details: `${item.purchaseRequestNo} / ${item.purchaseRequestStatus || "REQUESTED"}` } });
+  }
 }
 
 async function housingAssetHistory(asset: any, current: any, input: Record<string, unknown>, actor: string) {

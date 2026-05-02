@@ -131,8 +131,23 @@ const housingSchema = z.object({
   warrantyExpiry: z.string().optional(),
   sku: z.string().optional(),
   onHand: z.coerce.number().int().min(0).optional(),
+  minimumStock: z.coerce.number().int().min(0).optional(),
   reorderPoint: z.coerce.number().int().min(0).optional(),
   unit: z.string().optional(),
+  unitCost: z.coerce.number().optional(),
+  storeLocation: z.string().optional(),
+  supplierContact: z.string().optional(),
+  preferredSupplier: z.string().optional(),
+  expiryDate: z.string().optional(),
+  movementType: z.string().optional(),
+  movementQty: z.coerce.number().int().min(0).optional(),
+  movementBy: z.string().optional(),
+  transferFrom: z.string().optional(),
+  transferTo: z.string().optional(),
+  adjustmentReason: z.string().optional(),
+  purchaseRequestNo: z.string().optional(),
+  purchaseRequestStatus: z.string().optional(),
+  generatePurchaseRequest: z.coerce.boolean().optional(),
   entity: z.string().optional(),
   entityId: z.string().optional(),
   bookingId: z.string().optional(),
@@ -333,12 +348,15 @@ async function createHousingRecord(input: z.infer<typeof housingSchema>, actor: 
     const room = input.roomId ? await prisma.housingRoom.findUnique({ where: { id: input.roomId } }) : null;
     const count = await prisma.housingInventory.count();
     const sku = input.sku || input.code || `HSI-${String(count + 1).padStart(5, "0")}`;
+    const current = await prisma.housingInventory.findUnique({ where: { sku } });
+    const stock = inventoryStock(input, current?.onHand ?? input.onHand ?? 0);
+    const data = inventoryData(input, sku, room?.id, stock.onHand, actor, stock.movementType, stock.movementQty);
     const item = await prisma.housingInventory.upsert({
       where: { sku },
-      update: inventoryData(input, sku, room?.id),
-      create: inventoryData(input, sku, room?.id),
+      update: data,
+      create: data,
     });
-    await housingHistory("inventory", item.id, actor, "Housing inventory saved", item.name, { roomId: room?.id, inventoryId: item.id });
+    await handleInventoryOutputs(item, input, actor, current?.onHand ?? 0, stock.movementType, stock.movementQty);
     return item;
   }
 
@@ -547,17 +565,67 @@ function residentData(input: z.infer<typeof housingSchema>, residentNo: string) 
   };
 }
 
-function inventoryData(input: z.infer<typeof housingSchema>, sku: string, roomId?: string) {
+function inventoryData(input: z.infer<typeof housingSchema>, sku: string, roomId: string | undefined, onHand: number, actor: string, movementType: string, movementQty: number) {
+  const shouldGeneratePurchaseRequest = Boolean(input.generatePurchaseRequest || onHand <= (input.minimumStock ?? input.reorderPoint ?? 0));
+  const purchaseRequestNo = input.purchaseRequestNo || (shouldGeneratePurchaseRequest ? `HPR-${Date.now()}` : undefined);
   return {
     sku,
     name: input.name || sku,
-    category: input.category || "Housing Consumable",
+    category: input.category || "Linen",
+    description: input.description || input.notes || "",
     roomId,
-    onHand: input.onHand ?? 0,
+    storeLocation: input.storeLocation || "",
+    onHand,
+    minimumStock: input.minimumStock ?? 0,
     reorderPoint: input.reorderPoint ?? 0,
     unit: input.unit || "Each",
-    qrCode: `QR:${sku}`,
+    unitCost: input.unitCost ?? 0,
+    supplierName: input.supplierName || "",
+    supplierContact: input.supplierContact || "",
+    preferredSupplier: input.preferredSupplier || input.supplierName || "",
+    expiryDate: input.expiryDate ? new Date(input.expiryDate) : undefined,
+    lastMovementType: movementType,
+    lastMovementQty: movementQty,
+    lastMovementAt: new Date(),
+    lastMovementBy: input.movementBy || actor,
+    transferFrom: input.transferFrom || "",
+    transferTo: input.transferTo || "",
+    adjustmentReason: input.adjustmentReason || "",
+    purchaseRequestNo,
+    purchaseRequestStatus: input.purchaseRequestStatus || (purchaseRequestNo ? "REQUESTED" : ""),
+    qrCode: input.qrCode || `QR:${sku}`,
   };
+}
+
+function inventoryStock(input: z.infer<typeof housingSchema>, currentOnHand: number) {
+  const movementType = (input.movementType || "ADJUSTMENT").toUpperCase();
+  const movementQty = input.movementQty ?? 0;
+  let onHand = input.onHand ?? currentOnHand;
+  if (movementQty > 0) {
+    if (movementType === "RECEIPT") onHand = currentOnHand + movementQty;
+    if (movementType === "ISSUE") onHand = currentOnHand - movementQty;
+    if (movementType === "ADJUSTMENT") onHand = movementQty;
+  }
+  if (onHand < 0) throw new Error("Stock cannot go below zero.");
+  return { onHand, movementType, movementQty };
+}
+
+async function handleInventoryOutputs(item: any, input: z.infer<typeof housingSchema>, actor: string, previousOnHand: number, movementType: string, movementQty: number) {
+  await housingHistory("inventory", item.id, actor, `Stock ${movementType.toLowerCase()}`, `${item.name}: ${previousOnHand} -> ${item.onHand}${movementQty ? ` (${movementQty})` : ""}`, { roomId: item.roomId, inventoryId: item.id });
+  if (String(movementType).toUpperCase() === "TRANSFER") {
+    await housingHistory("inventory", item.id, actor, "Stock transfer", `${input.transferFrom || item.transferFrom || "-"} -> ${input.transferTo || item.transferTo || "-"}`, { roomId: item.roomId, inventoryId: item.id });
+  }
+  if (item.onHand <= item.minimumStock) {
+    await prisma.housingNotification.create({ data: { title: "Housing inventory minimum stock alert", message: `${item.name} is at ${item.onHand} ${item.unit}; minimum stock is ${item.minimumStock}.`, recipient: "Housing Inventory Manager", severity: "HIGH" } });
+  } else if (item.onHand <= item.reorderPoint) {
+    await prisma.housingNotification.create({ data: { title: "Housing inventory reorder alert", message: `${item.name} is at ${item.onHand} ${item.unit}; reorder point is ${item.reorderPoint}.`, recipient: "Housing Inventory Manager", severity: "MEDIUM" } });
+  }
+  if (item.expiryDate && new Date(item.expiryDate).getTime() <= Date.now()) {
+    await prisma.housingNotification.create({ data: { title: "Housing inventory expired item alert", message: `${item.name} expired on ${new Date(item.expiryDate).toISOString().slice(0, 10)}.`, recipient: "Housing Inventory Manager", severity: "HIGH" } });
+  }
+  if (item.purchaseRequestNo) {
+    await housingHistory("inventory", item.id, actor, "Purchase request generated", `${item.purchaseRequestNo} / ${item.purchaseRequestStatus || "REQUESTED"}`, { roomId: item.roomId, inventoryId: item.id });
+  }
 }
 
 function housingAssetData(input: z.infer<typeof housingSchema>, tag: string, roomId?: string) {

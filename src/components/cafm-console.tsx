@@ -4517,7 +4517,21 @@ function HousingOperations({
 
       {activePanel === "inventory" && (
         <section className="grid gap-5 xl:grid-cols-[1fr_380px]">
-          <HousingTable title="Housing Inventory Management" rows={visibleInventory} columns={[["sku", "SKU"], ["name", "Name"], ["category", "Category"], ["onHand", "On Hand"], ["reorderPoint", "Reorder"], ["unit", "Unit"], ["qrCode", "QR"]]} onSelect={(record) => setSelected({ type: "inventory", record })} reportType="housing-inventory" />
+          <HousingTable
+            title="Housing Inventory Management"
+            rows={visibleInventory}
+            columns={[["sku", "SKU"], ["name", "Name"], ["category", "Category"], ["onHand", "On Hand"], ["minimumStock", "Minimum"], ["reorderPoint", "Reorder"], ["unit", "Unit"], ["supplierName", "Supplier"], ["expiryDate", "Expiry"], ["purchaseRequestStatus", "PR Status"], ["lastMovementType", "Last Move"]]}
+            onSelect={(record) => setSelected({ type: "inventory", record })}
+            reportType="housing-inventory"
+            actions={(record) => canManage && (
+              <div className="flex flex-wrap gap-2">
+                <button type="button" onClick={(event) => { event.stopPropagation(); updateHousing("inventory", record.id, { movementType: "RECEIPT", movementQty: 1 }); }} className="rounded-lg bg-leaf px-3 py-2 text-xs font-black text-white">Receipt +1</button>
+                <button type="button" onClick={(event) => { event.stopPropagation(); updateHousing("inventory", record.id, { movementType: "ISSUE", movementQty: 1 }); }} className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white">Issue -1</button>
+                <button type="button" onClick={(event) => { event.stopPropagation(); updateHousing("inventory", record.id, { movementType: "TRANSFER", movementQty: 0, transferFrom: record.storeLocation || record.room?.roomNumber || "", transferTo: "Transfer pending location" }); }} className="rounded-lg bg-lagoon px-3 py-2 text-xs font-black text-white">Transfer</button>
+                <button type="button" onClick={(event) => { event.stopPropagation(); updateHousing("inventory", record.id, { generatePurchaseRequest: true, purchaseRequestStatus: "REQUESTED" }); }} className="rounded-lg bg-ink px-3 py-2 text-xs font-black text-white">Create PR</button>
+              </div>
+            )}
+          />
           {canManage && <HousingInventoryForm rooms={rooms} saving={saving} onSubmit={submitHousing} />}
         </section>
       )}
@@ -4645,7 +4659,7 @@ function HousingTable({ title, rows, columns, onSelect, actions, reportType }: {
             {visibleRows.map((row, index) => (
               <tr key={row.id ?? index} onClick={() => onSelect?.(row)} className="cursor-pointer border-t border-slate-100 hover:bg-slate-50">
                 <td className="px-3 py-3 font-black text-slate-500">{(safePage - 1) * PAGE_SIZE + index + 1}</td>
-                {columns.map(([key]) => <td key={key} className="max-w-[260px] px-3 py-3"><HousingCellValue value={key.includes("At") || key === "dueAt" || key === "checkIn" ? formatDateCell(row[key]) : row[key]} /></td>)}
+                {columns.map(([key]) => <td key={key} className="max-w-[260px] px-3 py-3"><HousingCellValue value={key.includes("At") || key.includes("Date") || key === "dueAt" || key === "checkIn" ? formatDateCell(row[key]) : row[key]} /></td>)}
                 {actions && <td className="px-3 py-3">{actions(row)}</td>}
               </tr>
             ))}
@@ -4911,15 +4925,61 @@ function HousingAssetForm({ rooms, saving, onSubmit }: { rooms: any[]; saving: b
 }
 
 function HousingInventoryForm({ rooms, saving, onSubmit }: { rooms: any[]; saving: boolean; onSubmit: (formData: FormData) => void }) {
+  const categories = ["Linen", "Pillows", "Blankets", "Cleaning materials", "Electrical spare parts", "Plumbing spare parts", "PPE items", "Office stationery", "Kitchen equipment", "Hygiene materials"];
   return (
     <HousingForm title="Add Housing Inventory" type="inventory" saving={saving} onSubmit={onSubmit}>
       <input name="sku" placeholder="SKU / barcode" className={HOUSING_FIELD_CLASS} />
       <input name="name" placeholder="Item name" className={HOUSING_FIELD_CLASS} />
-      <input name="category" placeholder="Category" className={HOUSING_FIELD_CLASS} />
+      <select name="category" className={HOUSING_FIELD_CLASS}>
+        <option value="">Inventory category</option>
+        {categories.map((category) => <option key={category} value={category}>{category}</option>)}
+      </select>
+      <textarea name="description" placeholder="Description / item specification" className="min-h-20 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />
       <select name="roomId" className={HOUSING_FIELD_CLASS}><option value="">Room / store location</option>{rooms.map((room) => <option key={room.id} value={room.id}>{room.roomNumber} / {room.roomType}</option>)}</select>
-      <input name="onHand" type="number" placeholder="On hand" className={HOUSING_FIELD_CLASS} />
-      <input name="reorderPoint" type="number" placeholder="Reorder point" className={HOUSING_FIELD_CLASS} />
-      <input name="unit" placeholder="Unit" className={HOUSING_FIELD_CLASS} />
+      <input name="storeLocation" placeholder="Store / shelf / bin location" className={HOUSING_FIELD_CLASS} />
+      <div className="grid gap-3 md:grid-cols-3">
+        <input name="onHand" type="number" min="0" placeholder="Opening / adjusted stock" className={HOUSING_FIELD_CLASS} />
+        <input name="minimumStock" type="number" min="0" placeholder="Minimum stock" className={HOUSING_FIELD_CLASS} />
+        <input name="reorderPoint" type="number" min="0" placeholder="Reorder level" className={HOUSING_FIELD_CLASS} />
+      </div>
+      <div className="grid gap-3 md:grid-cols-2">
+        <input name="unit" placeholder="Unit" className={HOUSING_FIELD_CLASS} />
+        <input name="unitCost" type="number" min="0" step="0.01" placeholder="Unit cost" className={HOUSING_FIELD_CLASS} />
+        <input name="supplierName" placeholder="Supplier name" className={HOUSING_FIELD_CLASS} />
+        <input name="supplierContact" placeholder="Supplier contact" className={HOUSING_FIELD_CLASS} />
+        <input name="preferredSupplier" placeholder="Preferred supplier" className={HOUSING_FIELD_CLASS} />
+        <input name="expiryDate" type="date" className={HOUSING_FIELD_CLASS} />
+      </div>
+      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+        <p className="text-sm font-black">Stock Movement</p>
+        <div className="mt-3 grid gap-3 md:grid-cols-2">
+          <select name="movementType" className={HOUSING_FIELD_CLASS}>
+            <option value="ADJUSTMENT">Stock adjustment</option>
+            <option value="RECEIPT">Stock receipt</option>
+            <option value="ISSUE">Stock issue</option>
+            <option value="TRANSFER">Stock transfer</option>
+          </select>
+          <input name="movementQty" type="number" min="0" placeholder="Movement quantity" className={HOUSING_FIELD_CLASS} />
+          <input name="transferFrom" placeholder="Transfer from" className={HOUSING_FIELD_CLASS} />
+          <input name="transferTo" placeholder="Transfer to" className={HOUSING_FIELD_CLASS} />
+          <input name="movementBy" placeholder="Movement by" className={HOUSING_FIELD_CLASS} />
+          <input name="adjustmentReason" placeholder="Adjustment reason" className={HOUSING_FIELD_CLASS} />
+        </div>
+      </div>
+      <div className="grid gap-3 md:grid-cols-2">
+        <input name="purchaseRequestNo" placeholder="Purchase request no." className={HOUSING_FIELD_CLASS} />
+        <select name="purchaseRequestStatus" className={HOUSING_FIELD_CLASS}>
+          <option value="">Purchase request status</option>
+          <option>REQUESTED</option>
+          <option>APPROVED</option>
+          <option>ORDERED</option>
+          <option>RECEIVED</option>
+        </select>
+      </div>
+      <label className="flex items-center gap-2 rounded-lg bg-amber-50 p-3 text-sm font-black text-amber-800">
+        <input type="checkbox" name="generatePurchaseRequest" />
+        Generate purchase request when saving
+      </label>
     </HousingForm>
   );
 }

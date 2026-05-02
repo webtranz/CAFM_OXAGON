@@ -290,7 +290,39 @@ async function reportRows(type: string, filters: ReturnType<typeof reportFilters
   }
   if (type === "housing-inventory") {
     const rows = await prisma.housingInventory.findMany({ include: { room: { include: { property: true, block: true } } }, orderBy: { sku: "asc" } });
-    return rows.map((row) => ({ sku: row.sku, name: row.name, category: row.category, property: row.room?.property.name ?? "", block: row.room?.block?.name ?? "", room: row.room?.roomNumber ?? "", onHand: row.onHand, reorderPoint: row.reorderPoint, unit: row.unit, qrCode: row.qrCode }));
+    return rows.map((row) => ({
+      sku: row.sku,
+      name: row.name,
+      category: row.category,
+      description: row.description,
+      property: row.room?.property.name ?? "",
+      block: row.room?.block?.name ?? "",
+      room: row.room?.roomNumber ?? "",
+      storeLocation: row.storeLocation,
+      onHand: row.onHand,
+      minimumStock: row.minimumStock,
+      reorderPoint: row.reorderPoint,
+      unit: row.unit,
+      unitCost: Number(row.unitCost),
+      stockValue: Number(row.unitCost) * row.onHand,
+      supplierName: row.supplierName,
+      supplierContact: row.supplierContact,
+      preferredSupplier: row.preferredSupplier,
+      expiryDate: dateValue(row.expiryDate),
+      expired: row.expiryDate ? row.expiryDate.getTime() <= Date.now() : false,
+      minimumStockAlert: row.onHand <= row.minimumStock,
+      reorderAlert: row.onHand <= row.reorderPoint,
+      lastMovementType: row.lastMovementType,
+      lastMovementQty: row.lastMovementQty,
+      lastMovementAt: dateValue(row.lastMovementAt),
+      lastMovementBy: row.lastMovementBy,
+      transferFrom: row.transferFrom,
+      transferTo: row.transferTo,
+      adjustmentReason: row.adjustmentReason,
+      purchaseRequestNo: row.purchaseRequestNo,
+      purchaseRequestStatus: row.purchaseRequestStatus,
+      qrCode: row.qrCode,
+    }));
   }
   if (type === "housing-approvals") {
     const rows = await prisma.housingApproval.findMany({ orderBy: { createdAt: "desc" } });

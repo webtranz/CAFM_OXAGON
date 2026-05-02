@@ -1,0 +1,21 @@
+ALTER TABLE "HousingInventory" ADD COLUMN IF NOT EXISTS "description" TEXT;
+ALTER TABLE "HousingInventory" ADD COLUMN IF NOT EXISTS "storeLocation" TEXT;
+ALTER TABLE "HousingInventory" ADD COLUMN IF NOT EXISTS "minimumStock" INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE "HousingInventory" ADD COLUMN IF NOT EXISTS "unitCost" DECIMAL(65,30) NOT NULL DEFAULT 0;
+ALTER TABLE "HousingInventory" ADD COLUMN IF NOT EXISTS "supplierName" TEXT;
+ALTER TABLE "HousingInventory" ADD COLUMN IF NOT EXISTS "supplierContact" TEXT;
+ALTER TABLE "HousingInventory" ADD COLUMN IF NOT EXISTS "preferredSupplier" TEXT;
+ALTER TABLE "HousingInventory" ADD COLUMN IF NOT EXISTS "expiryDate" TIMESTAMP(3);
+ALTER TABLE "HousingInventory" ADD COLUMN IF NOT EXISTS "lastMovementType" TEXT;
+ALTER TABLE "HousingInventory" ADD COLUMN IF NOT EXISTS "lastMovementQty" INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE "HousingInventory" ADD COLUMN IF NOT EXISTS "lastMovementAt" TIMESTAMP(3);
+ALTER TABLE "HousingInventory" ADD COLUMN IF NOT EXISTS "lastMovementBy" TEXT;
+ALTER TABLE "HousingInventory" ADD COLUMN IF NOT EXISTS "transferFrom" TEXT;
+ALTER TABLE "HousingInventory" ADD COLUMN IF NOT EXISTS "transferTo" TEXT;
+ALTER TABLE "HousingInventory" ADD COLUMN IF NOT EXISTS "adjustmentReason" TEXT;
+ALTER TABLE "HousingInventory" ADD COLUMN IF NOT EXISTS "purchaseRequestNo" TEXT;
+ALTER TABLE "HousingInventory" ADD COLUMN IF NOT EXISTS "purchaseRequestStatus" TEXT;
+
+CREATE INDEX IF NOT EXISTS "HousingInventory_category_idx" ON "HousingInventory"("category");
+CREATE INDEX IF NOT EXISTS "HousingInventory_expiryDate_idx" ON "HousingInventory"("expiryDate");
+CREATE INDEX IF NOT EXISTS "HousingInventory_roomId_category_idx" ON "HousingInventory"("roomId", "category");

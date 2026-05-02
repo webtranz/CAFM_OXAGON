@@ -98,7 +98,7 @@ export const fallbackData = {
     bookings: [{ id: "bk1", bookingNo: "HBK-00001", residentName: "Hamayun Ali", departmentCode: "MEP", roomId: "hr1", bedId: "bed1", checkIn: new Date(), status: "CHECKED_IN", priority: "MEDIUM", requestedBy: "Admin", room: { roomNumber: "A101", property: { name: "Tamimi Housing Village" }, block: { name: "Block A" } }, bed: { label: "Bed 1" }, approvals: [] }],
     inspections: [{ id: "hin1", inspectionNo: "HIN-00001", roomId: "hr1", inspector: "Housing Supervisor", inspectionType: "Check-in", status: "PASSED", score: 96, findings: "Room ready", dueAt: new Date(), room: { roomNumber: "A101", property: { name: "Tamimi Housing Village" } } }],
     assets: [{ id: "ha1", tag: "HSA-00001", name: "Bed Frame", category: "Furniture", roomId: "hr1", status: "ACTIVE", qrCode: "QR:HSA-00001" }],
-    inventory: [{ id: "hi1", sku: "HSI-LINEN-001", name: "Linen Set", category: "Housekeeping", roomId: "hr1", onHand: 24, reorderPoint: 10, unit: "Set", qrCode: "QR:HSI-LINEN-001" }],
+    inventory: [{ id: "hi1", sku: "HSI-LINEN-001", name: "Linen Set", category: "Linen", roomId: "hr1", storeLocation: "Housing Store / Linen Rack A", onHand: 24, minimumStock: 12, reorderPoint: 10, unit: "Set", supplierName: "Tamimi Housekeeping Supplies", expiryDate: new Date(), purchaseRequestStatus: "NOT_REQUIRED", lastMovementType: "RECEIPT", qrCode: "QR:HSI-LINEN-001" }],
     approvals: [],
     notifications: [{ id: "hn1", title: "Inspection due", message: "Room A102 inspection is due.", severity: "MEDIUM", recipient: "Housing Supervisor", read: false, createdAt: new Date() }],
     history: [],
