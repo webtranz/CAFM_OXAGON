@@ -4219,6 +4219,26 @@ function HousingOperations({
   });
   const visibleRooms = rooms.filter((room) => {
     const haystack = `${room.code} ${room.roomNumber} ${room.property?.name} ${room.block?.name} ${room.floor} ${room.roomType} ${room.status}`.toLowerCase();
+    return (!search || haystack.includes(filterText)) && (status === "All" || room.status === status);
+  });
+  const visibleInspections = inspections.filter((inspection) => {
+    const haystack = `${inspection.inspectionNo} ${inspection.inspectionType} ${inspection.inspector} ${inspection.status} ${inspection.findings} ${inspection.room?.roomNumber}`.toLowerCase();
+    return (!search || haystack.includes(filterText)) && (status === "All" || inspection.status === status);
+  });
+  const visibleAssets = assets.filter((asset) => {
+    const haystack = `${asset.tag} ${asset.name} ${asset.category} ${asset.status} ${asset.serialNumber} ${asset.room?.roomNumber}`.toLowerCase();
+    return (!search || haystack.includes(filterText)) && (status === "All" || asset.status === status);
+  });
+  const visibleInventory = inventory.filter((item) => {
+    const haystack = `${item.sku} ${item.name} ${item.category} ${item.room?.roomNumber} ${item.qrCode}`.toLowerCase();
+    return !search || haystack.includes(filterText);
+  });
+  const visibleApprovals = approvals.filter((approval) => {
+    const haystack = `${approval.entity} ${approval.level} ${approval.approver} ${approval.status} ${approval.remarks}`.toLowerCase();
+    return (!search || haystack.includes(filterText)) && (status === "All" || approval.status === status);
+  });
+  const visibleHistory = history.filter((item) => {
+    const haystack = `${item.entity} ${item.action} ${item.actor} ${item.details}`.toLowerCase();
     return !search || haystack.includes(filterText);
   });
   const activePanel =
@@ -4251,6 +4271,15 @@ function HousingOperations({
             <option>CHECKED_IN</option>
             <option>CHECKED_OUT</option>
             <option>REJECTED</option>
+            <option>AVAILABLE</option>
+            <option>RESERVED</option>
+            <option>OCCUPIED</option>
+            <option>MAINTENANCE</option>
+            <option>SCHEDULED</option>
+            <option>PASSED</option>
+            <option>FAILED</option>
+            <option>ACTIVE</option>
+            <option>PENDING</option>
           </select>
           <ReportButtons type="housing-bookings" label="Housing bookings report" />
         </div>
@@ -4292,7 +4321,7 @@ function HousingOperations({
         <section className="grid gap-5 xl:grid-cols-[1fr_380px]">
           <HousingTable
             title="Room Inspection Management"
-            rows={inspections}
+            rows={visibleInspections}
             columns={[["inspectionNo", "Inspection"], ["inspectionType", "Type"], ["inspector", "Inspector"], ["status", "Status"], ["score", "Score"], ["dueAt", "Due"]]}
             onSelect={(record) => setSelected({ type: "inspection", record })}
             reportType="housing-inspections"
@@ -4304,22 +4333,22 @@ function HousingOperations({
 
       {activePanel === "assets" && (
         <section className="grid gap-5 xl:grid-cols-[1fr_380px]">
-          <HousingTable title="Housing Asset Management" rows={assets} columns={[["tag", "Tag"], ["name", "Name"], ["category", "Category"], ["status", "Status"], ["serialNumber", "Serial"], ["qrCode", "QR"]]} onSelect={(record) => setSelected({ type: "asset", record })} reportType="housing-assets" />
+          <HousingTable title="Housing Asset Management" rows={visibleAssets} columns={[["tag", "Tag"], ["name", "Name"], ["category", "Category"], ["status", "Status"], ["serialNumber", "Serial"], ["qrCode", "QR"]]} onSelect={(record) => setSelected({ type: "asset", record })} reportType="housing-assets" />
           {canManage && <HousingAssetForm rooms={rooms} saving={saving} onSubmit={submitHousing} />}
         </section>
       )}
 
       {activePanel === "inventory" && (
         <section className="grid gap-5 xl:grid-cols-[1fr_380px]">
-          <HousingTable title="Housing Inventory Management" rows={inventory} columns={[["sku", "SKU"], ["name", "Name"], ["category", "Category"], ["onHand", "On Hand"], ["reorderPoint", "Reorder"], ["unit", "Unit"], ["qrCode", "QR"]]} onSelect={(record) => setSelected({ type: "inventory", record })} reportType="housing-inventory" />
+          <HousingTable title="Housing Inventory Management" rows={visibleInventory} columns={[["sku", "SKU"], ["name", "Name"], ["category", "Category"], ["onHand", "On Hand"], ["reorderPoint", "Reorder"], ["unit", "Unit"], ["qrCode", "QR"]]} onSelect={(record) => setSelected({ type: "inventory", record })} reportType="housing-inventory" />
           {canManage && <HousingInventoryForm rooms={rooms} saving={saving} onSubmit={submitHousing} />}
         </section>
       )}
 
       {activePanel === "approvals" && (
         <section className="grid gap-5 xl:grid-cols-2">
-          <HousingAlerts notifications={notifications} approvals={approvals} onApprove={(id, nextStatus) => updateHousing("approval", id, { status: nextStatus })} canApprove={canApprove} />
-          <HousingTable title="Housing History & Audit Trail" rows={history} columns={[["entity", "Entity"], ["action", "Action"], ["actor", "Actor"], ["details", "Details"], ["createdAt", "Time"]]} reportType="housing-history" />
+          <HousingAlerts notifications={notifications} approvals={visibleApprovals} onApprove={(id, nextStatus) => updateHousing("approval", id, { status: nextStatus })} canApprove={canApprove} />
+          <HousingTable title="Housing History & Audit Trail" rows={visibleHistory} columns={[["entity", "Entity"], ["action", "Action"], ["actor", "Actor"], ["details", "Details"], ["createdAt", "Time"]]} reportType="housing-history" />
         </section>
       )}
 
@@ -4368,6 +4397,15 @@ function HousingKpi({ label, value, detail }: { label: string; value: string; de
 }
 
 function HousingTable({ title, rows, columns, onSelect, actions, reportType }: { title: string; rows: any[]; columns: [string, string][]; onSelect?: (record: any) => void; actions?: (record: any) => any; reportType: string }) {
+  const [page, setPage] = useState(1);
+  const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const visibleRows = rows.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
+  useEffect(() => {
+    setPage(1);
+  }, [rows.length, reportType]);
+
   return (
     <Panel title={title} icon={Building2}>
       <ReportButtons type={reportType} label={`${title} report`} />
@@ -4381,10 +4419,10 @@ function HousingTable({ title, rows, columns, onSelect, actions, reportType }: {
             </tr>
           </thead>
           <tbody>
-            {rows.map((row, index) => (
+            {visibleRows.map((row, index) => (
               <tr key={row.id ?? index} onClick={() => onSelect?.(row)} className="cursor-pointer border-t border-slate-100 hover:bg-slate-50">
-                <td className="px-3 py-3 font-black text-slate-500">{index + 1}</td>
-                {columns.map(([key]) => <td key={key} className="max-w-[260px] px-3 py-3"><CellValue value={key.includes("At") || key === "dueAt" || key === "checkIn" ? formatDateCell(row[key]) : row[key]} /></td>)}
+                <td className="px-3 py-3 font-black text-slate-500">{(safePage - 1) * PAGE_SIZE + index + 1}</td>
+                {columns.map(([key]) => <td key={key} className="max-w-[260px] px-3 py-3"><HousingCellValue value={key.includes("At") || key === "dueAt" || key === "checkIn" ? formatDateCell(row[key]) : row[key]} /></td>)}
                 {actions && <td className="px-3 py-3">{actions(row)}</td>}
               </tr>
             ))}
@@ -4392,8 +4430,34 @@ function HousingTable({ title, rows, columns, onSelect, actions, reportType }: {
           </tbody>
         </table>
       </div>
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg bg-slate-50 p-3 text-sm font-bold text-slate-600">
+        <span>Page {safePage} of {totalPages} / {rows.length} entries / {PAGE_SIZE} per page</span>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" disabled={safePage === 1} onClick={() => setPage((current) => Math.max(1, current - 1))} className="rounded-lg border border-slate-200 bg-white px-3 py-2 disabled:opacity-50">Previous</button>
+          {Array.from({ length: Math.min(totalPages, 5) }, (_, index) => {
+            const pageNumber = Math.min(totalPages, Math.max(1, safePage - 2) + index);
+            return (
+              <button key={`${reportType}-${pageNumber}`} type="button" onClick={() => setPage(pageNumber)} className={`rounded-lg px-3 py-2 ${safePage === pageNumber ? "bg-lagoon text-white" : "border border-slate-200 bg-white"}`}>
+                {pageNumber}
+              </button>
+            );
+          })}
+          <button type="button" disabled={safePage === totalPages} onClick={() => setPage((current) => Math.min(totalPages, current + 1))} className="rounded-lg border border-slate-200 bg-white px-3 py-2 disabled:opacity-50">Next</button>
+        </div>
+      </div>
     </Panel>
   );
+}
+
+function HousingCellValue({ value }: { value: any }) {
+  if (typeof value === "string") {
+    const status = value.toUpperCase();
+    if (["AVAILABLE", "APPROVED", "PASSED", "CHECKED_IN", "ACTIVE"].includes(status)) return <span className="rounded-lg bg-leaf/10 px-2 py-1 font-black text-leaf">{value}</span>;
+    if (["REQUESTED", "PENDING", "PENDING_APPROVAL", "SCHEDULED", "RESERVED"].includes(status)) return <span className="rounded-lg bg-amber-100 px-2 py-1 font-black text-amber-700">{value}</span>;
+    if (["OCCUPIED", "IN_PROGRESS", "CHECKED_OUT", "CLOSED"].includes(status)) return <span className="rounded-lg bg-lagoon/10 px-2 py-1 font-black text-lagoon">{value}</span>;
+    if (["REJECTED", "CANCELLED", "FAILED", "MAINTENANCE", "BLOCKED", "CRITICAL", "HIGH"].includes(status)) return <span className="rounded-lg bg-coral/10 px-2 py-1 font-black text-coral">{value}</span>;
+  }
+  return <CellValue value={value} />;
 }
 
 function HousingAlerts({ notifications, approvals, onApprove, canApprove }: { notifications: any[]; approvals: any[]; onApprove: (id: string, status: string) => void; canApprove: boolean }) {
