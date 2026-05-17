@@ -512,9 +512,9 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { id?: st
   }
 
   return (
-    <main className="min-h-screen text-ink">
-      <section className="grid min-h-screen grid-cols-1 lg:grid-cols-[300px_1fr]">
-        <aside className="border-r border-slate-200 bg-white p-4">
+    <main className="h-screen overflow-hidden text-ink">
+      <section className="grid h-screen min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden lg:grid-cols-[300px_minmax(0,1fr)] lg:grid-rows-1">
+        <aside className="max-h-[38vh] shrink-0 overflow-y-auto border-r border-slate-200 bg-white p-4 scrollbar-thin lg:h-screen lg:max-h-none">
           <div className="flex items-center gap-3 px-1">
             <div className="grid h-14 w-14 place-items-center overflow-hidden rounded-lg border border-amber-200 bg-white p-1 shadow-sm">
               <Image src="/tafga.png" alt="Tamimi Global CAFM logo" width={52} height={52} className="h-full w-full object-contain" priority />
@@ -586,12 +586,12 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { id?: st
           </div>
         </aside>
 
-        <section className="space-y-5 p-4 sm:p-6 lg:p-8">
-          <header className="rounded-lg bg-gradient-to-r from-fuchsia-600 to-indigo-600 p-5 text-white shadow-lift">
+        <section className="min-h-0 min-w-0 space-y-5 overflow-auto p-3 scrollbar-thin sm:p-5 lg:h-screen lg:p-6">
+          <header className="min-w-0 rounded-lg bg-gradient-to-r from-fuchsia-600 to-indigo-600 p-4 text-white shadow-lift sm:p-5">
             <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-              <div>
+              <div className="min-w-0">
                 <p className="text-sm font-black uppercase tracking-wider text-white/80">International level CAFM suite</p>
-                <h2 className="mt-1 text-3xl font-black sm:text-4xl">One-stop facility operations system</h2>
+                <h2 className="mt-1 text-2xl font-black sm:text-3xl xl:text-4xl">One-stop facility operations system</h2>
                 <p className="mt-2 max-w-3xl text-white/80">
                   {dashboardSubtitle(user.role, user.department)}
                 </p>
@@ -611,9 +611,9 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { id?: st
 
           {toast && <div className="rounded-lg border border-lagoon/20 bg-white p-3 font-bold text-lagoon shadow-lift">{toast}</div>}
 
-          <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <section className="grid min-w-0 gap-4 md:grid-cols-2 xl:grid-cols-4">
             {moduleStats.map((stat) => (
-              <div key={stat.label} className="rounded-lg border border-white/80 bg-white p-4 shadow-lift">
+              <div key={stat.label} className="min-w-0 rounded-lg border border-white/80 bg-white p-4 shadow-lift">
                 <p className="text-sm font-bold text-slate-500">{stat.label}</p>
                 <p className="mt-2 text-3xl font-black">{stat.value}</p>
                 <p className={`mt-1 text-sm font-bold ${statToneClasses[stat.tone]}`}>{stat.delta}</p>
@@ -970,7 +970,7 @@ function Assets({
           </select>
           <button type="button" onClick={() => { setSiteFilter(""); setBuildingFilter(""); setFloorFilter(""); setRoomFilter(""); }} className="h-11 rounded-lg bg-white px-3 text-sm font-black text-lagoon">Clear Location</button>
         </div>
-        <div className="overflow-auto rounded-lg border border-slate-200">
+        <div className="max-w-full overflow-auto rounded-lg border border-slate-200 scrollbar-thin">
           <table className="min-w-[1500px] border-collapse bg-white text-sm">
             <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
               <tr>
@@ -2602,7 +2602,7 @@ function WorkOrderPreviewModal({
               )}
             </div>
             {activeImage ? (
-              <div className="mt-3 grid place-items-center overflow-auto rounded-lg bg-slate-950/90 p-4">
+              <div className="mt-3 grid place-items-center overflow-auto rounded-lg bg-slate-950/90 p-4 scrollbar-thin">
                 <img src={activeImage} alt="Work order proof preview" style={{ transform: `scale(${zoom})` }} className="max-h-[420px] max-w-full origin-center rounded-lg object-contain transition-transform" />
               </div>
             ) : (
@@ -3189,7 +3189,7 @@ function Ppm({
           </select>
         </div>
         {view === "list" ? (
-          <div className="overflow-auto rounded-lg border border-slate-200">
+          <div className="max-w-full overflow-auto rounded-lg border border-slate-200 scrollbar-thin">
             <table className="min-w-[1100px] border-collapse bg-white text-sm">
               <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
                 <tr>
@@ -4859,7 +4859,7 @@ function HousingTable({ title, rows, columns, onSelect, actions, reportType }: {
   return (
     <Panel title={title} icon={Building2}>
       <ReportButtons type={reportType} label={`${title} report`} />
-      <div className="mt-4 overflow-auto rounded-lg border border-slate-200">
+      <div className="mt-4 max-w-full overflow-auto rounded-lg border border-slate-200 scrollbar-thin">
         <table className="min-w-[900px] bg-white text-sm">
           <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
             <tr>
@@ -5533,7 +5533,7 @@ function Template({ type, title, value }: { type: string; title: string; value: 
 
 function Panel({ title, icon: Icon, children }: { title: string; icon: any; children: React.ReactNode }) {
   return (
-    <section className="rounded-lg border border-white/80 bg-white p-5 shadow-lift">
+    <section className="min-w-0 overflow-hidden rounded-lg border border-white/80 bg-white p-5 shadow-lift">
       <div className="mb-4 flex items-center gap-3">
         <div className="grid h-10 w-10 place-items-center rounded-lg bg-lagoon/10 text-lagoon">
           <Icon size={20} />
@@ -5558,7 +5558,7 @@ function DataTable({ rows, columns }: { rows: any[]; columns: [string, string][]
 
   return (
     <div className="grid gap-3">
-      <div className="overflow-auto rounded-lg border border-slate-200 scrollbar-thin">
+      <div className="max-w-full overflow-auto rounded-lg border border-slate-200 scrollbar-thin">
         <table className="min-w-full border-collapse bg-white text-sm">
           <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
             <tr>
