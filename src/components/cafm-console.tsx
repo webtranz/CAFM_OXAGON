@@ -64,6 +64,7 @@ type ConsoleData = {
   jobPlans: any[];
   roles: any[];
   auditLogs: any[];
+  complianceCertificates: any[];
   housing: {
     properties: any[];
     blocks: any[];
@@ -155,6 +156,16 @@ const moduleGroups = [
     ],
   },
   {
+    label: "Compliance & Certification",
+    icon: ShieldCheck,
+    items: [
+      { id: "compliance", label: "Compliance Dashboard", icon: Gauge, view: "compliance-dashboard" },
+      { id: "compliance", label: "Certification Register", icon: ClipboardCheck, view: "certification-register" },
+      { id: "compliance", label: "Audit Calendar", icon: CalendarCheck, view: "compliance-audits" },
+      { id: "compliance", label: "Expiry Alerts", icon: AlertTriangle, view: "compliance-alerts" },
+    ],
+  },
+  {
     label: "Human Resources",
     icon: Users,
     items: [
@@ -221,6 +232,7 @@ const modulePermissions: Record<string, string> = {
   hr: "users.manage",
   audit: "reports.view",
   housing: "housing.view",
+  compliance: "compliance.view",
 };
 const statToneClasses: Record<string, string> = {
   coral: "text-coral",
@@ -365,7 +377,7 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { id?: st
     return new Set(records.rolePermissions.filter((item) => item.role === user.role).map((item) => item.permission.code));
   }, [records.rolePermissions, user.role]);
   const isReadOnlyUser = roleKindLabel(user.role) === "readonly";
-  const readOnlyModules = new Set(["command", "dashboard", "assets", "work", "ppm", "requests", "reports", "housing"]);
+  const readOnlyModules = new Set(["command", "dashboard", "assets", "work", "ppm", "requests", "reports", "housing", "compliance"]);
   const can = (permission?: string) => user.role === "Admin" || !permission || (!isReadOnlyUser && permissionCodes.has(permission));
   const canOpenModule = (moduleId: string) => (isReadOnlyUser && readOnlyModules.has(moduleId)) || can(modulePermissions[moduleId]);
   const canViewActive = canOpenModule(active);
@@ -664,6 +676,7 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { id?: st
           {canViewActive && active === "ppm" && <Ppm ppms={records.ppms} assets={records.assets} workOrders={records.workOrders} saving={saving} submitPpm={(formData) => postRecord("/api/ppm", formData, "PPM")} updatePpm={(body) => patchRecord("/api/ppm", body, "PPM updated.")} />}
           {canViewActive && active === "inventory" && <Inventory inventory={records.inventory} saving={saving} submitInventory={(formData) => postRecord("/api/inventory", formData, "Inventory item")} />}
           {canViewActive && active === "hse" && <Hse inspections={records.inspections} saving={saving} submitInspection={(formData) => postRecord("/api/inspections", formData, "Inspection")} />}
+          {canViewActive && active === "compliance" && <ComplianceCertification records={records.complianceCertificates ?? []} view={activeView} saving={saving} submitCertificate={(formData) => postRecord("/api/compliance", formData, "Compliance certificate")} />}
           {canViewActive && active === "iot" && <Iot alerts={records.alerts} saving={saving} acknowledgeAlert={(id) => patchRecord(`/api/iot-alerts/${id}`, {}, "IoT alert acknowledged.")} />}
           {canViewActive && active === "teams" && (
             <TeamsServices
@@ -3495,6 +3508,180 @@ function Hse({ inspections, submitInspection, saving }: { inspections: any[]; su
         </div>
       </Panel>
       <ActionForm title="Record Inspection" onSubmit={submitInspection} fields={["title", "area", "inspector", "risk", "score", "findings"]} saving={saving} />
+    </section>
+  );
+}
+
+function ComplianceCertification({ records, view, submitCertificate, saving }: { records: any[]; view: string; submitCertificate: (formData: FormData) => void; saving: boolean }) {
+  const [tab, setTab] = useState(view || "compliance-dashboard");
+  const [query, setQuery] = useState("");
+  const [status, setStatus] = useState("all");
+  const [risk, setRisk] = useState("all");
+
+  useEffect(() => {
+    if (view?.startsWith("compliance") || view === "certification-register") setTab(view);
+  }, [view]);
+
+  const today = new Date();
+  const enriched = records.map((record) => {
+    const expiry = new Date(record.expiryDate);
+    const daysToExpiry = Math.ceil((expiry.getTime() - today.getTime()) / 86400000);
+    const computedStatus = daysToExpiry < 0 ? "EXPIRED" : daysToExpiry <= Number(record.renewalLeadDays ?? 30) ? "EXPIRING_SOON" : record.status;
+    return { ...record, daysToExpiry, computedStatus };
+  });
+  const filtered = enriched.filter((record) => {
+    const haystack = [record.certificateNo, record.title, record.authority, record.category, record.assetTag, record.location, record.owner].join(" ").toLowerCase();
+    if (query && !haystack.includes(query.toLowerCase())) return false;
+    if (status !== "all" && record.computedStatus !== status) return false;
+    if (risk !== "all" && record.risk !== risk) return false;
+    return true;
+  });
+  const activeCount = enriched.filter((record) => record.computedStatus === "ACTIVE").length;
+  const expiringCount = enriched.filter((record) => record.computedStatus === "EXPIRING_SOON").length;
+  const expiredCount = enriched.filter((record) => record.computedStatus === "EXPIRED").length;
+  const statutoryCount = enriched.filter((record) => ["Life Safety", "Electrical", "Civil Defense"].includes(record.category)).length;
+  const rows = filtered.map((record) => ({
+    ...record,
+    status: record.computedStatus,
+    issueDate: formatDateCell(record.issueDate),
+    expiryDate: formatDateCell(record.expiryDate),
+    days: record.daysToExpiry < 0 ? `${Math.abs(record.daysToExpiry)} overdue` : `${record.daysToExpiry} days`,
+  }));
+  const auditRows = rows.filter((record) => record.risk === "HIGH" || record.risk === "EXTREME" || record.status !== "ACTIVE");
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    await submitCertificate(new FormData(form));
+    form.reset();
+  }
+
+  const tabs = [
+    ["compliance-dashboard", "Dashboard"],
+    ["certification-register", "Certificates"],
+    ["compliance-audits", "Audit Calendar"],
+    ["compliance-alerts", "Expiry Alerts"],
+  ] as const;
+
+  return (
+    <section className="grid gap-5 xl:grid-cols-[1fr_420px]">
+      <div className="space-y-5">
+        <Panel title="Compliance & Certification" icon={ShieldCheck}>
+          <ReportButtons type="compliance" label="Compliance report" />
+          <div className="mb-4 flex flex-wrap gap-2 border-b border-slate-200 pb-3">
+            {tabs.map(([id, label]) => (
+              <button key={id} type="button" onClick={() => setTab(id)} className={`rounded-lg px-3 py-2 text-sm font-black ${tab === id ? "bg-lagoon text-white" : "bg-slate-50 text-slate-600 hover:bg-slate-100"}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+          <div className="mb-4 grid gap-3 md:grid-cols-3">
+            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search certificate, authority, asset or location" className={HOUSING_FIELD_CLASS} />
+            <select value={status} onChange={(event) => setStatus(event.target.value)} className={HOUSING_FIELD_CLASS}>
+              <option value="all">All statuses</option>
+              <option value="ACTIVE">Active</option>
+              <option value="EXPIRING_SOON">Expiring soon</option>
+              <option value="EXPIRED">Expired</option>
+              <option value="SUSPENDED">Suspended</option>
+            </select>
+            <select value={risk} onChange={(event) => setRisk(event.target.value)} className={HOUSING_FIELD_CLASS}>
+              <option value="all">All risk levels</option>
+              <option>LOW</option>
+              <option>MODERATE</option>
+              <option>HIGH</option>
+              <option>EXTREME</option>
+            </select>
+          </div>
+
+          {tab === "compliance-dashboard" && (
+            <div className="grid gap-4">
+              <div className="grid gap-3 md:grid-cols-4">
+                {[
+                  ["Active Certificates", activeCount, "text-leaf"],
+                  ["Expiring Soon", expiringCount, "text-amber-600"],
+                  ["Expired", expiredCount, "text-coral"],
+                  ["Statutory Controls", statutoryCount, "text-lagoon"],
+                ].map(([label, value, tone]) => (
+                  <div key={label} className="rounded-lg bg-slate-50 p-4">
+                    <p className="text-xs font-black uppercase text-slate-500">{label}</p>
+                    <p className={`mt-2 text-3xl font-black ${tone}`}>{value}</p>
+                  </div>
+                ))}
+              </div>
+              <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
+                <DataTable rows={rows.slice(0, 8)} columns={[["certificateNo", "Certificate"], ["title", "Title"], ["authority", "Authority"], ["status", "Status"], ["days", "Expiry"]]} />
+                <div className="rounded-lg bg-lagoon/10 p-4">
+                  <ShieldCheck className="text-lagoon" />
+                  <p className="mt-3 font-black">International compliance control</p>
+                  <p className="mt-2 text-sm font-bold text-slate-600">Track statutory certificates, third-party inspections, renewal owners, evidence URLs, expiry alerts and audit-ready records.</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {tab === "certification-register" && <DataTable rows={rows} columns={[["certificateNo", "Certificate No"], ["title", "Title"], ["category", "Category"], ["authority", "Authority"], ["assetTag", "Asset"], ["location", "Location"], ["owner", "Owner"], ["status", "Status"], ["expiryDate", "Expiry"], ["days", "Days"]]} />}
+          {tab === "compliance-audits" && <DataTable rows={auditRows} columns={[["certificateNo", "Certificate"], ["title", "Audit Item"], ["authority", "Authority"], ["risk", "Risk"], ["owner", "Owner"], ["expiryDate", "Due / Expiry"], ["notes", "Action Notes"]]} />}
+          {tab === "compliance-alerts" && <DataTable rows={rows.filter((record) => record.status !== "ACTIVE")} columns={[["certificateNo", "Certificate"], ["title", "Alert"], ["status", "Status"], ["risk", "Risk"], ["days", "Expiry"], ["owner", "Owner"], ["notes", "Required Action"]]} />}
+        </Panel>
+      </div>
+      <form onSubmit={handleSubmit} className="rounded-lg border border-white/80 bg-white p-5 shadow-lift">
+        <div className="mb-4 flex items-center gap-3">
+          <div className="grid h-10 w-10 place-items-center rounded-lg bg-sun/50 text-amber-700">
+            <PackagePlus size={20} />
+          </div>
+          <h3 className="text-xl font-black">Add Certificate</h3>
+        </div>
+        <div className="grid gap-3">
+          {["certificateNo", "title", "authority", "category", "assetTag", "location", "owner", "evidenceUrl"].map((field) => (
+            <label key={field} className="grid gap-1 text-sm font-bold capitalize text-slate-600">
+              {field.replace(/([A-Z])/g, " $1")}
+              <input name={field} className={HOUSING_FIELD_CLASS} />
+            </label>
+          ))}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="grid gap-1 text-sm font-bold text-slate-600">
+              Issue Date
+              <input name="issueDate" type="date" className={HOUSING_FIELD_CLASS} />
+            </label>
+            <label className="grid gap-1 text-sm font-bold text-slate-600">
+              Expiry Date
+              <input name="expiryDate" type="date" className={HOUSING_FIELD_CLASS} />
+            </label>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <label className="grid gap-1 text-sm font-bold text-slate-600">
+              Status
+              <select name="status" className={HOUSING_FIELD_CLASS}>
+                <option>ACTIVE</option>
+                <option>EXPIRING_SOON</option>
+                <option>EXPIRED</option>
+                <option>SUSPENDED</option>
+              </select>
+            </label>
+            <label className="grid gap-1 text-sm font-bold text-slate-600">
+              Risk
+              <select name="risk" className={HOUSING_FIELD_CLASS}>
+                <option>LOW</option>
+                <option>MODERATE</option>
+                <option>HIGH</option>
+                <option>EXTREME</option>
+              </select>
+            </label>
+            <label className="grid gap-1 text-sm font-bold text-slate-600">
+              Renewal Lead Days
+              <input name="renewalLeadDays" type="number" min="0" defaultValue="30" className={HOUSING_FIELD_CLASS} />
+            </label>
+          </div>
+          <label className="grid gap-1 text-sm font-bold text-slate-600">
+            Notes
+            <textarea name="notes" className="min-h-24 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />
+          </label>
+          <button disabled={saving} className="mt-2 flex h-11 items-center justify-center gap-2 rounded-lg bg-ink px-4 font-black text-white disabled:cursor-not-allowed disabled:bg-slate-400">
+            <Plus size={18} />
+            {saving ? "Saving..." : "Save Certificate"}
+          </button>
+        </div>
+      </form>
     </section>
   );
 }

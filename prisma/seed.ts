@@ -22,6 +22,7 @@ async function resetOperationalData() {
   await prisma.iotAlert.deleteMany({});
   await prisma.hseIncident.deleteMany({});
   await prisma.inspection.deleteMany({});
+  await prisma.complianceCertificate.deleteMany({});
   await prisma.preventiveMaintenance.deleteMany({});
   await prisma.workOrder.deleteMany({});
   await prisma.serviceRequest.deleteMany({});
@@ -101,6 +102,8 @@ async function main() {
     ["housing.manage", "Manage Housing Operations", "Housing", "Create and manage accommodation, bookings, inspections, assets and inventory"],
     ["housing.approve", "Approve Housing Requests", "Housing", "Approve or reject housing bookings and escalations"],
     ["housing.view", "View Housing", "Housing", "View housing dashboards, room history, reports and alerts"],
+    ["compliance.manage", "Manage Compliance & Certification", "Compliance", "Create and renew statutory certificates, permits and regulatory audits"],
+    ["compliance.view", "View Compliance & Certification", "Compliance", "View compliance dashboard, certificate register, expiry alerts and reports"],
   ] as const;
 
   for (const [code, name, module, description] of permissions) {
@@ -117,15 +120,15 @@ async function main() {
   }
 
   const defaultRolePermissions: Record<string, string[]> = {
-    Supervisor: ["work.manage", "work.assign", "work.verify", "work.execute", "requests.manage", "requests.approve", "requests.view", "housing.manage", "housing.approve", "housing.view", "reports.view"],
-    "Department Supervisor": ["work.manage", "work.assign", "work.verify", "work.execute", "requests.manage", "requests.approve", "requests.view", "ppm.manage", "housing.manage", "housing.approve", "housing.view", "reports.view"],
-    "Service Team": ["work.execute", "requests.view", "housing.view"],
+    Supervisor: ["work.manage", "work.assign", "work.verify", "work.execute", "requests.manage", "requests.approve", "requests.view", "housing.manage", "housing.approve", "housing.view", "compliance.manage", "compliance.view", "reports.view"],
+    "Department Supervisor": ["work.manage", "work.assign", "work.verify", "work.execute", "requests.manage", "requests.approve", "requests.view", "ppm.manage", "housing.manage", "housing.approve", "housing.view", "compliance.manage", "compliance.view", "reports.view"],
+    "Service Team": ["work.execute", "requests.view", "housing.view", "compliance.view"],
     Technician: ["work.execute", "requests.view"],
-    Helpdesk: ["requests.manage", "requests.approve", "requests.view", "housing.view", "reports.view"],
-    Reception: ["reception.manage", "requests.manage", "requests.view", "housing.manage", "housing.view"],
+    Helpdesk: ["requests.manage", "requests.approve", "requests.view", "housing.view", "compliance.view", "reports.view"],
+    Reception: ["reception.manage", "requests.manage", "requests.view", "housing.manage", "housing.view", "compliance.view"],
     Resident: ["resident.portal", "requests.view", "housing.view"],
     Requester: ["resident.portal", "requests.view"],
-    "Read-only": ["assets.view", "work.view", "requests.view", "reports.view", "housing.view"],
+    "Read-only": ["assets.view", "work.view", "requests.view", "reports.view", "housing.view", "compliance.view"],
   };
 
   for (const [role, codes] of Object.entries(defaultRolePermissions)) {
@@ -640,6 +643,20 @@ async function main() {
         where: { code },
         update: {},
         create: { code, title, area, inspector, risk, score: Number(score), status, dueAt: addDays(new Date(), 1), findings },
+      }),
+    ),
+  );
+
+  await Promise.all(
+    ([
+      ["CERT-FLS-2026-001", "Fire Alarm Civil Defense Certificate", "Civil Defense", "Life Safety", "FLS-RYD-01-221", "Tower A", "HSE Manager", -320, 45, "ACTIVE", "HIGH", 30, "Annual Civil Defense certificate with renewal required before expiry."],
+      ["CERT-LIFT-2026-004", "Elevator Third Party Inspection", "TUV", "Vertical Transport", "LIFT-TWA-04", "Tower A", "Facilities Supervisor", -90, 12, "EXPIRING_SOON", "MODERATE", 30, "Third-party inspection due for renewal this month."],
+      ["CERT-GEN-2026-002", "Emergency Generator Load Test Certificate", "Authorized Testing Body", "Electrical", "GEN-RYD-02-001", "Generator Room", "Electrical Supervisor", -180, 120, "ACTIVE", "HIGH", 45, "Quarterly generator load bank certificate and evidence file."],
+    ] as const).map(([certificateNo, title, authority, category, assetTag, location, owner, issueOffset, expiryOffset, status, risk, renewalLeadDays, notes]) =>
+      prisma.complianceCertificate.upsert({
+        where: { certificateNo },
+        update: { title, authority, category, assetTag, location, owner, issueDate: addDays(new Date(), Number(issueOffset)), expiryDate: addDays(new Date(), Number(expiryOffset)), status, risk, renewalLeadDays: Number(renewalLeadDays), notes },
+        create: { certificateNo, title, authority, category, assetTag, location, owner, issueDate: addDays(new Date(), Number(issueOffset)), expiryDate: addDays(new Date(), Number(expiryOffset)), status, risk, renewalLeadDays: Number(renewalLeadDays), evidenceUrl: "", notes },
       }),
     ),
   );

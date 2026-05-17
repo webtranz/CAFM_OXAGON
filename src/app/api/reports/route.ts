@@ -136,6 +136,25 @@ async function reportRows(type: string, filters: ReturnType<typeof reportFilters
     const rows = await prisma.inspection.findMany({ orderBy: { dueAt: "asc" } });
     return rows.map((row) => ({ code: row.code, title: row.title, area: row.area, inspector: row.inspector, risk: row.risk, score: row.score, status: row.status, dueAt: dateValue(row.dueAt), findings: row.findings }));
   }
+  if (type === "compliance") {
+    const rows = await prisma.complianceCertificate.findMany({ orderBy: [{ expiryDate: "asc" }, { certificateNo: "asc" }] });
+    return rows.map((row) => ({
+      certificateNo: row.certificateNo,
+      title: row.title,
+      authority: row.authority,
+      category: row.category,
+      assetTag: row.assetTag ?? "",
+      location: row.location,
+      owner: row.owner,
+      issueDate: dateValue(row.issueDate),
+      expiryDate: dateValue(row.expiryDate),
+      status: row.status,
+      risk: row.risk,
+      renewalLeadDays: row.renewalLeadDays,
+      evidenceUrl: row.evidenceUrl ?? "",
+      notes: row.notes,
+    }));
+  }
   if (type === "iot-alerts") {
     const rows = await prisma.iotAlert.findMany({ orderBy: { detectedAt: "desc" } });
     return rows.map((row) => ({ source: row.source, assetTag: row.assetTag, severity: row.severity, message: row.message, status: row.status, detectedAt: dateValue(row.detectedAt) }));
