@@ -50,6 +50,7 @@ export const fallbackData = {
     { id: "cc1", certificateNo: "CERT-FLS-2026-001", title: "Fire Alarm Civil Defense Certificate", authority: "Civil Defense", category: "Life Safety", assetTag: "FLS-RYD-01-221", location: "Tower A", owner: "HSE Manager", issueDate: new Date(), expiryDate: new Date(Date.now() + 1000 * 60 * 60 * 24 * 45), status: "ACTIVE", risk: "HIGH", renewalLeadDays: 30, evidenceUrl: "", notes: "Annual renewal required before expiry." },
     { id: "cc2", certificateNo: "CERT-LIFT-2026-004", title: "Elevator Third Party Inspection", authority: "TUV", category: "Vertical Transport", assetTag: "LIFT-TWA-04", location: "Tower A", owner: "Facilities Supervisor", issueDate: new Date(), expiryDate: new Date(Date.now() + 1000 * 60 * 60 * 24 * 12), status: "EXPIRING_SOON", risk: "MODERATE", renewalLeadDays: 30, evidenceUrl: "", notes: "Book inspector and attach new certificate." },
   ],
+  documentUploads: [],
   alerts: [
     { id: "al1", source: "BMS", assetTag: "CHL-RYD-01-002", severity: "HIGH", message: "Chiller vibration exceeds baseline by 18%", status: "TRIAGED", detectedAt: new Date() },
     { id: "al2", source: "Energy Meter", assetTag: "MDB-RYD-03-001", severity: "MEDIUM", message: "Peak demand forecast breach in 48 hours", status: "NEW", detectedAt: new Date() },

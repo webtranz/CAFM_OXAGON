@@ -279,6 +279,19 @@ model AssetHistory {
   createdAt DateTime @default(now())
 }
 
+model DocumentUpload {
+  id          String   @id @default(cuid())
+  category    String
+  assetTag    String
+  fileName    String
+  fileUrl     String
+  fileSize    Int
+  mimeType    String
+  checksum    String
+  uploadedBy  String?
+  createdAt   DateTime @default(now())
+}
+
 model ServiceRequest {
   id          String     @id @default(cuid())
   ticketNo    String     @unique

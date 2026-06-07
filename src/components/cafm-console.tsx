@@ -67,6 +67,7 @@ type ConsoleData = {
   roles: any[];
   auditLogs: any[];
   complianceCertificates: any[];
+  documentUploads: any[];
   housing: {
     properties: any[];
     blocks: any[];
@@ -169,7 +170,7 @@ const moduleGroups = [
     ],
   },
   {
-    label: "Document and Attachment Management",
+    label: "Document Management",
     icon: FileText,
     items: [
       { id: "documents", label: "Operation & Maintenance Manuals", icon: FileText, view: "documents-om-manuals" },
@@ -724,7 +725,7 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { id?: st
           <header className="min-w-0 rounded-lg border border-slate-200 bg-white p-4 text-slate-900 shadow-sm sm:p-5">
             <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
               <div className="min-w-0">
-                <p className="text-sm font-bold uppercase text-emerald-700">International level CAFM suite</p>
+                <p className="text-sm font-bold uppercase text-emerald-700">Complete CAFM Suite</p>
                 <h2 className="mt-1 text-2xl font-bold text-slate-900 sm:text-3xl">One-stop facility operations system</h2>
                 <p className="mt-2 max-w-3xl text-sm text-slate-500">
                   {dashboardSubtitle(user.role, user.department)}
@@ -733,7 +734,7 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { id?: st
               <div className="flex flex-wrap gap-2">
                 <button onClick={() => navigate("work", "Tickets-Work Orders")} className="flex h-11 items-center gap-2 rounded-lg bg-emerald-600 px-4 font-medium text-white shadow-sm transition hover:bg-emerald-700">
                   <Plus size={18} />
-                  New Work
+                  Work Orders
                 </button>
                 <button onClick={() => navigate("helpdesk", "Tickets-Service Requests")} className="flex h-11 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 font-medium text-slate-700 shadow-sm transition hover:bg-slate-100">
                   <Smartphone size={18} />
@@ -823,12 +824,14 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { id?: st
             />
           )}
           {canViewActive && active === "documents" && (
-            <DocumentAttachmentManagement
+            <DocumentManagement
               assets={records.assets}
               services={records.services}
               workOrders={records.workOrders}
               complianceCertificates={records.complianceCertificates ?? []}
+              documentUploads={records.documentUploads ?? []}
               view={activeView}
+              refreshData={refreshData}
             />
           )}
           {canViewActive && active === "incidents" && (
@@ -3097,6 +3100,14 @@ function formatDateCell(value: string | null | undefined) {
   return date.toLocaleString("en-US", { month: "2-digit", day: "2-digit", year: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
+function formatFileSize(value: number | string | null | undefined) {
+  const size = Number(value || 0);
+  if (!size) return "-";
+  if (size >= 1024 * 1024) return `${(size / 1024 / 1024).toFixed(1)} MB`;
+  if (size >= 1024) return `${Math.round(size / 1024)} KB`;
+  return `${size} B`;
+}
+
 function WorkOrderStatusBadge({ status }: { status: string }) {
   const tone =
     status === "CLOSED" || status === "VERIFIED" ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
@@ -4199,18 +4210,22 @@ function IncidentCaseManagement({ requests, workOrders, navigate }: { requests: 
   );
 }
 
-function DocumentAttachmentManagement({
+function DocumentManagement({
   assets,
   services,
   workOrders,
   complianceCertificates,
+  documentUploads,
   view,
+  refreshData,
 }: {
   assets: any[];
   services: any[];
   workOrders: any[];
   complianceCertificates: any[];
+  documentUploads: any[];
   view: string;
+  refreshData: () => Promise<void>;
 }) {
   const [tab, setTab] = useState(view || "documents-om-manuals");
 
@@ -4218,7 +4233,31 @@ function DocumentAttachmentManagement({
     if (view?.startsWith("documents")) setTab(view);
   }, [view]);
 
-  const manualRows = assets
+  const uploadedRows = (category: string, documentType: string) => documentUploads
+    .filter((document) => document.category === category)
+    .map((document) => {
+      const asset = assets.find((item) => item.tag === document.assetTag);
+      return {
+        id: document.id,
+        documentType,
+        reference: document.assetTag,
+        title: document.fileName,
+        assetType: asset?.assetGroup || asset?.category || "-",
+        location: [asset?.siteCode, asset?.buildingCode, asset?.floor, asset?.room].filter(Boolean).join(" / ") || "-",
+        owner: document.uploadedBy || "Document Management",
+        provider: document.uploadedBy || "Document Management",
+        scope: document.assetTag,
+        sla: "-",
+        expiryDate: "-",
+        status: "AVAILABLE",
+        attachment: document.fileUrl,
+        uploadedAt: formatDateCell(document.createdAt),
+        size: formatFileSize(document.fileSize),
+      };
+    });
+  const manualRows = [
+    ...uploadedRows("OM_MANUAL", "O&M Manual"),
+    ...assets
     .map((asset) => ({
       id: asset.id,
       documentType: "O&M Manual",
@@ -4229,9 +4268,13 @@ function DocumentAttachmentManagement({
       owner: asset.assignedSupervisorEmail || asset.assignedTeamCode || "Unassigned",
       attachment: attachmentList(asset.documentationUrl)[0] || "-",
       status: asset.documentationUrl ? "AVAILABLE" : "MISSING",
+      uploadedAt: "-",
+      size: "-",
     }))
-    .filter((row) => row.title || row.reference);
+    .filter((row) => row.title || row.reference),
+  ];
   const warrantyRows = [
+    ...uploadedRows("WARRANTY_GUARANTEE", "Warranty / Guarantee"),
     ...assets.map((asset) => ({
       id: `asset-${asset.id}`,
       documentType: "Equipment Warranty",
@@ -4242,6 +4285,8 @@ function DocumentAttachmentManagement({
       expiryDate: asset.warrantyExpiry ? formatDateCell(asset.warrantyExpiry) : "-",
       status: asset.warrantyExpiry ? "ACTIVE" : "MISSING",
       attachment: attachmentList(asset.documentationUrl)[1] || attachmentList(asset.documentationUrl)[0] || "-",
+      uploadedAt: "-",
+      size: "-",
     })),
     ...complianceCertificates.map((certificate) => ({
       id: `certificate-${certificate.id}`,
@@ -4253,9 +4298,12 @@ function DocumentAttachmentManagement({
       expiryDate: formatDateCell(certificate.expiryDate),
       status: certificate.status,
       attachment: certificate.evidenceUrl || "-",
+      uploadedAt: "-",
+      size: "-",
     })),
   ];
   const contractRows = [
+    ...uploadedRows("SUPPORT_CONTRACT_SLA", "Support Contract / SLA"),
     ...services.map((service) => ({
       id: `service-${service.id}`,
       documentType: "Support SLA",
@@ -4265,6 +4313,9 @@ function DocumentAttachmentManagement({
       scope: service.category || service.type,
       sla: `${service.slaHours ?? "-"} hours`,
       status: service.active === false ? "INACTIVE" : "ACTIVE",
+      attachment: "-",
+      uploadedAt: "-",
+      size: "-",
     })),
     ...workOrders
       .filter((work) => work.serviceCode || work.assignedTeamCode)
@@ -4277,19 +4328,23 @@ function DocumentAttachmentManagement({
         scope: work.serviceCode || work.type,
         sla: work.dueHours ? `${work.dueHours} hours` : "-",
         status: work.status,
+        attachment: "-",
+        uploadedAt: "-",
+        size: "-",
       })),
   ];
   const tabs = [
-    ["documents-om-manuals", "Operation & Maintenance Manuals", manualRows.length],
-    ["documents-warranties", "Equipment Warranties and Guarantees", warrantyRows.length],
-    ["documents-contracts-slas", "Support Contracts and SLAs", contractRows.length],
+    ["documents-om-manuals", "Operation & Maintenance Manuals", "OM_MANUAL", manualRows.length],
+    ["documents-warranties", "Equipment Warranties and Guarantees", "WARRANTY_GUARANTEE", warrantyRows.length],
+    ["documents-contracts-slas", "Support Contracts and SLAs", "SUPPORT_CONTRACT_SLA", contractRows.length],
   ] as const;
+  const activeCategory = tabs.find(([id]) => id === tab)?.[2] ?? "OM_MANUAL";
 
   return (
     <section className="grid gap-5">
-      <Panel title="Document and Attachment Management" icon={FileText}>
+      <Panel title="Document Management" icon={FileText}>
         <div className="mb-4 flex flex-wrap gap-2 border-b border-slate-200 pb-3">
-          {tabs.map(([id, label, count]) => (
+          {tabs.map(([id, label, , count]) => (
             <button key={id} type="button" onClick={() => setTab(id)} className={`rounded-lg px-3 py-2 text-sm font-black ${tab === id ? "bg-lagoon text-white" : "bg-slate-50 text-slate-600 hover:bg-slate-100"}`}>
               {label}
               <span className={`ml-2 rounded-full px-2 py-0.5 text-xs ${tab === id ? "bg-white/20 text-white" : "bg-white text-slate-500"}`}>{count}</span>
@@ -4297,13 +4352,14 @@ function DocumentAttachmentManagement({
           ))}
         </div>
         <div className="grid gap-4 md:grid-cols-3">
-          {tabs.map(([id, label, count]) => (
+          {tabs.map(([id, label, , count]) => (
             <button key={id} type="button" onClick={() => setTab(id)} className={`rounded-lg border p-4 text-left transition ${tab === id ? "border-lagoon bg-lagoon/5" : "border-slate-200 bg-slate-50 hover:bg-slate-100"}`}>
               <p className="text-xs font-black uppercase text-slate-500">{label}</p>
               <p className="mt-2 text-3xl font-black text-ink">{count}</p>
             </button>
           ))}
         </div>
+        <DocumentUploadForm assets={assets} category={activeCategory} refreshData={refreshData} />
         <div className="mt-5">
           {tab === "documents-om-manuals" && (
             <DataTable
@@ -4317,6 +4373,8 @@ function DocumentAttachmentManagement({
                 ["owner", "Owner"],
                 ["status", "Status"],
                 ["attachment", "Attachment"],
+                ["uploadedAt", "Uploaded"],
+                ["size", "Size"],
               ]}
             />
           )}
@@ -4332,6 +4390,8 @@ function DocumentAttachmentManagement({
                 ["expiryDate", "Expiry"],
                 ["status", "Status"],
                 ["attachment", "Attachment"],
+                ["uploadedAt", "Uploaded"],
+                ["size", "Size"],
               ]}
             />
           )}
@@ -4346,12 +4406,76 @@ function DocumentAttachmentManagement({
                 ["scope", "Scope"],
                 ["sla", "SLA"],
                 ["status", "Status"],
+                ["attachment", "Attachment"],
+                ["uploadedAt", "Uploaded"],
+                ["size", "Size"],
               ]}
             />
           )}
         </div>
       </Panel>
     </section>
+  );
+}
+
+function DocumentUploadForm({ assets, category, refreshData }: { assets: any[]; category: string; refreshData: () => Promise<void> }) {
+  const [assetTag, setAssetTag] = useState("");
+  const [files, setFiles] = useState<FileList | null>(null);
+  const [message, setMessage] = useState("");
+  const [uploading, setUploading] = useState(false);
+
+  async function uploadDocuments(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setMessage("");
+    if (!assetTag) {
+      setMessage("Asset Number is required.");
+      return;
+    }
+    if (!files?.length) {
+      setMessage("Select at least one file.");
+      return;
+    }
+    const tooLarge = Array.from(files).find((file) => file.size > 20 * 1024 * 1024);
+    if (tooLarge) {
+      setMessage(`${tooLarge.name} exceeds 20 MB.`);
+      return;
+    }
+    const formData = new FormData();
+    formData.set("category", category);
+    formData.set("assetTag", assetTag);
+    Array.from(files).forEach((file) => formData.append("files", file));
+    setUploading(true);
+    const response = await fetch("/api/document-uploads", { method: "POST", body: formData });
+    const result = await response.json();
+    setMessage(response.ok ? "File uploaded." : cleanMessage(result.message || "Upload failed."));
+    if (response.ok) {
+      await refreshData();
+      setFiles(null);
+      event.currentTarget.reset();
+      setAssetTag("");
+    }
+    setUploading(false);
+  }
+
+  return (
+    <form onSubmit={uploadDocuments} className="mt-5 grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 md:grid-cols-[1fr_1fr_auto] md:items-end">
+      <label className="grid gap-1 text-sm font-bold text-slate-600">
+        Asset Number
+        <select required value={assetTag} onChange={(event) => setAssetTag(event.target.value)} className={HOUSING_FIELD_CLASS}>
+          <option value="">Select asset number</option>
+          {assets.map((asset) => <option key={asset.id} value={asset.tag}>{asset.tag} - {asset.assetDescription || asset.name}</option>)}
+        </select>
+      </label>
+      <label className="grid gap-1 text-sm font-bold text-slate-600">
+        File
+        <input required type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.txt,.csv,.xlsx,.docx,.pptx" onChange={(event) => setFiles(event.target.files)} className="h-11 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-lagoon" />
+      </label>
+      <button disabled={uploading} className="flex h-11 items-center justify-center gap-2 rounded-lg bg-lagoon px-4 text-sm font-black text-white disabled:bg-slate-400">
+        <Upload size={16} />
+        {uploading ? "Uploading..." : "Upload File"}
+      </button>
+      {message && <p className="text-sm font-bold text-slate-600 md:col-span-3">{message}</p>}
+    </form>
   );
 }
 
@@ -6593,6 +6717,9 @@ function PaginationControls({ page, totalPages, totalItems, onPageChange }: { pa
 function CellValue({ value, field = "" }: { value: any; field?: string }) {
   if (value === null || value === undefined) return <span className="text-slate-400">-</span>;
   if (isCurrencyField(field)) return <CurrencyAmount value={value} />;
+  if (typeof value === "string" && (value.startsWith("/uploads/") || value.startsWith("http://") || value.startsWith("https://"))) {
+    return <a href={value} target="_blank" rel="noreferrer" className="font-black text-lagoon underline-offset-2 hover:underline">{value.split("/").pop() || "Open file"}</a>;
+  }
   if (typeof value === "string" && ["CRITICAL", "HIGH", "EXTREME"].includes(value)) return <span className="rounded-lg bg-coral/10 px-2 py-1 font-black text-coral">{value}</span>;
   if (typeof value === "string" && ["COMPLETED", "CLOSED", "ACTIVE"].includes(value)) return <span className="rounded-lg bg-leaf/10 px-2 py-1 font-black text-leaf">{value}</span>;
   if (typeof value === "string" && isDateLikeString(value)) return new Date(value).toLocaleDateString();
