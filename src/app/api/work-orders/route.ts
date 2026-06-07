@@ -5,6 +5,12 @@ import { accessRole } from "@/lib/access-control";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
+const booleanInput = z.preprocess((value) => {
+  if (value === "true" || value === true) return true;
+  if (value === "false" || value === false) return false;
+  return value;
+}, z.boolean()).optional();
+
 const schema = z.object({
   title: z.string().optional(),
   type: z.string().optional(),
@@ -18,6 +24,7 @@ const schema = z.object({
   assetTag: z.string().optional(),
   jobPlan: z.string().optional(),
   photoUrls: z.string().optional(),
+  isIncidentCase: booleanInput,
 });
 
 const dueHours = {
@@ -63,6 +70,7 @@ export async function POST(request: Request) {
         jobPlan: input.jobPlan || input.title || "Work to be defined by supervisor.",
         safetyNotes: "Supervisor must verify permits, isolation and access requirements before work starts.",
         photoUrls: input.photoUrls || null,
+        isIncidentCase: input.isIncidentCase ?? false,
       },
     });
 

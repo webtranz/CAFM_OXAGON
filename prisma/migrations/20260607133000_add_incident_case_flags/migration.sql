@@ -1,0 +1,2 @@
+ALTER TABLE "ServiceRequest" ADD COLUMN "isIncidentCase" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "WorkOrder" ADD COLUMN "isIncidentCase" BOOLEAN NOT NULL DEFAULT false;

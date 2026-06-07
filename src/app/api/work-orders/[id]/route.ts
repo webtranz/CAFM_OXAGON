@@ -6,6 +6,12 @@ import { auditAction } from "@/lib/audit";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
+const booleanInput = z.preprocess((value) => {
+  if (value === "true" || value === true) return true;
+  if (value === "false" || value === false) return false;
+  return value;
+}, z.boolean()).optional();
+
 const schema = z.object({
   title: z.string().optional(),
   type: z.string().optional(),
@@ -33,6 +39,7 @@ const schema = z.object({
   materialRequest: z.string().optional(),
   rejectionReason: z.string().optional(),
   supervisorDecision: z.string().optional(),
+  isIncidentCase: booleanInput,
 });
 
 function parseParts(value?: string) {
@@ -96,6 +103,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
           supervisorRequest: input.supervisorRequest,
           workNotes: input.workNotes,
           materialRequest: input.materialRequest,
+          isIncidentCase: input.isIncidentCase,
           actualHours: status === "COMPLETED" ? 4 : undefined,
         }
       : {
@@ -128,6 +136,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
             ? `${input.supervisorDecision?.trim() || "Closed after supervisor verification."}\nClosed by: ${user?.name || user?.email || "Supervisor"}`
             : input.supervisorDecision,
           verifiedAt: status === "VERIFIED" || status === "CLOSED" ? new Date() : undefined,
+          isIncidentCase: input.isIncidentCase,
           actualHours: status && ["COMPLETED", "PENDING_SUPERVISOR_REVIEW", "VERIFIED", "CLOSED"].includes(status) ? 4 : undefined,
         };
     if (!isSupervisorOrAdmin && (status === "CLOSED" || status === "REOPENED")) {

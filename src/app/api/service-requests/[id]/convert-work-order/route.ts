@@ -53,6 +53,7 @@ export async function POST(requestBody: Request, { params }: { params: Promise<{
           selectedAsset ? `Location: ${[selectedAsset.buildingCode, selectedAsset.floor, selectedAsset.room].filter(Boolean).join(" > ")}` : `Location: ${request.location}`,
         ].filter(Boolean).join("\n"),
         safetyNotes: "Supervisor to verify access, PPE, isolation and permits before dispatch.",
+        isIncidentCase: request.isIncidentCase,
       },
     });
 

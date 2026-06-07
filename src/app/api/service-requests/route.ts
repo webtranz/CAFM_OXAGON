@@ -4,6 +4,12 @@ import { addHours } from "date-fns";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
+const booleanInput = z.preprocess((value) => {
+  if (value === "true" || value === true) return true;
+  if (value === "false" || value === false) return false;
+  return value;
+}, z.boolean()).optional();
+
 const schema = z.object({
   title: z.string().optional(),
   category: z.string().optional(),
@@ -15,6 +21,7 @@ const schema = z.object({
   location: z.string().optional(),
   attachmentUrls: z.string().optional(),
   description: z.string().optional(),
+  isIncidentCase: booleanInput,
 });
 
 const slaByPriority = {
@@ -53,6 +60,7 @@ export async function POST(request: Request) {
         location: input.location || "Unassigned",
         attachmentUrls: input.attachmentUrls || null,
         description: input.description || input.title || "No description provided.",
+        isIncidentCase: input.isIncidentCase ?? false,
         assignedSupervisorEmail: supervisor?.email || null,
         channel: "Web Portal",
         ticketNo: `SR-${String(count + 24001).padStart(5, "0")}`,

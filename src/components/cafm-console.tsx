@@ -178,6 +178,13 @@ const moduleGroups = [
     ],
   },
   {
+    label: "Incident & Case Management",
+    icon: AlertTriangle,
+    items: [
+      { id: "incidents", label: "Incident & Case Management", icon: AlertTriangle, view: "incident-cases" },
+    ],
+  },
+  {
     label: "Resource Management",
     icon: Users,
     items: [
@@ -244,6 +251,7 @@ const modulePermissions: Record<string, string> = {
   hse: "reports.view",
   iot: "reports.view",
   documents: "reports.view",
+  incidents: "requests.view",
   resource: "users.manage",
   audit: "reports.view",
   housing: "housing.view",
@@ -454,7 +462,7 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { id?: st
     return new Set(records.rolePermissions.filter((item) => item.role === user.role).map((item) => item.permission.code));
   }, [records.rolePermissions, user.role]);
   const isReadOnlyUser = roleKindLabel(user.role) === "readonly";
-  const readOnlyModules = new Set(["command", "dashboard", "assets", "work", "ppm", "requests", "reports", "housing", "compliance", "documents"]);
+  const readOnlyModules = new Set(["command", "dashboard", "assets", "work", "ppm", "requests", "reports", "housing", "compliance", "documents", "incidents"]);
   const can = (permission?: string) => user.role === "Admin" || !permission || (!isReadOnlyUser && permissionCodes.has(permission));
   const canOpenModule = (moduleId: string) => (isReadOnlyUser && readOnlyModules.has(moduleId)) || can(modulePermissions[moduleId]);
   const canViewActive = canOpenModule(active);
@@ -802,6 +810,13 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { id?: st
               workOrders={records.workOrders}
               complianceCertificates={records.complianceCertificates ?? []}
               view={activeView}
+            />
+          )}
+          {canViewActive && active === "incidents" && (
+            <IncidentCaseManagement
+              requests={records.requests}
+              workOrders={records.workOrders}
+              navigate={navigate}
             />
           )}
           {canViewActive && active === "iot" && <Iot alerts={records.alerts} saving={saving} acknowledgeAlert={(id) => patchRecord(`/api/iot-alerts/${id}`, {}, "IoT alert acknowledged.")} />}
@@ -1640,7 +1655,12 @@ function WorkOrders({
     const formData = new FormData();
     Object.entries(body).forEach(([key, value]) => formData.append(key, value));
     await updateWorkOrder(work.id, formData);
-    setPreviewWork((current: any) => current?.id === work.id ? { ...current, ...body } : current);
+    const previewBody = Object.fromEntries(Object.entries(body).map(([key, value]) => [key, key === "isIncidentCase" ? value === "true" : value]));
+    setPreviewWork((current: any) => current?.id === work.id ? { ...current, ...previewBody } : current);
+  }
+
+  async function toggleIncidentCase(work: any, checked: boolean) {
+    await quickPatchWork(work, { isIncidentCase: checked ? "true" : "false" });
   }
 
   return (
@@ -1657,6 +1677,16 @@ function WorkOrders({
             <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search Work Orders" className="h-11 w-full text-sm outline-none" />
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            {selectedWork && (
+              <label className="flex h-10 items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 text-xs font-black text-amber-800">
+                <input
+                  type="checkbox"
+                  checked={Boolean(selectedWork.isIncidentCase)}
+                  onChange={(event) => toggleIncidentCase(selectedWork, event.target.checked)}
+                />
+                Incident / Case
+              </label>
+            )}
             <button type="button" onClick={() => setShowTimeMetrics((current) => !current)} className={`h-10 rounded-lg px-3 text-sm font-black ${showTimeMetrics ? "bg-lagoon text-white" : "bg-slate-50 text-lagoon"}`}>KPIs</button>
             {canAssignOrEdit && <button type="button" onClick={() => { setEditing(null); setCreateOpen(true); }} className="flex h-10 items-center gap-2 rounded-lg bg-lagoon px-4 text-sm font-black text-white"><Plus size={16} /> Work Order</button>}
           </div>
@@ -1688,7 +1718,7 @@ function WorkOrders({
         {view === "list" ? (
           <>
             <div className="overflow-auto rounded-lg border border-slate-200 scrollbar-thin">
-              <table className="min-w-[1700px] border-collapse bg-white text-sm">
+              <table className="min-w-[1840px] border-collapse bg-white text-sm">
                 <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
                   <tr>
                     <th className="px-3 py-3 font-black">#</th>
@@ -1705,6 +1735,7 @@ function WorkOrders({
                     <th className="px-3 py-3 font-black">Assigned To</th>
                     <th className="px-3 py-3 font-black">Updated when</th>
                     <th className="px-3 py-3 font-black">Schedule</th>
+                    <th className="px-3 py-3 font-black">Incident / Case</th>
                     <th className="px-3 py-3 font-black">Actions</th>
                   </tr>
                 </thead>
@@ -1725,6 +1756,16 @@ function WorkOrders({
                       <td className="whitespace-nowrap px-3 py-3">{work.assignedTo?.email ?? work.assignedTeamCode ?? "-"}</td>
                       <td className="whitespace-nowrap px-3 py-3">{formatDateCell(work.updatedAt)}</td>
                       <td className="whitespace-nowrap px-3 py-3 text-lagoon">{formatDateCell(work.plannedStart)}</td>
+                      <td className="whitespace-nowrap px-3 py-3">
+                        <label className="flex items-center gap-2 text-xs font-black text-slate-600" onClick={(event) => event.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={Boolean(work.isIncidentCase)}
+                            onChange={(event) => toggleIncidentCase(work, event.target.checked)}
+                          />
+                          Incident / Case
+                        </label>
+                      </td>
                       <td className="px-3 py-3">
                         <div className="flex min-w-[300px] flex-wrap gap-2">
                           <button type="button" onClick={(event) => { event.stopPropagation(); setSelectedWorkId(work.id); setPreviewWork(work); }} className="rounded-lg bg-white px-3 py-2 text-xs font-black text-lagoon ring-1 ring-lagoon/30">Preview</button>
@@ -2028,6 +2069,13 @@ function Helpdesk({
     });
   }
 
+  async function toggleIncidentCase(request: any, checked: boolean) {
+    const formData = requestFormData(request, request.status);
+    formData.set("isIncidentCase", checked ? "true" : "false");
+    await updateRequest(request.id, formData);
+    setPreviewRequest((current: any) => current?.id === request.id ? { ...current, isIncidentCase: checked } : current);
+  }
+
   return (
     <section className="space-y-5">
       <Panel title="Helpdesk & SLA Triage" icon={TicketCheck}>
@@ -2058,11 +2106,23 @@ function Helpdesk({
             </select>
             <button type="button" onClick={() => setOverdueOnly((current) => !current)} className={`h-11 rounded-lg px-3 text-sm font-black ${overdueOnly ? "bg-coral text-white" : "border border-slate-200 bg-white text-slate-600"}`}>Overdue & Due Today</button>
           </div>
-          {permissions.manageRequests && <button type="button" onClick={() => { setEditing(null); setCreateOpen(true); }} className="flex h-11 items-center gap-2 rounded-lg bg-lagoon px-4 text-sm font-black text-white shadow-sm"><Plus size={16} /> Request</button>}
+          <div className="flex flex-wrap items-center gap-2">
+            {selectedRequest && (
+              <label className="flex h-11 items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 text-xs font-black text-amber-800">
+                <input
+                  type="checkbox"
+                  checked={Boolean(selectedRequest.isIncidentCase)}
+                  onChange={(event) => toggleIncidentCase(selectedRequest, event.target.checked)}
+                />
+                Incident / Case
+              </label>
+            )}
+            {permissions.manageRequests && <button type="button" onClick={() => { setEditing(null); setCreateOpen(true); }} className="flex h-11 items-center gap-2 rounded-lg bg-lagoon px-4 text-sm font-black text-white shadow-sm"><Plus size={16} /> Request</button>}
+          </div>
         </div>
 
         <div className="overflow-auto rounded-lg border border-slate-200 scrollbar-thin">
-          <table className="min-w-[1500px] border-collapse bg-white text-sm">
+          <table className="min-w-[1640px] border-collapse bg-white text-sm">
             <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
               <tr>
                 <th className="px-3 py-3 font-black">#</th>
@@ -2078,6 +2138,7 @@ function Helpdesk({
                 <th className="px-3 py-3 font-black">Description</th>
                 <th className="px-3 py-3 font-black">Created by</th>
                 <th className="px-3 py-3 font-black">Supervisor</th>
+                <th className="px-3 py-3 font-black">Incident / Case</th>
                 <th className="px-3 py-3 font-black">Actions</th>
               </tr>
             </thead>
@@ -2106,6 +2167,16 @@ function Helpdesk({
                     <td className="max-w-[320px] px-3 py-3 text-slate-600"><div className="line-clamp-2">{request.description || "-"}</div></td>
                     <td className="whitespace-nowrap px-3 py-3">{request.requester || "-"}</td>
                     <td className="whitespace-nowrap px-3 py-3">{request.assignedSupervisorEmail || "-"}</td>
+                    <td className="whitespace-nowrap px-3 py-3">
+                      <label className="flex items-center gap-2 text-xs font-black text-slate-600" onClick={(event) => event.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={Boolean(request.isIncidentCase)}
+                          onChange={(event) => toggleIncidentCase(request, event.target.checked)}
+                        />
+                        Incident / Case
+                      </label>
+                    </td>
                     <td className="px-3 py-3">
                       <div className="flex min-w-[260px] flex-wrap gap-2">
                         {isSupervisorView && permissions.manageRequests && <button type="button" onClick={(event) => { event.stopPropagation(); setSelectedRequestId(request.id); setEditing(request); }} className="rounded-lg bg-lagoon px-3 py-2 text-xs font-black text-white">Edit</button>}
@@ -2299,6 +2370,11 @@ function ServiceRequestForm({ title, request, services, categories, departments,
         <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 text-center text-sm font-bold text-slate-500">
           Upload images or files by drag and drop, or paste links below.
         </div>
+        <label className="flex items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm font-black text-amber-800">
+          <span>Incident / Case</span>
+          <input type="hidden" name="isIncidentCase" value="false" />
+          <input type="checkbox" name="isIncidentCase" value="true" defaultChecked={Boolean(request?.isIncidentCase)} />
+        </label>
         <input name="title" defaultValue={request?.title ?? ""} placeholder="Title" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
         <label className="grid gap-2 text-sm font-bold text-slate-600">
           Description
@@ -3129,6 +3205,11 @@ function WorkOrderForm({ title, work, data, onSubmit, saving }: { title: string;
     <form onSubmit={handleSubmit} className="rounded-lg border border-white/80 bg-white p-5 shadow-lift">
       <h3 className="text-xl font-black">{title}</h3>
       <div className="mt-4 grid gap-3">
+        <label className="flex items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm font-black text-amber-800">
+          <span>Incident / Case</span>
+          <input type="hidden" name="isIncidentCase" value="false" />
+          <input type="checkbox" name="isIncidentCase" value="true" defaultChecked={Boolean(work?.isIncidentCase)} />
+        </label>
         <input name="title" defaultValue={work?.title ?? ""} placeholder="Title" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
         <input name="type" defaultValue={work?.type ?? ""} placeholder="Work type" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
         <select key={`asset-type-${selectedAssetTag}`} name="assetType" defaultValue={work?.assetType ?? selectedAsset?.assetGroup ?? selectedAsset?.category ?? ""} className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon">
@@ -3999,6 +4080,103 @@ function LinkedTicketsTable({ rows, navigate }: { rows: any[]; navigate: (module
         </tbody>
       </table>
     </div>
+  );
+}
+
+function IncidentCaseManagement({ requests, workOrders, navigate }: { requests: any[]; workOrders: any[]; navigate: (moduleId: string, menuKey: string, view?: string) => void }) {
+  const incidentRequests = requests.filter((request) => request.isIncidentCase);
+  const incidentWorkOrders = workOrders.filter((work) => work.isIncidentCase);
+  const rows = [
+    ...incidentRequests.map((request) => ({
+      id: request.id,
+      source: "Service Request",
+      reference: request.ticketNo,
+      title: request.title,
+      priority: request.priority,
+      status: request.status,
+      owner: request.requester || request.assignedTeamCode || "Unassigned",
+      linkedRecord: request.workOrder?.woNo || "Awaiting work order",
+      location: request.location,
+      updatedAt: request.updatedAt,
+      moduleId: "helpdesk",
+      menuKey: "Tickets-Service Requests",
+    })),
+    ...incidentWorkOrders.map((work) => ({
+      id: work.id,
+      source: "Work Order",
+      reference: work.woNo,
+      title: work.title,
+      priority: work.priority,
+      status: work.status,
+      owner: work.assignedTo?.name || work.assignedTo?.email || work.assignedTeamCode || "Unassigned",
+      linkedRecord: work.request?.ticketNo || "Standalone work order",
+      location: work.location || work.asset?.buildingCode || "-",
+      updatedAt: work.updatedAt,
+      moduleId: "work",
+      menuKey: "Tickets-Work Orders",
+    })),
+  ].sort((left, right) => new Date(right.updatedAt || 0).getTime() - new Date(left.updatedAt || 0).getTime());
+  const openRows = rows.filter((row) => !["CLOSED", "COMPLETED", "VERIFIED", "REJECTED", "CANCELLED"].includes(String(row.status || "").toUpperCase()));
+  const criticalRows = rows.filter((row) => row.priority === "CRITICAL" || row.priority === "HIGH");
+
+  return (
+    <section className="grid gap-5">
+      <Panel title="Incident & Case Management" icon={AlertTriangle}>
+        <div className="mb-4 grid gap-3 md:grid-cols-4">
+          {[
+            ["Total Cases", rows.length],
+            ["Open Cases", openRows.length],
+            ["Service Requests", incidentRequests.length],
+            ["Work Orders", incidentWorkOrders.length],
+          ].map(([label, value]) => (
+            <div key={label} className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+              <p className="text-xs font-black uppercase text-slate-500">{label}</p>
+              <p className="mt-2 text-2xl font-black text-ink">{value}</p>
+            </div>
+          ))}
+        </div>
+        {criticalRows.length > 0 && (
+          <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm font-bold text-amber-800">
+            {criticalRows.length} high priority incident/case record{criticalRows.length === 1 ? "" : "s"} require active follow-up.
+          </div>
+        )}
+        <div className="max-w-full overflow-auto rounded-lg border border-slate-200 scrollbar-thin">
+          <table className="min-w-[1120px] border-collapse bg-white text-sm">
+            <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
+              <tr>
+                {["Type", "Reference", "Incident / Case", "Linked Record", "Priority", "Status", "Owner", "Location", "Updated", "Action"].map((label) => (
+                  <th key={label} className="whitespace-nowrap px-3 py-3 font-black">{label}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.length ? rows.map((row) => (
+                <tr key={`${row.source}-${row.id}`} className="border-t border-slate-100">
+                  <td className="whitespace-nowrap px-3 py-3 font-bold">{row.source}</td>
+                  <td className="whitespace-nowrap px-3 py-3 font-black text-lagoon">{row.reference}</td>
+                  <td className="max-w-[320px] px-3 py-3">{row.title}</td>
+                  <td className="whitespace-nowrap px-3 py-3">{row.linkedRecord}</td>
+                  <td className="whitespace-nowrap px-3 py-3"><RequestPriorityBadge priority={row.priority} /></td>
+                  <td className="whitespace-nowrap px-3 py-3"><CellValue value={row.status} /></td>
+                  <td className="whitespace-nowrap px-3 py-3">{row.owner}</td>
+                  <td className="max-w-[220px] px-3 py-3 text-slate-600">{row.location || "-"}</td>
+                  <td className="whitespace-nowrap px-3 py-3">{formatDateCell(row.updatedAt)}</td>
+                  <td className="whitespace-nowrap px-3 py-3">
+                    <button type="button" onClick={() => navigate(row.moduleId, row.menuKey)} className="rounded-lg bg-lagoon px-3 py-2 text-xs font-black text-white">
+                      Open
+                    </button>
+                  </td>
+                </tr>
+              )) : (
+                <tr>
+                  <td colSpan={10} className="px-3 py-6 text-center text-sm font-bold text-slate-500">No incident or case records have been marked yet.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Panel>
+    </section>
   );
 }
 

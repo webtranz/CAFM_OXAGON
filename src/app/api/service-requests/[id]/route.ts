@@ -7,6 +7,12 @@ import { auditAction } from "@/lib/audit";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
+const booleanInput = z.preprocess((value) => {
+  if (value === "true" || value === true) return true;
+  if (value === "false" || value === false) return false;
+  return value;
+}, z.boolean()).optional();
+
 const schema = z.object({
   title: z.string().optional(),
   category: z.string().optional(),
@@ -20,6 +26,7 @@ const schema = z.object({
   attachmentUrls: z.string().optional(),
   rejectionReason: z.string().optional(),
   description: z.string().optional(),
+  isIncidentCase: booleanInput,
 });
 
 const slaByPriority = {
@@ -66,6 +73,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         attachmentUrls: input.attachmentUrls || null,
         rejectionReason: input.rejectionReason || null,
         description: input.description || current.description || "No description provided.",
+        isIncidentCase: input.isIncidentCase ?? current.isIncidentCase,
         assignedSupervisorEmail: supervisor?.email || null,
         slaHours,
         dueAt: addHours(new Date(), slaHours),
