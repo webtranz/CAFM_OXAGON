@@ -9,6 +9,7 @@ import {
   Building2,
   CalendarCheck,
   ClipboardCheck,
+  FileText,
   Gauge,
   HardHat,
   ChevronDown,
@@ -168,6 +169,15 @@ const moduleGroups = [
     ],
   },
   {
+    label: "Document and Attachment Management",
+    icon: FileText,
+    items: [
+      { id: "documents", label: "Operation & Maintenance Manuals", icon: FileText, view: "documents-om-manuals" },
+      { id: "documents", label: "Equipment Warranties and Guarantees", icon: ShieldCheck, view: "documents-warranties" },
+      { id: "documents", label: "Support Contracts and SLAs", icon: ClipboardCheck, view: "documents-contracts-slas" },
+    ],
+  },
+  {
     label: "Human Resources",
     icon: Users,
     items: [
@@ -231,6 +241,7 @@ const modulePermissions: Record<string, string> = {
   inventory: "assets.manage",
   hse: "reports.view",
   iot: "reports.view",
+  documents: "reports.view",
   hr: "users.manage",
   audit: "reports.view",
   housing: "housing.view",
@@ -420,7 +431,7 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { id?: st
     return new Set(records.rolePermissions.filter((item) => item.role === user.role).map((item) => item.permission.code));
   }, [records.rolePermissions, user.role]);
   const isReadOnlyUser = roleKindLabel(user.role) === "readonly";
-  const readOnlyModules = new Set(["command", "dashboard", "assets", "work", "ppm", "requests", "reports", "housing", "compliance"]);
+  const readOnlyModules = new Set(["command", "dashboard", "assets", "work", "ppm", "requests", "reports", "housing", "compliance", "documents"]);
   const can = (permission?: string) => user.role === "Admin" || !permission || (!isReadOnlyUser && permissionCodes.has(permission));
   const canOpenModule = (moduleId: string) => (isReadOnlyUser && readOnlyModules.has(moduleId)) || can(modulePermissions[moduleId]);
   const canViewActive = canOpenModule(active);
@@ -759,6 +770,15 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { id?: st
               saving={saving}
               navigate={navigate}
               submitCertificate={(formData) => postRecord("/api/compliance", formData, "Compliance certificate")}
+            />
+          )}
+          {canViewActive && active === "documents" && (
+            <DocumentAttachmentManagement
+              assets={records.assets}
+              services={records.services}
+              workOrders={records.workOrders}
+              complianceCertificates={records.complianceCertificates ?? []}
+              view={activeView}
             />
           )}
           {canViewActive && active === "iot" && <Iot alerts={records.alerts} saving={saving} acknowledgeAlert={(id) => patchRecord(`/api/iot-alerts/${id}`, {}, "IoT alert acknowledged.")} />}
@@ -3944,6 +3964,162 @@ function LinkedTicketsTable({ rows, navigate }: { rows: any[]; navigate: (module
         </tbody>
       </table>
     </div>
+  );
+}
+
+function DocumentAttachmentManagement({
+  assets,
+  services,
+  workOrders,
+  complianceCertificates,
+  view,
+}: {
+  assets: any[];
+  services: any[];
+  workOrders: any[];
+  complianceCertificates: any[];
+  view: string;
+}) {
+  const [tab, setTab] = useState(view || "documents-om-manuals");
+
+  useEffect(() => {
+    if (view?.startsWith("documents")) setTab(view);
+  }, [view]);
+
+  const manualRows = assets
+    .map((asset) => ({
+      id: asset.id,
+      documentType: "O&M Manual",
+      reference: asset.tag,
+      title: asset.assetDescription || asset.name,
+      assetType: asset.assetGroup || asset.category,
+      location: [asset.siteCode, asset.buildingCode, asset.floor, asset.room].filter(Boolean).join(" / ") || "-",
+      owner: asset.assignedSupervisorEmail || asset.assignedTeamCode || "Unassigned",
+      attachment: attachmentList(asset.documentationUrl)[0] || "-",
+      status: asset.documentationUrl ? "AVAILABLE" : "MISSING",
+    }))
+    .filter((row) => row.title || row.reference);
+  const warrantyRows = [
+    ...assets.map((asset) => ({
+      id: `asset-${asset.id}`,
+      documentType: "Equipment Warranty",
+      reference: asset.tag,
+      title: asset.assetDescription || asset.name,
+      assetType: asset.assetGroup || asset.category,
+      provider: asset.manufacturer || asset.contractRef || "Not specified",
+      expiryDate: asset.warrantyExpiry ? formatDateCell(asset.warrantyExpiry) : "-",
+      status: asset.warrantyExpiry ? "ACTIVE" : "MISSING",
+      attachment: attachmentList(asset.documentationUrl)[1] || attachmentList(asset.documentationUrl)[0] || "-",
+    })),
+    ...complianceCertificates.map((certificate) => ({
+      id: `certificate-${certificate.id}`,
+      documentType: "Guarantee / Certificate",
+      reference: certificate.certificateNo,
+      title: certificate.title,
+      assetType: certificate.category,
+      provider: certificate.authority,
+      expiryDate: formatDateCell(certificate.expiryDate),
+      status: certificate.status,
+      attachment: certificate.evidenceUrl || "-",
+    })),
+  ];
+  const contractRows = [
+    ...services.map((service) => ({
+      id: `service-${service.id}`,
+      documentType: "Support SLA",
+      reference: service.code,
+      title: service.name,
+      provider: service.team?.name || service.teamCode || "Internal team",
+      scope: service.category || service.type,
+      sla: `${service.slaHours ?? "-"} hours`,
+      status: service.active === false ? "INACTIVE" : "ACTIVE",
+    })),
+    ...workOrders
+      .filter((work) => work.serviceCode || work.assignedTeamCode)
+      .map((work) => ({
+        id: `work-${work.id}`,
+        documentType: "Support Contract Link",
+        reference: work.woNo,
+        title: work.title,
+        provider: work.assignedTeamCode || "Unassigned",
+        scope: work.serviceCode || work.type,
+        sla: work.dueHours ? `${work.dueHours} hours` : "-",
+        status: work.status,
+      })),
+  ];
+  const tabs = [
+    ["documents-om-manuals", "Operation & Maintenance Manuals", manualRows.length],
+    ["documents-warranties", "Equipment Warranties and Guarantees", warrantyRows.length],
+    ["documents-contracts-slas", "Support Contracts and SLAs", contractRows.length],
+  ] as const;
+
+  return (
+    <section className="grid gap-5">
+      <Panel title="Document and Attachment Management" icon={FileText}>
+        <div className="mb-4 flex flex-wrap gap-2 border-b border-slate-200 pb-3">
+          {tabs.map(([id, label, count]) => (
+            <button key={id} type="button" onClick={() => setTab(id)} className={`rounded-lg px-3 py-2 text-sm font-black ${tab === id ? "bg-lagoon text-white" : "bg-slate-50 text-slate-600 hover:bg-slate-100"}`}>
+              {label}
+              <span className={`ml-2 rounded-full px-2 py-0.5 text-xs ${tab === id ? "bg-white/20 text-white" : "bg-white text-slate-500"}`}>{count}</span>
+            </button>
+          ))}
+        </div>
+        <div className="grid gap-4 md:grid-cols-3">
+          {tabs.map(([id, label, count]) => (
+            <button key={id} type="button" onClick={() => setTab(id)} className={`rounded-lg border p-4 text-left transition ${tab === id ? "border-lagoon bg-lagoon/5" : "border-slate-200 bg-slate-50 hover:bg-slate-100"}`}>
+              <p className="text-xs font-black uppercase text-slate-500">{label}</p>
+              <p className="mt-2 text-3xl font-black text-ink">{count}</p>
+            </button>
+          ))}
+        </div>
+        <div className="mt-5">
+          {tab === "documents-om-manuals" && (
+            <DataTable
+              rows={manualRows}
+              columns={[
+                ["documentType", "Document Type"],
+                ["reference", "Asset Code"],
+                ["title", "Manual Title"],
+                ["assetType", "Asset Type"],
+                ["location", "Location"],
+                ["owner", "Owner"],
+                ["status", "Status"],
+                ["attachment", "Attachment"],
+              ]}
+            />
+          )}
+          {tab === "documents-warranties" && (
+            <DataTable
+              rows={warrantyRows}
+              columns={[
+                ["documentType", "Document Type"],
+                ["reference", "Reference"],
+                ["title", "Equipment / Guarantee"],
+                ["assetType", "Asset Type"],
+                ["provider", "Provider"],
+                ["expiryDate", "Expiry"],
+                ["status", "Status"],
+                ["attachment", "Attachment"],
+              ]}
+            />
+          )}
+          {tab === "documents-contracts-slas" && (
+            <DataTable
+              rows={contractRows}
+              columns={[
+                ["documentType", "Document Type"],
+                ["reference", "Reference"],
+                ["title", "Contract / SLA"],
+                ["provider", "Provider"],
+                ["scope", "Scope"],
+                ["sla", "SLA"],
+                ["status", "Status"],
+              ]}
+            />
+          )}
+        </div>
+      </Panel>
+    </section>
   );
 }
 
