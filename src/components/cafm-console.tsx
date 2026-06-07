@@ -281,6 +281,11 @@ function displayValue(value: unknown) {
   return String(value);
 }
 
+function isDateLikeString(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}(?:T|\s|$)/.test(value)) return false;
+  return !Number.isNaN(new Date(value).getTime());
+}
+
 const currencyKeyPattern = /(cost|value|price|amount|repair|replacement|salvage|depreciation|budget|expense|revenue)/i;
 
 function isCurrencyField(keyOrLabel: string) {
@@ -4920,7 +4925,7 @@ function ResourceManagement({
           </>
         )}
         {tab === "resource-shifts" && (
-          <DataTable rows={shiftRows} columns={[["teamCode", "Team"], ["teamName", "Team Name"], ["shift", "Shift"], ["rotation", "Rotation / Coverage"], ["supervisor", "Supervisor"], ["employees", "Employees"], ["serviceRequests", "Requests"], ["workOrders", "Work Orders"], ["timeSpent", "Time Spent"]]} />
+          <ResourceShiftsTable rows={shiftRows} />
         )}
         {tab === "resource-timesheets" && (
           <ResourceTimeSheetsTable rows={timeSheetRows} navigate={navigate} />
@@ -4975,6 +4980,53 @@ function ResourceTimeSheetsTable({ rows, navigate }: { rows: any[]; navigate: (m
                   Open
                 </button>
               </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function ResourceShiftsTable({ rows }: { rows: any[] }) {
+  if (!rows.length) return <p className="rounded-lg bg-slate-50 p-3 text-sm font-bold text-slate-500">No shifts or rotations found.</p>;
+  return (
+    <div className="max-w-full overflow-auto rounded-lg border border-slate-200 scrollbar-thin">
+      <table className="min-w-[1280px] table-fixed border-collapse bg-white text-sm">
+        <colgroup>
+          <col className="w-12" />
+          <col className="w-24" />
+          <col className="w-52" />
+          <col className="w-36" />
+          <col className="w-[360px]" />
+          <col className="w-44" />
+          <col className="w-28" />
+          <col className="w-28" />
+          <col className="w-32" />
+          <col className="w-32" />
+        </colgroup>
+        <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
+          <tr>
+            {["#", "Team", "Team Name", "Shift", "Rotation / Coverage", "Supervisor", "Employees", "Requests", "Work Orders", "Time Spent"].map((label) => (
+              <th key={label} className="px-3 py-3 font-black">{label}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, index) => (
+            <tr key={row.id ?? row.teamCode} className="border-t border-slate-100">
+              <td className="px-3 py-3 font-black text-slate-500">{index + 1}</td>
+              <td className="px-3 py-3 font-black text-lagoon">{row.teamCode}</td>
+              <td className="px-3 py-3 font-bold">{row.teamName}</td>
+              <td className="px-3 py-3">{row.shift}</td>
+              <td className="px-3 py-3">
+                <div className="whitespace-normal break-words leading-5">{row.rotation}</div>
+              </td>
+              <td className="px-3 py-3">{row.supervisor}</td>
+              <td className="px-3 py-3">{row.employees}</td>
+              <td className="px-3 py-3">{row.serviceRequests}</td>
+              <td className="px-3 py-3">{row.workOrders}</td>
+              <td className="px-3 py-3 font-black text-ink">{row.timeSpent}</td>
             </tr>
           ))}
         </tbody>
@@ -6271,7 +6323,7 @@ function DataTable({ rows, columns }: { rows: any[]; columns: [string, string][]
   return (
     <div className="grid gap-3">
       <div className="max-w-full overflow-auto rounded-lg border border-slate-200 scrollbar-thin">
-        <table className="min-w-full border-collapse bg-white text-sm">
+        <table className="min-w-max border-collapse bg-white text-sm">
           <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
             <tr>
               <th className="whitespace-nowrap px-3 py-3 font-black">#</th>
@@ -6287,7 +6339,7 @@ function DataTable({ rows, columns }: { rows: any[]; columns: [string, string][]
               <tr key={row.id ?? index} className="border-t border-slate-100">
                 <td className="whitespace-nowrap px-3 py-3 font-black text-slate-500">{startIndex + index + 1}</td>
                 {columns.map(([key]) => (
-                  <td key={key} className="max-w-[280px] whitespace-nowrap px-3 py-3">
+                  <td key={key} className="max-w-[360px] whitespace-nowrap px-3 py-3">
                     <CellValue value={row[key]} field={key} />
                   </td>
                 ))}
@@ -6346,7 +6398,7 @@ function CellValue({ value, field = "" }: { value: any; field?: string }) {
   if (isCurrencyField(field)) return <CurrencyAmount value={value} />;
   if (typeof value === "string" && ["CRITICAL", "HIGH", "EXTREME"].includes(value)) return <span className="rounded-lg bg-coral/10 px-2 py-1 font-black text-coral">{value}</span>;
   if (typeof value === "string" && ["COMPLETED", "CLOSED", "ACTIVE"].includes(value)) return <span className="rounded-lg bg-leaf/10 px-2 py-1 font-black text-leaf">{value}</span>;
-  if (typeof value === "string" && value.includes("T")) return new Date(value).toLocaleDateString();
+  if (typeof value === "string" && isDateLikeString(value)) return new Date(value).toLocaleDateString();
   if (typeof value === "object") return value.name ?? value.tag ?? JSON.stringify(value);
   return String(value);
 }
