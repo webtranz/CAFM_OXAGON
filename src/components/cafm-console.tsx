@@ -178,11 +178,13 @@ const moduleGroups = [
     ],
   },
   {
-    label: "Human Resources",
+    label: "Resource Management",
     icon: Users,
     items: [
-              { id: "hr", label: "Employees", icon: Users },
-              { id: "users", label: "Roles & Permissions", icon: ShieldCheck },
+      { id: "resource", label: "Employees", icon: Users, view: "resource-employees" },
+      { id: "resource", label: "Shifts & Rotations", icon: CalendarCheck, view: "resource-shifts" },
+      { id: "resource", label: "Time Sheets", icon: ClipboardCheck, view: "resource-timesheets" },
+      { id: "users", label: "Roles & Permissions", icon: ShieldCheck },
     ],
   },
   {
@@ -242,7 +244,7 @@ const modulePermissions: Record<string, string> = {
   hse: "reports.view",
   iot: "reports.view",
   documents: "reports.view",
-  hr: "users.manage",
+  resource: "users.manage",
   audit: "reports.view",
   housing: "housing.view",
   compliance: "compliance.view",
@@ -326,6 +328,22 @@ function minutesBetween(start?: unknown, end?: unknown) {
   if (Number.isNaN(startTime) || Number.isNaN(endTime)) return "-";
   const minutes = Math.max(0, Math.round((endTime - startTime) / 60000));
   return `${minutes} min`;
+}
+
+function metricMinutes(start?: unknown, end?: unknown) {
+  if (!start || !end) return 0;
+  const startTime = new Date(String(start)).getTime();
+  const endTime = new Date(String(end)).getTime();
+  if (Number.isNaN(startTime) || Number.isNaN(endTime)) return 0;
+  return Math.max(0, Math.round((endTime - startTime) / 60000));
+}
+
+function formatDuration(minutes: number) {
+  if (!minutes) return "-";
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  return remainder ? `${hours}h ${remainder}m` : `${hours}h`;
 }
 
 function workTimingRows(work: any): [string, unknown][] {
@@ -835,7 +853,19 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { id?: st
           )}
           {canViewActive && active === "reports" && <Reports />}
           {canViewActive && active === "audit" && <AuditLogs logs={records.auditLogs ?? []} />}
-          {canViewActive && active === "hr" && <HumanResources employees={records.employees} departments={records.departments} saving={saving} submitEmployee={(formData) => postRecord("/api/employees", formData, "Employee")} />}
+          {canViewActive && active === "resource" && (
+            <ResourceManagement
+              employees={records.employees}
+              departments={records.departments}
+              teams={records.teams}
+              requests={records.requests}
+              workOrders={records.workOrders}
+              view={activeView}
+              saving={saving}
+              navigate={navigate}
+              submitEmployee={(formData) => postRecord("/api/employees", formData, "Employee")}
+            />
+          )}
           {canViewActive && active === "housing" && (
             <HousingOperations
               housing={records.housing}
@@ -4764,10 +4794,101 @@ function UserForm({ title, user, teams, departments, users, roles, onSubmit, sav
   );
 }
 
-function HumanResources({ employees, departments, submitEmployee, saving }: { employees: any[]; departments: any[]; submitEmployee: (formData: FormData) => void; saving: boolean }) {
+function ResourceManagement({
+  employees,
+  departments,
+  teams,
+  requests,
+  workOrders,
+  view,
+  submitEmployee,
+  saving,
+  navigate,
+}: {
+  employees: any[];
+  departments: any[];
+  teams: any[];
+  requests: any[];
+  workOrders: any[];
+  view: string;
+  submitEmployee: (formData: FormData) => void;
+  saving: boolean;
+  navigate: (moduleId: string, menuKey: string, view?: string) => void;
+}) {
+  const [tab, setTab] = useState(view || "resource-employees");
   const [nationality, setNationality] = useState("All");
+
+  useEffect(() => {
+    if (view?.startsWith("resource")) setTab(view);
+  }, [view]);
+
   const nationalities = ["All", ...Array.from(new Set(employees.map((employee) => employee.nationalityType).filter(Boolean)))];
   const filtered = nationality === "All" ? employees : employees.filter((employee) => employee.nationalityType === nationality);
+  const workTimeRows = workOrders.map((work) => {
+    const responseMinutes = metricMinutes(work.createdAt, work.responseAt);
+    const resolutionMinutes = metricMinutes(work.responseAt, work.resolutionAt);
+    const finishMinutes = metricMinutes(work.resolutionAt, work.finishedAt);
+    const recordedMinutes = [responseMinutes, resolutionMinutes, finishMinutes].filter((value) => value > 0).reduce((sum, value) => sum + value, 0);
+    const estimatedMinutes = Number(work.estimatedHours || 0) * 60;
+    const assignedMember = work.assignedTo?.email || work.assignedTo?.name || work.assignedToEmail || work.assignedTeamCode || "Unassigned";
+    return {
+      id: work.id,
+      source: "Work Order",
+      reference: work.woNo,
+      title: work.title,
+      assignedMember,
+      team: work.assignedTeamCode || "-",
+      status: work.status,
+      priority: work.priority,
+      estimatedTime: estimatedMinutes ? `${Math.round(estimatedMinutes / 60)} hrs` : "-",
+      actualTime: recordedMinutes ? formatDuration(recordedMinutes) : "-",
+      serviceRequest: work.request?.ticketNo || "-",
+      moduleId: "work",
+      menuKey: "Tickets-Work Orders",
+    };
+  });
+  const requestTimeRows = requests.map((request) => {
+    const linkedWork = workOrders.find((work) => work.request?.ticketNo === request.ticketNo || work.requestId === request.id || work.title === request.title);
+    return {
+      id: request.id,
+      source: "Service Request",
+      reference: request.ticketNo,
+      title: request.title,
+      assignedMember: request.assignedToEmail || request.assignedTeamCode || linkedWork?.assignedTo?.email || "Unassigned",
+      team: request.assignedTeamCode || linkedWork?.assignedTeamCode || "-",
+      status: request.status,
+      priority: request.priority,
+      estimatedTime: request.slaHours ? `${request.slaHours} SLA hrs` : "-",
+      actualTime: linkedWork ? workTimeRows.find((row) => row.id === linkedWork.id)?.actualTime || "-" : "-",
+      serviceRequest: request.ticketNo,
+      moduleId: "helpdesk",
+      menuKey: "Tickets-Service Requests",
+    };
+  });
+  const timeSheetRows = [...workTimeRows, ...requestTimeRows];
+  const shiftRows = teams.map((team) => {
+    const teamWork = workOrders.filter((work) => work.assignedTeamCode === team.code);
+    const teamRequests = requests.filter((request) => request.assignedTeamCode === team.code);
+    const assignedEmployees = employees.filter((employee) => employee.departmentCode === team.code || employee.siteLocation === team.coverage);
+    const totalMinutes = teamWork.reduce((sum, work) => sum + metricMinutes(work.responseAt, work.finishedAt), 0);
+    return {
+      id: team.id,
+      teamCode: team.code,
+      teamName: team.name,
+      shift: team.shift || "Unassigned",
+      rotation: team.coverage || "All sites",
+      supervisor: team.supervisor || "Unassigned",
+      employees: assignedEmployees.length,
+      serviceRequests: teamRequests.length,
+      workOrders: teamWork.length,
+      timeSpent: totalMinutes ? formatDuration(totalMinutes) : "-",
+    };
+  });
+  const tabs = [
+    ["resource-employees", "Employees", filtered.length],
+    ["resource-shifts", "Shifts & Rotations", shiftRows.length],
+    ["resource-timesheets", "Time Sheets", timeSheetRows.length],
+  ] as const;
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -4778,14 +4899,32 @@ function HumanResources({ employees, departments, submitEmployee, saving }: { em
 
   return (
     <section className="grid gap-5 xl:grid-cols-[1fr_420px]">
-      <Panel title="Employees" icon={Users}>
+      <Panel title="Resource Management" icon={Users}>
         <ReportButtons type="employees" label="Employees report" />
-        <div className="mb-4 flex items-center gap-3">
-          <select value={nationality} onChange={(event) => setNationality(event.target.value)} className="h-10 rounded-lg border border-slate-200 px-3">
-            {nationalities.map((item) => <option key={item}>{item}</option>)}
-          </select>
+        <div className="mb-4 flex flex-wrap gap-2 border-b border-slate-200 pb-3">
+          {tabs.map(([id, label, count]) => (
+            <button key={id} type="button" onClick={() => setTab(id)} className={`rounded-lg px-3 py-2 text-sm font-black ${tab === id ? "bg-lagoon text-white" : "bg-slate-50 text-slate-600 hover:bg-slate-100"}`}>
+              {label}
+              <span className={`ml-2 rounded-full px-2 py-0.5 text-xs ${tab === id ? "bg-white/20 text-white" : "bg-white text-slate-500"}`}>{count}</span>
+            </button>
+          ))}
         </div>
-        <DataTable rows={filtered} columns={[["name", "Name"], ["email", "Email"], ["companyId", "Company ID"], ["nationalityType", "Nationality"], ["departmentCode", "Dept"], ["siteLocation", "Site"]]} />
+        {tab === "resource-employees" && (
+          <>
+            <div className="mb-4 flex items-center gap-3">
+              <select value={nationality} onChange={(event) => setNationality(event.target.value)} className="h-10 rounded-lg border border-slate-200 px-3">
+                {nationalities.map((item) => <option key={item}>{item}</option>)}
+              </select>
+            </div>
+            <DataTable rows={filtered} columns={[["name", "Name"], ["email", "Email"], ["companyId", "Company ID"], ["nationalityType", "Nationality"], ["departmentCode", "Dept"], ["siteLocation", "Site"]]} />
+          </>
+        )}
+        {tab === "resource-shifts" && (
+          <DataTable rows={shiftRows} columns={[["teamCode", "Team"], ["teamName", "Team Name"], ["shift", "Shift"], ["rotation", "Rotation / Coverage"], ["supervisor", "Supervisor"], ["employees", "Employees"], ["serviceRequests", "Requests"], ["workOrders", "Work Orders"], ["timeSpent", "Time Spent"]]} />
+        )}
+        {tab === "resource-timesheets" && (
+          <ResourceTimeSheetsTable rows={timeSheetRows} navigate={navigate} />
+        )}
       </Panel>
       <form onSubmit={handleSubmit} className="rounded-lg border border-white/80 bg-white p-5 shadow-lift">
         <h3 className="text-xl font-black">Add Employee</h3>
@@ -4803,6 +4942,44 @@ function HumanResources({ employees, departments, submitEmployee, saving }: { em
         </div>
       </form>
     </section>
+  );
+}
+
+function ResourceTimeSheetsTable({ rows, navigate }: { rows: any[]; navigate: (moduleId: string, menuKey: string, view?: string) => void }) {
+  if (!rows.length) return <p className="rounded-lg bg-slate-50 p-3 text-sm font-bold text-slate-500">No timesheet rows found.</p>;
+  return (
+    <div className="max-w-full overflow-auto rounded-lg border border-slate-200 scrollbar-thin">
+      <table className="min-w-[1200px] border-collapse bg-white text-sm">
+        <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
+          <tr>
+            {["Source", "Ticket / WO", "Work", "Technician / Team Member", "Team", "Priority", "Status", "Estimated / SLA", "Actual Time", "Linked Service Request", "Action"].map((label) => (
+              <th key={label} className="whitespace-nowrap px-3 py-3 font-black">{label}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={`${row.source}-${row.reference}`} className="border-t border-slate-100">
+              <td className="whitespace-nowrap px-3 py-3 font-bold">{row.source}</td>
+              <td className="whitespace-nowrap px-3 py-3 font-black text-lagoon">{row.reference}</td>
+              <td className="max-w-[300px] px-3 py-3">{row.title}</td>
+              <td className="whitespace-nowrap px-3 py-3">{row.assignedMember}</td>
+              <td className="whitespace-nowrap px-3 py-3">{row.team}</td>
+              <td className="whitespace-nowrap px-3 py-3"><CellValue value={row.priority} /></td>
+              <td className="whitespace-nowrap px-3 py-3"><CellValue value={row.status} /></td>
+              <td className="whitespace-nowrap px-3 py-3">{row.estimatedTime}</td>
+              <td className="whitespace-nowrap px-3 py-3 font-black text-ink">{row.actualTime}</td>
+              <td className="whitespace-nowrap px-3 py-3">{row.serviceRequest}</td>
+              <td className="whitespace-nowrap px-3 py-3">
+                <button type="button" onClick={() => navigate(row.moduleId, row.menuKey)} className="rounded-lg bg-lagoon px-3 py-2 text-xs font-black text-white">
+                  Open
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
