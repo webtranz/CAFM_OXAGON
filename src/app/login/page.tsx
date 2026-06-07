@@ -25,21 +25,21 @@ export default function LoginPage() {
 
   return (
     <main className="grid min-h-screen place-items-center bg-slate-50 p-6 text-ink">
-      <form onSubmit={submit} className="w-full max-w-md rounded-lg border border-white bg-white p-6 shadow-lift">
+      <form onSubmit={submit} className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
         <div className="flex items-center gap-3">
-          <div className="grid h-16 w-16 place-items-center overflow-hidden rounded-lg border border-amber-200 bg-white p-1 shadow-sm">
-            <Image src="/tafga.png" alt="Tamimi Global CAFM logo" width={56} height={56} className="h-full w-full object-contain" priority />
+          <div className="grid h-12 w-12 place-items-center overflow-hidden rounded-xl border border-amber-200 bg-white p-1 shadow-sm">
+            <Image src="/tafga.png" alt="Tamimi Global CAFM logo" width={48} height={48} className="h-full w-full object-contain" priority />
           </div>
           <div>
-            <h1 className="text-2xl font-black leading-tight">Tamimi Global CAFM</h1>
-            <p className="text-sm text-slate-500">Enterprise facility command</p>
+            <h1 className="text-xl font-bold leading-tight text-slate-900">Tamimi Global</h1>
+            <p className="text-sm text-slate-500">CAFM system</p>
             <p className="mt-1 text-xs font-bold text-slate-400">Sign in to continue</p>
           </div>
         </div>
         <div className="mt-6 grid gap-3">
           <input name="email" type="email" defaultValue="admin@cafm.local" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
           <input name="password" type="password" defaultValue="Admin@12345" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
-          <button className="h-11 rounded-lg bg-ink font-black text-white">Login</button>
+          <button className="h-11 rounded-lg bg-emerald-600 font-medium text-white transition hover:bg-emerald-700">Login</button>
           {message && <p className="text-sm font-bold text-coral">{message}</p>}
         </div>
       </form>

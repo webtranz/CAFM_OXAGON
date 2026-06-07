@@ -14,6 +14,7 @@ import {
   ChevronDown,
   LayoutDashboard,
   LogOut,
+  Menu,
   MapPinned,
   PackagePlus,
   Plus,
@@ -365,6 +366,7 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { id?: st
   const [health, setHealth] = useState<{ app: string; database: string; message?: string } | null>(null);
   const [saving, setSaving] = useState(false);
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     checkHealth();
@@ -512,61 +514,88 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { id?: st
   }
 
   return (
-    <main className="h-screen overflow-hidden text-ink">
-      <section className="grid h-screen min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden lg:grid-cols-[300px_minmax(0,1fr)] lg:grid-rows-1">
-        <aside className="max-h-[38vh] shrink-0 overflow-y-auto border-r border-slate-200 bg-white p-4 scrollbar-thin lg:h-screen lg:max-h-none">
-          <div className="flex items-center gap-3 px-1">
-            <div className="grid h-14 w-14 place-items-center overflow-hidden rounded-lg border border-amber-200 bg-white p-1 shadow-sm">
-              <Image src="/tafga.png" alt="Tamimi Global CAFM logo" width={52} height={52} className="h-full w-full object-contain" priority />
-            </div>
-            <div>
-              <h1 className="text-lg font-black leading-tight">Tamimi Global CAFM</h1>
-              <p className="text-xs text-slate-500">Enterprise facility command</p>
+    <main className="h-screen overflow-hidden bg-slate-50 text-ink">
+      <header className="fixed left-0 right-0 top-0 z-40 flex h-16 items-center justify-between border-b border-slate-100 bg-white px-4 lg:hidden">
+        <div className="flex items-center gap-2">
+          <div className="grid h-9 w-9 place-items-center overflow-hidden rounded-lg border border-amber-200 bg-white p-1 shadow-sm">
+            <Image src="/tafga.png" alt="Tamimi Global CAFM logo" width={36} height={36} className="h-full w-full object-contain" priority />
+          </div>
+          <div className="leading-tight">
+            <span className="block text-sm font-bold text-slate-900">Tamimi Global</span>
+            <span className="block text-[10px] text-slate-500">CAFM system</span>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => setMobileMenuOpen((current) => !current)}
+          className="grid h-10 w-10 place-items-center rounded-lg text-slate-700 hover:bg-slate-100"
+          aria-label="Open navigation"
+        >
+          <Menu size={21} />
+        </button>
+      </header>
+
+      {mobileMenuOpen && <div className="fixed inset-0 z-40 bg-slate-950/30 lg:hidden" onClick={() => setMobileMenuOpen(false)} />}
+
+      <section className="h-screen min-w-0 overflow-hidden lg:pl-72">
+        <aside className={`${mobileMenuOpen ? "fixed flex flex-col" : "hidden"} inset-y-0 left-0 z-50 w-72 overflow-y-auto border-r border-slate-100 bg-white scrollbar-thin lg:fixed lg:flex lg:w-72 lg:flex-col`}>
+          <div className="border-b border-slate-100 p-6">
+            <div className="flex items-center gap-3">
+              <div className="grid h-12 w-12 place-items-center overflow-hidden rounded-xl border border-amber-200 bg-white p-1 shadow-sm">
+                <Image src="/tafga.png" alt="Tamimi Global CAFM logo" width={48} height={48} className="h-full w-full object-contain" priority />
+              </div>
+              <div>
+                <h1 className="text-lg font-bold leading-tight text-slate-900">Tamimi Global</h1>
+                <p className="text-xs text-slate-500">CAFM system</p>
+              </div>
             </div>
           </div>
 
-          <div className="mt-5 rounded-lg border border-emerald-100 bg-emerald-50 p-3 text-sm">
-            <div className="flex items-center gap-2 font-bold text-emerald-700">
+          <div className="m-4 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm">
+            <div className="flex items-center gap-2 font-medium text-emerald-700">
               <Activity size={16} />
               {health?.database === "connected" || records.live ? "Database online" : "Database issue"}
             </div>
-            <p className="mt-1 text-emerald-900/70">
+            <p className="mt-1 text-xs text-emerald-700">
               {health ? `Status: ${health.database}` : "Checking database..."}
             </p>
             {health?.message && <p className="mt-1 break-words text-xs text-coral">{health.message}</p>}
-            <button onClick={checkHealth} className="mt-3 h-9 rounded-lg bg-white px-3 text-xs font-black text-lagoon shadow-sm">
+            <button onClick={checkHealth} className="mt-3 h-9 rounded-lg bg-white px-3 text-xs font-medium text-emerald-700 shadow-sm">
               Check DB
             </button>
           </div>
 
-          <nav className="mt-5 grid gap-1">
+          <nav className="grid flex-1 content-start gap-1 px-4 pb-4">
             {moduleGroups.map((group) => {
               const visibleItems = group.items.filter((item) => canOpenModule(item.id));
               if (!visibleItems.length) return null;
 
               return (
                 <details key={group.label} open={visibleItems.some((item) => `${group.label}-${item.label}` === activeMenuKey)} className="group">
-                  <summary className="flex h-11 cursor-pointer list-none items-center justify-between rounded-lg px-3 text-sm font-black text-slate-700 hover:bg-slate-50">
-                    <span className="flex items-center gap-3">
-                      <group.icon size={18} className="text-slate-600" />
-                      {group.label}
+                  <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between rounded-xl px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900">
+                    <span className="flex min-w-0 items-center gap-3">
+                      <group.icon size={18} className="shrink-0 text-slate-500" />
+                      <span className="min-w-0 truncate">{group.label}</span>
                     </span>
-                    <ChevronDown size={15} className="text-slate-400 transition group-open:rotate-180" />
+                    <ChevronDown size={15} className="shrink-0 text-slate-400 transition group-open:rotate-180" />
                   </summary>
-                  <div className="ml-4 mt-1 grid border-l border-slate-100 pl-3">
+                  <div className="ml-8 mt-1 grid gap-1">
                     {visibleItems.map((item) => {
                       const Icon = item.icon;
                       const menuKey = `${group.label}-${item.label}`;
                       return (
                         <button
                           key={menuKey}
-                          onClick={() => navigate(item.id, menuKey, String("view" in item ? item.view : item.id))}
-                          className={`flex h-9 items-center gap-2 rounded-lg px-2 text-left text-sm transition ${
-                            activeMenuKey === menuKey ? "bg-indigo-50 font-black text-indigo-700" : "text-slate-600 hover:bg-slate-50 hover:text-ink"
+                          onClick={() => {
+                            navigate(item.id, menuKey, String("view" in item ? item.view : item.id));
+                            setMobileMenuOpen(false);
+                          }}
+                          className={`flex min-h-10 items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-medium transition ${
+                            activeMenuKey === menuKey ? "bg-emerald-50 text-emerald-700 shadow-sm" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
                           }`}
                         >
-                          <Icon size={13} />
-                          {item.label}
+                          <Icon size={15} className={activeMenuKey === menuKey ? "shrink-0 text-emerald-600" : "shrink-0"} />
+                          <span className="min-w-0 truncate">{item.label}</span>
                         </button>
                       );
                     })}
@@ -576,32 +605,35 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { id?: st
             })}
           </nav>
 
-          <div className="mt-5 rounded-lg bg-slate-50 p-3">
-            <p className="text-sm font-black">{user.name}</p>
-            <p className="mt-1 text-xs text-slate-700">{user.role} / {user.department || "All departments"} / {user.email}</p>
-            <button onClick={logout} className="mt-3 flex h-9 items-center gap-2 rounded-lg bg-white px-3 text-xs font-black text-coral shadow-sm">
+          <div className="border-t border-slate-100 p-4">
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+              <p className="truncate text-sm font-medium text-slate-900">{user.name}</p>
+              <p className="mt-1 truncate text-xs text-slate-500">{user.role} / {user.department || "All departments"}</p>
+              <p className="truncate text-xs text-slate-500">{user.email}</p>
+            </div>
+            <button onClick={logout} className="mt-3 flex h-10 w-full items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 transition hover:bg-slate-100">
               <LogOut size={14} />
               Logout
             </button>
           </div>
         </aside>
 
-        <section className="min-h-0 min-w-0 space-y-5 overflow-auto p-3 scrollbar-thin sm:p-5 lg:h-screen lg:p-6">
-          <header className="min-w-0 rounded-lg bg-gradient-to-r from-fuchsia-600 to-indigo-600 p-4 text-white shadow-lift sm:p-5">
+        <section className="min-h-0 min-w-0 space-y-5 overflow-auto px-3 pb-6 pt-20 scrollbar-thin sm:px-5 lg:h-screen lg:p-6">
+          <header className="min-w-0 rounded-lg border border-slate-200 bg-white p-4 text-slate-900 shadow-sm sm:p-5">
             <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
               <div className="min-w-0">
-                <p className="text-sm font-black uppercase tracking-wider text-white/80">International level CAFM suite</p>
-                <h2 className="mt-1 text-2xl font-black sm:text-3xl xl:text-4xl">One-stop facility operations system</h2>
-                <p className="mt-2 max-w-3xl text-white/80">
+                <p className="text-sm font-bold uppercase text-emerald-700">International level CAFM suite</p>
+                <h2 className="mt-1 text-2xl font-bold text-slate-900 sm:text-3xl">One-stop facility operations system</h2>
+                <p className="mt-2 max-w-3xl text-sm text-slate-500">
                   {dashboardSubtitle(user.role, user.department)}
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
-                <button onClick={() => navigate("work", "Tickets-Work Orders")} className="flex h-11 items-center gap-2 rounded-lg bg-coral px-4 font-black text-white shadow-lg">
+                <button onClick={() => navigate("work", "Tickets-Work Orders")} className="flex h-11 items-center gap-2 rounded-lg bg-emerald-600 px-4 font-medium text-white shadow-sm transition hover:bg-emerald-700">
                   <Plus size={18} />
                   New Work
                 </button>
-                <button onClick={() => navigate("helpdesk", "Tickets-Service Requests")} className="flex h-11 items-center gap-2 rounded-lg bg-lagoon px-4 font-black text-white shadow-lg">
+                <button onClick={() => navigate("helpdesk", "Tickets-Service Requests")} className="flex h-11 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 font-medium text-slate-700 shadow-sm transition hover:bg-slate-100">
                   <Smartphone size={18} />
                   Dispatch
                 </button>
@@ -609,14 +641,14 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { id?: st
             </div>
           </header>
 
-          {toast && <div className="rounded-lg border border-lagoon/20 bg-white p-3 font-bold text-lagoon shadow-lift">{toast}</div>}
+          {toast && <div className="rounded-lg border border-emerald-100 bg-white p-3 font-medium text-emerald-700 shadow-sm">{toast}</div>}
 
           <section className="grid min-w-0 gap-4 md:grid-cols-2 xl:grid-cols-4">
             {moduleStats.map((stat) => (
-              <div key={stat.label} className="min-w-0 rounded-lg border border-white/80 bg-white p-4 shadow-lift">
-                <p className="text-sm font-bold text-slate-500">{stat.label}</p>
-                <p className="mt-2 text-3xl font-black">{stat.value}</p>
-                <p className={`mt-1 text-sm font-bold ${statToneClasses[stat.tone]}`}>{stat.delta}</p>
+              <div key={stat.label} className="min-w-0 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+                <p className="text-sm font-medium text-slate-500">{stat.label}</p>
+                <p className="mt-2 text-3xl font-bold text-slate-900">{stat.value}</p>
+                <p className={`mt-1 text-sm font-medium ${statToneClasses[stat.tone]}`}>{stat.delta}</p>
               </div>
             ))}
           </section>
@@ -5794,4 +5826,3 @@ function ActionForm({ title, fields, onSubmit, saving }: { title: string; fields
     </form>
   );
 }
-
