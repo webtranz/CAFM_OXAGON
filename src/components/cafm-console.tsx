@@ -162,6 +162,7 @@ const moduleGroups = [
     items: [
       { id: "compliance", label: "Compliance Dashboard", icon: Gauge, view: "compliance-dashboard" },
       { id: "compliance", label: "Certification Register", icon: ClipboardCheck, view: "certification-register" },
+      { id: "compliance", label: "Non-Compliance Management", icon: AlertTriangle, view: "compliance-non-compliance" },
       { id: "compliance", label: "Audit Calendar", icon: CalendarCheck, view: "compliance-audits" },
       { id: "compliance", label: "Expiry Alerts", icon: AlertTriangle, view: "compliance-alerts" },
     ],
@@ -748,7 +749,18 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { id?: st
           {canViewActive && active === "ppm" && <Ppm ppms={records.ppms} assets={records.assets} workOrders={records.workOrders} saving={saving} submitPpm={(formData) => postRecord("/api/ppm", formData, "PPM")} updatePpm={(body) => patchRecord("/api/ppm", body, "PPM updated.")} />}
           {canViewActive && active === "inventory" && <Inventory inventory={records.inventory} saving={saving} submitInventory={(formData) => postRecord("/api/inventory", formData, "Inventory item")} />}
           {canViewActive && active === "hse" && <Hse inspections={records.inspections} saving={saving} submitInspection={(formData) => postRecord("/api/inspections", formData, "Inspection")} />}
-          {canViewActive && active === "compliance" && <ComplianceCertification records={records.complianceCertificates ?? []} view={activeView} saving={saving} submitCertificate={(formData) => postRecord("/api/compliance", formData, "Compliance certificate")} />}
+          {canViewActive && active === "compliance" && (
+            <ComplianceCertification
+              records={records.complianceCertificates ?? []}
+              requests={records.requests}
+              workOrders={records.workOrders}
+              inspections={records.inspections}
+              view={activeView}
+              saving={saving}
+              navigate={navigate}
+              submitCertificate={(formData) => postRecord("/api/compliance", formData, "Compliance certificate")}
+            />
+          )}
           {canViewActive && active === "iot" && <Iot alerts={records.alerts} saving={saving} acknowledgeAlert={(id) => patchRecord(`/api/iot-alerts/${id}`, {}, "IoT alert acknowledged.")} />}
           {canViewActive && active === "teams" && (
             <TeamsServices
@@ -3586,7 +3598,25 @@ function Hse({ inspections, submitInspection, saving }: { inspections: any[]; su
   );
 }
 
-function ComplianceCertification({ records, view, submitCertificate, saving }: { records: any[]; view: string; submitCertificate: (formData: FormData) => void; saving: boolean }) {
+function ComplianceCertification({
+  records,
+  requests,
+  workOrders,
+  inspections,
+  view,
+  submitCertificate,
+  saving,
+  navigate,
+}: {
+  records: any[];
+  requests: any[];
+  workOrders: any[];
+  inspections: any[];
+  view: string;
+  submitCertificate: (formData: FormData) => void;
+  saving: boolean;
+  navigate: (moduleId: string, menuKey: string, view?: string) => void;
+}) {
   const [tab, setTab] = useState(view || "compliance-dashboard");
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("all");
@@ -3622,6 +3652,68 @@ function ComplianceCertification({ records, view, submitCertificate, saving }: {
     days: record.daysToExpiry < 0 ? `${Math.abs(record.daysToExpiry)} overdue` : `${record.daysToExpiry} days`,
   }));
   const auditRows = rows.filter((record) => record.risk === "HIGH" || record.risk === "EXTREME" || record.status !== "ACTIVE");
+  const matchText = (item: any) => [item.title, item.category, item.assetTag, item.asset?.tag, item.location, item.description, item.serviceCode, item.departmentCode, item.type].filter(Boolean).join(" ").toLowerCase();
+  const relatedTicketsFor = (record: any) => {
+    const needles = [record.assetTag, record.title, record.category, record.location].filter(Boolean).map((item) => String(item).toLowerCase());
+    return [
+      ...requests.map((request) => ({ source: "Service Request", reference: request.ticketNo, title: request.title, status: request.status, priority: request.priority, owner: request.requester || request.assignedTeamCode || "Unassigned", moduleId: "helpdesk", menuKey: "Tickets-Service Requests", haystack: matchText(request) })),
+      ...workOrders.map((work) => ({ source: "Work Order", reference: work.woNo, title: work.title, status: work.status, priority: work.priority, owner: work.assignedTo?.name || work.assignedTeamCode || "Unassigned", moduleId: "work", menuKey: "Tickets-Work Orders", haystack: matchText(work) })),
+    ].filter((ticket) => needles.length === 0 || needles.some((needle) => needle && ticket.haystack.includes(needle)));
+  };
+  const nonComplianceRows = rows
+    .filter((record) => record.status === "EXPIRED" || record.status === "SUSPENDED" || record.risk === "HIGH" || record.risk === "EXTREME")
+    .map((record) => ({
+      ...record,
+      issue: record.status === "EXPIRED" ? "Expired certification" : record.status === "SUSPENDED" ? "Suspended control" : "High-risk compliance exposure",
+      correctiveAction: record.notes || "Assign owner, collect evidence, and close corrective action.",
+      owner: record.owner || "Unassigned",
+      linkedTickets: relatedTicketsFor(record).length,
+    }));
+  const inspectionNonComplianceRows = inspections
+    .filter((inspection) => inspection.status !== "COMPLETED" || Number(inspection.score || 100) < 90 || ["HIGH", "EXTREME"].includes(inspection.risk))
+    .map((inspection) => ({
+      id: inspection.id,
+      certificateNo: inspection.code,
+      title: inspection.title,
+      issue: Number(inspection.score || 100) < 90 ? "Inspection score below threshold" : "Open inspection action",
+      authority: inspection.inspector || "Internal audit",
+      owner: inspection.inspector || "Unassigned",
+      risk: inspection.risk,
+      status: inspection.status,
+      days: formatDateCell(inspection.dueAt),
+      correctiveAction: inspection.findings || "Close inspection findings and attach evidence.",
+      linkedTickets: relatedTicketsFor(inspection).length,
+    }));
+  const allNonComplianceRows = [...nonComplianceRows, ...inspectionNonComplianceRows];
+  const ticketRows = [
+    ...requests.map((request) => ({
+      id: request.id,
+      source: "Service Request",
+      reference: request.ticketNo,
+      title: request.title,
+      linkedItem: allNonComplianceRows.find((item) => matchText(request).includes(String(item.title || "").toLowerCase()) || (item.certificateNo && matchText(request).includes(String(item.certificateNo).toLowerCase())))?.certificateNo || "General compliance",
+      priority: request.priority,
+      status: request.status,
+      owner: request.requester || request.assignedTeamCode || "Unassigned",
+      moduleId: "helpdesk",
+      menuKey: "Tickets-Service Requests",
+    })),
+    ...workOrders.map((work) => ({
+      id: work.id,
+      source: "Work Order",
+      reference: work.woNo,
+      title: work.title,
+      linkedItem: allNonComplianceRows.find((item) => matchText(work).includes(String(item.title || "").toLowerCase()) || (item.certificateNo && matchText(work).includes(String(item.certificateNo).toLowerCase())))?.certificateNo || "General compliance",
+      priority: work.priority,
+      status: work.status,
+      owner: work.assignedTo?.name || work.assignedTeamCode || "Unassigned",
+      moduleId: "work",
+      menuKey: "Tickets-Work Orders",
+    })),
+  ];
+  const openTicketRows = ticketRows.filter((ticket) => !["CLOSED", "COMPLETED", "VERIFIED", "REJECTED", "CANCELLED"].includes(String(ticket.status || "").toUpperCase()));
+  const overdueNonCompliance = allNonComplianceRows.filter((record) => record.status === "EXPIRED").length;
+  const highRiskNonCompliance = allNonComplianceRows.filter((record) => record.risk === "HIGH" || record.risk === "EXTREME").length;
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -3633,6 +3725,7 @@ function ComplianceCertification({ records, view, submitCertificate, saving }: {
   const tabs = [
     ["compliance-dashboard", "Dashboard"],
     ["certification-register", "Certificates"],
+    ["compliance-non-compliance", "Non-Compliance Management"],
     ["compliance-audits", "Audit Calendar"],
     ["compliance-alerts", "Expiry Alerts"],
   ] as const;
@@ -3694,6 +3787,65 @@ function ComplianceCertification({ records, view, submitCertificate, saving }: {
           )}
 
           {tab === "certification-register" && <DataTable rows={rows} columns={[["certificateNo", "Certificate No"], ["title", "Title"], ["category", "Category"], ["authority", "Authority"], ["assetTag", "Asset"], ["location", "Location"], ["owner", "Owner"], ["status", "Status"], ["expiryDate", "Expiry"], ["days", "Days"]]} />}
+          {tab === "compliance-non-compliance" && (
+            <div className="grid gap-4">
+              <div className="grid gap-3 md:grid-cols-4">
+                {[
+                  ["Open Non-Compliances", allNonComplianceRows.length, "text-coral"],
+                  ["Overdue Certifications", overdueNonCompliance, "text-amber-600"],
+                  ["High-Risk Items", highRiskNonCompliance, "text-lagoon"],
+                  ["Linked Tickets", ticketRows.length, "text-leaf"],
+                ].map(([label, value, tone]) => (
+                  <div key={label} className="rounded-lg bg-slate-50 p-4">
+                    <p className="text-xs font-black uppercase text-slate-500">{label}</p>
+                    <p className={`mt-2 text-3xl font-black ${tone}`}>{value}</p>
+                  </div>
+                ))}
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <div>
+                  <p className="font-black">Linked corrective-action workspace</p>
+                  <p className="text-sm font-bold text-slate-500">Non-compliance items are tied to service requests and work orders for follow-up.</p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button type="button" onClick={() => navigate("helpdesk", "Tickets-Service Requests")} className="rounded-lg bg-lagoon px-4 py-2 text-sm font-black text-white">Open Tickets</button>
+                  <button type="button" onClick={() => navigate("work", "Tickets-Work Orders")} className="rounded-lg bg-ink px-4 py-2 text-sm font-black text-white">Open Work Orders</button>
+                </div>
+              </div>
+              <div className="grid gap-2">
+                <h4 className="text-sm font-black uppercase text-slate-500">Non-Compliance Items</h4>
+                <DataTable
+                  rows={allNonComplianceRows}
+                  columns={[
+                    ["certificateNo", "Certificate"],
+                    ["title", "Non-Compliance"],
+                    ["issue", "Issue"],
+                    ["authority", "Authority"],
+                    ["owner", "Owner"],
+                    ["risk", "Risk"],
+                    ["status", "Status"],
+                    ["days", "Age / Due"],
+                    ["linkedTickets", "Linked Tickets"],
+                    ["correctiveAction", "Corrective Action"],
+                  ]}
+                />
+              </div>
+              <div className="grid gap-2">
+                <h4 className="text-sm font-black uppercase text-slate-500">All Linked Tickets & Work Orders</h4>
+                <LinkedTicketsTable
+                  rows={ticketRows}
+                  navigate={navigate}
+                />
+              </div>
+              <div className="grid gap-2">
+                <h4 className="text-sm font-black uppercase text-slate-500">Open Corrective Actions</h4>
+                <LinkedTicketsTable
+                  rows={openTicketRows}
+                  navigate={navigate}
+                />
+              </div>
+            </div>
+          )}
           {tab === "compliance-audits" && <DataTable rows={auditRows} columns={[["certificateNo", "Certificate"], ["title", "Audit Item"], ["authority", "Authority"], ["risk", "Risk"], ["owner", "Owner"], ["expiryDate", "Due / Expiry"], ["notes", "Action Notes"]]} />}
           {tab === "compliance-alerts" && <DataTable rows={rows.filter((record) => record.status !== "ACTIVE")} columns={[["certificateNo", "Certificate"], ["title", "Alert"], ["status", "Status"], ["risk", "Risk"], ["days", "Expiry"], ["owner", "Owner"], ["notes", "Required Action"]]} />}
         </Panel>
@@ -3757,6 +3909,41 @@ function ComplianceCertification({ records, view, submitCertificate, saving }: {
         </div>
       </form>
     </section>
+  );
+}
+
+function LinkedTicketsTable({ rows, navigate }: { rows: any[]; navigate: (moduleId: string, menuKey: string, view?: string) => void }) {
+  if (!rows.length) return <p className="rounded-lg bg-slate-50 p-3 text-sm font-bold text-slate-500">No linked tickets or work orders found.</p>;
+  return (
+    <div className="max-w-full overflow-auto rounded-lg border border-slate-200 scrollbar-thin">
+      <table className="min-w-[980px] border-collapse bg-white text-sm">
+        <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
+          <tr>
+            {["Ticket Type", "Reference", "Ticket / Work Order", "Linked Non-Compliance", "Priority", "Status", "Owner", "Action"].map((label) => (
+              <th key={label} className="whitespace-nowrap px-3 py-3 font-black">{label}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={`${row.source}-${row.reference}`} className="border-t border-slate-100">
+              <td className="whitespace-nowrap px-3 py-3 font-bold">{row.source}</td>
+              <td className="whitespace-nowrap px-3 py-3 font-black text-lagoon">{row.reference}</td>
+              <td className="max-w-[300px] px-3 py-3">{row.title}</td>
+              <td className="whitespace-nowrap px-3 py-3">{row.linkedItem}</td>
+              <td className="whitespace-nowrap px-3 py-3"><CellValue value={row.priority} /></td>
+              <td className="whitespace-nowrap px-3 py-3"><CellValue value={row.status} /></td>
+              <td className="whitespace-nowrap px-3 py-3">{row.owner}</td>
+              <td className="whitespace-nowrap px-3 py-3">
+                <button type="button" onClick={() => navigate(row.moduleId, row.menuKey)} className="rounded-lg bg-lagoon px-3 py-2 text-xs font-black text-white">
+                  Open
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
