@@ -20,7 +20,7 @@ if [ -n "${DATABASE_URL:-}" ]; then
   until ./node_modules/.bin/prisma migrate deploy; do
     if [ "$attempt" -ge "$max_attempts" ]; then
       echo "Database migration failed after ${max_attempts} attempts. Trying prisma db push as a schema fallback."
-      ./node_modules/.bin/prisma db push || echo "Database schema push fallback failed. Starting app so health checks and logs remain available."
+      ./node_modules/.bin/prisma db push --accept-data-loss || echo "Database schema push fallback failed. Applying targeted location fallback."
       break
     fi
     echo "Database not ready yet. Retrying migration in 3 seconds... (${attempt}/${max_attempts})"
@@ -36,6 +36,12 @@ if [ -n "${DATABASE_URL:-}" ]; then
     fi
   else
     echo "Database seed skipped. Set RUN_DB_SEED=yes to seed/reset demo data."
+  fi
+
+  if node scripts/ensure-location-schema.mjs; then
+    echo "Location schema check completed."
+  else
+    echo "Location schema check failed. App will still start; review database logs."
   fi
 else
   echo "No database URL found. Starting in demo mode without database initialization."

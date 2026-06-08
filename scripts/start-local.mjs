@@ -22,6 +22,10 @@ function runPrisma(args) {
   return run(prismaBin, args);
 }
 
+function runNode(args) {
+  return run("node", args);
+}
+
 async function prepareDatabase() {
   resolveDatabaseUrl();
 
@@ -40,7 +44,8 @@ async function prepareDatabase() {
 
     if (attempt === maxAttempts) {
       console.log(`Database migration failed after ${maxAttempts} attempts. Trying prisma db push as a schema fallback.`);
-      runPrisma(["db", "push"]);
+      const push = runPrisma(["db", "push", "--accept-data-loss"]);
+      if (push.status !== 0) console.log("Database schema push fallback failed. Applying targeted location fallback.");
       break;
     }
 
@@ -55,6 +60,10 @@ async function prepareDatabase() {
   } else {
     console.log("Database seed skipped. Set RUN_DB_SEED=yes to seed/reset demo data.");
   }
+
+  const locationSchema = runNode(["scripts/ensure-location-schema.mjs"]);
+  if (locationSchema.status === 0) console.log("Location schema check completed.");
+  else console.log("Location schema check failed. App will still start; review database logs.");
 }
 
 function startServer() {
