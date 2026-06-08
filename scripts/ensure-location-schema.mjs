@@ -31,6 +31,45 @@ async function main() {
   const importSql = await fs.readFile("prisma/migrations/20260608220000_import_fbc_locations/migration.sql", "utf8");
   await runSql(importSql);
   console.log("Location schema and FBC location records are ready.");
+
+  await runSql('ALTER TABLE "Asset" ADD COLUMN IF NOT EXISTS "eqType" TEXT NOT NULL DEFAULT \'ASSET\';');
+  await runSql('ALTER TABLE "Asset" ADD COLUMN IF NOT EXISTS "organization" TEXT;');
+  await runSql('ALTER TABLE "Asset" ADD COLUMN IF NOT EXISTS "assetStatusText" TEXT NOT NULL DEFAULT \'INSTALLED\';');
+  await runSql('ALTER TABLE "Asset" ADD COLUMN IF NOT EXISTS "departmentDesc" TEXT;');
+  await runSql('ALTER TABLE "Asset" ADD COLUMN IF NOT EXISTS "classCode" TEXT;');
+  await runSql('ALTER TABLE "Asset" ADD COLUMN IF NOT EXISTS "classDesc" TEXT;');
+  await runSql('ALTER TABLE "Asset" ADD COLUMN IF NOT EXISTS "categoryDesc" TEXT;');
+  await runSql('ALTER TABLE "Asset" ADD COLUMN IF NOT EXISTS "gsrc" TEXT;');
+  await runSql('ALTER TABLE "Asset" ADD COLUMN IF NOT EXISTS "attribute" TEXT;');
+  await runSql('ALTER TABLE "Asset" ADD COLUMN IF NOT EXISTS "environment" TEXT;');
+  await runSql('ALTER TABLE "Asset" ADD COLUMN IF NOT EXISTS "pressureBar" TEXT;');
+  await runSql('ALTER TABLE "Asset" ADD COLUMN IF NOT EXISTS "flowLps" TEXT;');
+  await runSql('ALTER TABLE "Asset" ADD COLUMN IF NOT EXISTS "supplyVoltageVolt" TEXT;');
+  await runSql('ALTER TABLE "Asset" ADD COLUMN IF NOT EXISTS "outOfService" BOOLEAN NOT NULL DEFAULT false;');
+  await runSql('ALTER TABLE "Asset" ADD COLUMN IF NOT EXISTS "serviceLife" TEXT;');
+  await runSql('ALTER TABLE "Asset" ADD COLUMN IF NOT EXISTS "locationCode" TEXT;');
+  await runSql('ALTER TABLE "Asset" ADD COLUMN IF NOT EXISTS "locationDesc" TEXT;');
+  await runSql('ALTER TABLE "Asset" ADD COLUMN IF NOT EXISTS "position" TEXT;');
+  await runSql('ALTER TABLE "Asset" ADD COLUMN IF NOT EXISTS "classOrganization" TEXT;');
+  await runSql('ALTER TABLE "Asset" ADD COLUMN IF NOT EXISTS "primarySystem" TEXT;');
+  await runSql('ALTER TABLE "Asset" ADD COLUMN IF NOT EXISTS "additionalNote" TEXT;');
+  await runSql(`
+    UPDATE "Asset"
+    SET "assetStatusText" = CASE WHEN "status" = 'ACTIVE' THEN 'INSTALLED' ELSE "status"::TEXT END,
+        "locationCode" = COALESCE(NULLIF("locationCode", ''), "room"),
+        "locationDesc" = COALESCE(NULLIF("locationDesc", ''), "room"),
+        "classCode" = COALESCE(NULLIF("classCode", ''), "assetGroup"),
+        "categoryDesc" = COALESCE(NULLIF("categoryDesc", ''), "category"),
+        "primarySystem" = COALESCE(NULLIF("primarySystem", ''), "system"),
+        "additionalNote" = COALESCE(NULLIF("additionalNote", ''), "remarks"),
+        "outOfService" = "status" IN ('DOWN', 'RETIRED')
+    WHERE "locationCode" IS NULL
+       OR "assetStatusText" = 'INSTALLED'
+       OR "classCode" IS NULL
+       OR "categoryDesc" IS NULL
+       OR "primarySystem" IS NULL;
+  `);
+  console.log("Asset import heading columns are ready.");
 }
 
 main()

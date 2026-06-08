@@ -1,0 +1,32 @@
+ALTER TABLE "Asset"
+ADD COLUMN "eqType" TEXT NOT NULL DEFAULT 'ASSET',
+ADD COLUMN "organization" TEXT,
+ADD COLUMN "assetStatusText" TEXT NOT NULL DEFAULT 'INSTALLED',
+ADD COLUMN "departmentDesc" TEXT,
+ADD COLUMN "classCode" TEXT,
+ADD COLUMN "classDesc" TEXT,
+ADD COLUMN "categoryDesc" TEXT,
+ADD COLUMN "gsrc" TEXT,
+ADD COLUMN "attribute" TEXT,
+ADD COLUMN "environment" TEXT,
+ADD COLUMN "pressureBar" TEXT,
+ADD COLUMN "flowLps" TEXT,
+ADD COLUMN "supplyVoltageVolt" TEXT,
+ADD COLUMN "outOfService" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN "serviceLife" TEXT,
+ADD COLUMN "locationCode" TEXT,
+ADD COLUMN "locationDesc" TEXT,
+ADD COLUMN "position" TEXT,
+ADD COLUMN "classOrganization" TEXT,
+ADD COLUMN "primarySystem" TEXT,
+ADD COLUMN "additionalNote" TEXT;
+
+UPDATE "Asset"
+SET "assetStatusText" = CASE WHEN "status" = 'ACTIVE' THEN 'INSTALLED' ELSE "status"::TEXT END,
+    "locationCode" = COALESCE(NULLIF("locationCode", ''), "room"),
+    "locationDesc" = COALESCE(NULLIF("locationDesc", ''), "room"),
+    "classCode" = COALESCE(NULLIF("classCode", ''), "assetGroup"),
+    "categoryDesc" = COALESCE(NULLIF("categoryDesc", ''), "category"),
+    "primarySystem" = COALESCE(NULLIF("primarySystem", ''), "system"),
+    "additionalNote" = COALESCE(NULLIF("additionalNote", ''), "remarks"),
+    "outOfService" = "status" IN ('DOWN', 'RETIRED');

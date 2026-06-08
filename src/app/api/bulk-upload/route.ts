@@ -79,21 +79,23 @@ async function firstSite() {
 
 async function importAsset(row: Row) {
   const site = await firstSite();
-  const tag = value(row, "tag", "ASSET NUMBER", "assetNumber", "Asset Code");
-  if (!tag) throw new Error("Asset Code or ASSET NUMBER is required");
-  const locationName = value(row, "Location Name", "location", "ROOM", "room") || "Unassigned";
-  const locationParts = locationName.split(/[>/,-]/).map((part) => part.trim()).filter(Boolean);
-  const name = value(row, "name", "Asset Name", "Asset Description", "Asset Description ", "assetDescription") || tag;
-  const description = value(row, "Description", "Additional description", "additionalDescription");
-  const category = value(row, "category", "Asset Type", "Asset Group", "Asset Group ", "assetGroup") || "General";
-  const system = value(row, "system", "Entity Name", "Asset Type") || category;
-  const floor = value(row, "floor", "FLOOR") || locationParts.find((part) => /floor/i.test(part)) || "Unassigned";
-  const room = value(row, "room", "ROOM", "ROOM ") || locationParts.at(-1) || "Unassigned";
-  const departmentCode = value(row, "departmentCode", "Department", "Assigned To") || "";
-  const cost = number(value(row, "purchaseCost", "Purchase Cost"), 0);
+  const tag = value(row, "EQUIPMENTNO", "tag", "ASSET NUMBER", "assetNumber", "Asset Code");
+  if (!tag) throw new Error("EQUIPMENTNO is required");
+  const locationCode = value(row, "LOCATION", "Location", "Location Name", "location", "ROOM", "room");
+  const location = locationCode ? await prisma.location.findUnique({ where: { code: locationCode } }) : null;
+  const name = value(row, "EQUIPMENTDESC", "name", "Asset Name", "Asset Description", "Asset Description ", "assetDescription") || tag;
+  const description = value(row, "ADDITIONAL_NOTE", "Description", "Additional description", "additionalDescription");
+  const category = value(row, "CATEGORY", "category", "Asset Type", "Asset Group", "Asset Group ", "assetGroup") || "General";
+  const system = value(row, "PRIMARYSYSTEM", "system", "Entity Name", "Asset Type") || category;
+  const floor = value(row, "floor", "FLOOR") || location?.floor || "Unassigned";
+  const room = locationCode || value(row, "room", "ROOM", "ROOM ") || location?.code || "Unassigned";
+  const departmentCode = value(row, "DEPARTMENT", "departmentCode", "Department", "Assigned To") || "";
+  const cost = number(value(row, "EQUIPMENTVALUE", "purchaseCost", "Purchase Cost"), 0);
   const replacementCost = number(value(row, "replacementCost", "Replacement Cost"), cost);
-  const lifeMonths = integer(value(row, "Life Expectancy (in months)", "lifeExpectancyMonths"), 96);
-  const installDate = date(value(row, "installDate", "Purchase Date"), new Date());
+  const lifeMonths = integer(value(row, "SERVICELIFE", "Life Expectancy (in months)", "lifeExpectancyMonths"), 96);
+  const installDate = date(value(row, "COMMISSIONDATE", "installDate", "Purchase Date"), new Date());
+  const outOfService = yesNo(value(row, "OUTOFSERVICE", "outOfService"), false);
+  const status = outOfService ? "RETIRED" : assetStatusFromImport(value(row, "ASSETSTATUS", "status"));
   const documentationUrl = [value(row, "documentationUrl", "URL 1"), value(row, "URL 2")].filter(Boolean).join("\n") || null;
   const remarks = [
     value(row, "remarks", "Remarks"),
@@ -101,74 +103,66 @@ async function importAsset(row: Row) {
     value(row, "Parts") ? `Parts: ${value(row, "Parts")}` : "",
     replacementCost ? `Replacement Cost: SAR ${replacementCost}` : "",
   ].filter(Boolean).join("\n");
+  const assetData = {
+    name,
+    category,
+    system,
+    eqType: value(row, "EQTYPE") || "ASSET",
+    organization: value(row, "ORGANIZATION") || null,
+    criticality: priority(row.criticality),
+    status,
+    assetStatusText: value(row, "ASSETSTATUS") || status,
+    serialNumber: value(row, "SERIALNUMBER", "serialNumber", "Serial No.") || `${tag}-SN`,
+    siteCode: value(row, "siteCode", "SITE") || location?.site || "",
+    zone: value(row, "zone", "ZONE") || location?.parentLocation || "",
+    buildingCode: value(row, "buildingCode", "BLDG") || location?.building || "",
+    assetGroup: value(row, "CLASS", "classCode") || category,
+    assetDescription: name,
+    additionalDescription: description,
+    departmentDesc: value(row, "DEPARTMENT_DESC") || null,
+    classCode: value(row, "CLASS") || null,
+    classDesc: value(row, "CLASS_DESC") || null,
+    categoryDesc: value(row, "CATEGORY_DESC") || null,
+    gsrc: value(row, "GSRC") || null,
+    attribute: value(row, "ATTRIBUTE") || null,
+    environment: value(row, "ENVIRONMENT") || null,
+    pressureBar: value(row, "PRESSURE_BAR") || null,
+    flowLps: value(row, "FLOW_LPS") || null,
+    supplyVoltageVolt: value(row, "SUPPLY_VOLTAGE_Volt") || null,
+    outOfService,
+    serviceLife: value(row, "SERVICELIFE") || null,
+    locationCode: locationCode || null,
+    locationDesc: value(row, "LOCATION_DESC") || location?.description || null,
+    position: value(row, "POSITION") || null,
+    classOrganization: value(row, "CLASSORGANIZATION") || null,
+    primarySystem: value(row, "PRIMARYSYSTEM") || null,
+    additionalNote: value(row, "ADDITIONAL_NOTE") || null,
+    parentAsset: value(row, "parentAsset", "Parent Asset", "Parent Asset ") || "TOP LEVEL",
+    departmentCode,
+    assignedTeamCode: value(row, "assignedTeamCode", "Assigned Team", "Team Code"),
+    assignedSupervisorEmail: value(row, "assignedSupervisorEmail", "Supervisor", "Supervisor Email"),
+    remarks,
+    manufacturer: value(row, "MANUFACTURER", "manufacturer", "Manufacturer") || "Not specified",
+    model: value(row, "MODEL", "model", "Model No.") || "Not specified",
+    floor,
+    room,
+    installDate,
+    replacementDate: date(value(row, "ENDOFUSEFULLIFE"), addDays(installDate, lifeMonths * 30)),
+    warrantyExpiry: date(value(row, "warrantyExpiry", "Warranty Expiry Date"), addYears(new Date(), 1)),
+    contractRef: value(row, "contractRef", "Vendors") || "Not assigned",
+    documentationUrl,
+    purchaseCost: cost,
+    salvageValue: number(value(row, "salvageValue", "Salvage Value"), Math.round(cost * 0.1)),
+    depreciationRate: number(row.depreciationRate, 10),
+    conditionScore: number(row.conditionScore, 85),
+    qrCode: value(row, "qrCode", "QR Code") || `CAFM-ASSET:${tag}`,
+  };
   const asset = await prisma.asset.upsert({
     where: { tag },
-    update: {
-      name,
-      category,
-      system,
-      criticality: priority(row.criticality),
-      status: assetStatus(row.status),
-      serialNumber: value(row, "serialNumber", "Serial No.") || `${tag}-SN`,
-      siteCode: value(row, "siteCode", "SITE"),
-      zone: value(row, "zone", "ZONE"),
-      buildingCode: value(row, "buildingCode", "BLDG"),
-      assetGroup: category,
-      assetDescription: name,
-      additionalDescription: description,
-      parentAsset: value(row, "parentAsset", "Parent Asset", "Parent Asset ") || "TOP LEVEL",
-      departmentCode,
-      assignedTeamCode: value(row, "assignedTeamCode", "Assigned Team", "Team Code"),
-      assignedSupervisorEmail: value(row, "assignedSupervisorEmail", "Supervisor", "Supervisor Email"),
-      remarks,
-      manufacturer: value(row, "manufacturer", "Manufacturer") || "Not specified",
-      model: value(row, "model", "Model No.") || "Not specified",
-      floor,
-      room,
-      installDate,
-      replacementDate: addDays(installDate, lifeMonths * 30),
-      warrantyExpiry: date(value(row, "warrantyExpiry", "Warranty Expiry Date"), addYears(new Date(), 1)),
-      contractRef: value(row, "contractRef", "Vendors") || "Not assigned",
-      documentationUrl,
-      purchaseCost: cost,
-      salvageValue: number(value(row, "salvageValue", "Salvage Value"), Math.round(cost * 0.1)),
-      depreciationRate: number(row.depreciationRate, 10),
-      conditionScore: number(row.conditionScore, 85),
-      qrCode: value(row, "qrCode", "QR Code") || `CAFM-ASSET:${tag}`,
-    },
+    update: assetData,
     create: {
       tag,
-      name,
-      category,
-      system,
-      criticality: priority(row.criticality),
-      status: assetStatus(row.status),
-      serialNumber: value(row, "serialNumber", "Serial No.") || `${tag}-SN`,
-      siteCode: value(row, "siteCode", "SITE"),
-      zone: value(row, "zone", "ZONE"),
-      buildingCode: value(row, "buildingCode", "BLDG"),
-      assetGroup: category,
-      assetDescription: name,
-      additionalDescription: description,
-      parentAsset: value(row, "parentAsset", "Parent Asset", "Parent Asset ") || "TOP LEVEL",
-      departmentCode,
-      assignedTeamCode: value(row, "assignedTeamCode", "Assigned Team", "Team Code"),
-      assignedSupervisorEmail: value(row, "assignedSupervisorEmail", "Supervisor", "Supervisor Email"),
-      remarks,
-      manufacturer: value(row, "manufacturer", "Manufacturer") || "Not specified",
-      model: value(row, "model", "Model No.") || "Not specified",
-      installDate,
-      replacementDate: addDays(installDate, lifeMonths * 30),
-      warrantyExpiry: date(value(row, "warrantyExpiry", "Warranty Expiry Date"), addYears(new Date(), 1)),
-      contractRef: value(row, "contractRef", "Vendors") || "Not assigned",
-      documentationUrl,
-      purchaseCost: cost,
-      salvageValue: number(value(row, "salvageValue", "Salvage Value"), Math.round(cost * 0.1)),
-      depreciationRate: number(row.depreciationRate, 10),
-      conditionScore: number(row.conditionScore, 85),
-      floor,
-      room,
-      qrCode: value(row, "qrCode", "QR Code") || `CAFM-ASSET:${tag}`,
+      ...assetData,
       siteId: site.id,
       buildingId: site.buildings[0]?.id,
     },
@@ -474,6 +468,13 @@ function priority(value: string | undefined) {
 function assetStatus(value: string | undefined) {
   const normalized = String(value || "ACTIVE").toUpperCase();
   return ["ACTIVE", "STANDBY", "DOWN", "RETIRED"].includes(normalized) ? normalized as "ACTIVE" | "STANDBY" | "DOWN" | "RETIRED" : "ACTIVE";
+}
+
+function assetStatusFromImport(value: string | undefined) {
+  const normalized = String(value || "INSTALLED").toUpperCase();
+  if (["INSTALLED", "OPERATING", "ONLINE"].includes(normalized)) return "ACTIVE";
+  if (["OUT OF SERVICE", "OUTOFSERVICE", "INACTIVE"].includes(normalized)) return "RETIRED";
+  return assetStatus(normalized);
 }
 
 function workStatus(value: string | undefined, fallback: "NEW" | "ASSIGNED") {

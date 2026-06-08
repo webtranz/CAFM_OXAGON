@@ -239,6 +239,40 @@ const moduleGroups: ModuleGroup[] = [
 const healthColors = ["#35a852", "#0f8b8d", "#ffd166", "#f45d48"];
 const PAGE_SIZE = 100;
 const HOUSING_FIELD_CLASS = "h-11 rounded-lg border border-slate-200 bg-white px-3 outline-none focus:border-lagoon";
+const assetRegisterColumns: [string, string][] = [
+  ["equipmentNo", "EQUIPMENTNO"],
+  ["equipmentDesc", "EQUIPMENTDESC"],
+  ["assetStatusText", "ASSETSTATUS"],
+  ["eqType", "EQTYPE"],
+  ["organization", "ORGANIZATION"],
+  ["commissionDate", "COMMISSIONDATE"],
+  ["departmentCode", "DEPARTMENT"],
+  ["departmentDesc", "DEPARTMENT_DESC"],
+  ["classCode", "CLASS"],
+  ["classDesc", "CLASS_DESC"],
+  ["category", "CATEGORY"],
+  ["categoryDesc", "CATEGORY_DESC"],
+  ["serialNumber", "SERIALNUMBER"],
+  ["model", "MODEL"],
+  ["manufacturer", "MANUFACTURER"],
+  ["gsrc", "GSRC"],
+  ["endOfUsefulLife", "ENDOFUSEFULLIFE"],
+  ["attribute", "ATTRIBUTE"],
+  ["environment", "ENVIRONMENT"],
+  ["pressureBar", "PRESSURE_BAR"],
+  ["flowLps", "FLOW_LPS"],
+  ["supplyVoltageVolt", "SUPPLY_VOLTAGE_Volt"],
+  ["outOfServiceDisplay", "OUTOFSERVICE"],
+  ["serviceLife", "SERVICELIFE"],
+  ["locationCode", "LOCATION"],
+  ["locationDesc", "LOCATION_DESC"],
+  ["position", "POSITION"],
+  ["classOrganization", "CLASSORGANIZATION"],
+  ["equipmentValue", "EQUIPMENTVALUE"],
+  ["primarySystem", "PRIMARYSYSTEM"],
+  ["additionalNote", "ADDITIONAL_NOTE"],
+];
+const assetTemplateHeader = assetRegisterColumns.map(([, label]) => label).join(",");
 const modulePermissions: Record<string, string> = {
   assets: "assets.manage",
   work: "work.execute",
@@ -1116,20 +1150,32 @@ function Assets({
   const [assetWorkOrderDraft, setAssetWorkOrderDraft] = useState<any | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
-  const [filterField, setFilterField] = useState("name");
+  const [filterField, setFilterField] = useState("equipmentDesc");
   const [filterValue, setFilterValue] = useState("");
-  const [siteFilter, setSiteFilter] = useState("");
-  const [buildingFilter, setBuildingFilter] = useState("");
-  const [floorFilter, setFloorFilter] = useState("");
-  const [roomFilter, setRoomFilter] = useState("");
-  const filtered = assets.filter((asset) => {
+  const [locationFilter, setLocationFilter] = useState("");
+  const [classFilter, setClassFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const assetRows = assets.map((asset) => ({
+    ...asset,
+    equipmentNo: asset.tag,
+    equipmentDesc: asset.assetDescription ?? asset.name,
+    assetStatusText: asset.assetStatusText ?? (asset.status === "ACTIVE" ? "INSTALLED" : asset.status),
+    commissionDate: formatDateCell(asset.installDate),
+    endOfUsefulLife: formatDateCell(asset.replacementDate),
+    outOfServiceDisplay: asset.outOfService ? "YES" : "NO",
+    locationCode: asset.locationCode ?? asset.room,
+    locationDesc: asset.locationDesc ?? asset.location?.description ?? "",
+    equipmentValue: asset.equipmentValue ?? asset.purchaseCost,
+    primarySystem: asset.primarySystem ?? asset.system,
+    additionalNote: asset.additionalNote ?? asset.remarks,
+  }));
+  const filtered = assetRows.filter((asset) => {
     const text = String(asset[filterField] ?? asset.assetDescription ?? asset.name ?? "").toLowerCase();
     const textMatch = !filterValue || text.includes(filterValue.toLowerCase());
-    const siteMatch = !siteFilter || asset.siteCode === siteFilter || asset.site?.name === siteFilter;
-    const buildingMatch = !buildingFilter || asset.buildingCode === buildingFilter || asset.building?.code === buildingFilter || asset.building?.name === buildingFilter;
-    const floorMatch = !floorFilter || asset.floor === floorFilter;
-    const roomMatch = !roomFilter || asset.room === roomFilter;
-    return textMatch && siteMatch && buildingMatch && floorMatch && roomMatch;
+    const locationMatch = !locationFilter || asset.locationCode === locationFilter;
+    const classMatch = !classFilter || asset.classCode === classFilter || asset.category === classFilter;
+    const statusMatch = !statusFilter || asset.assetStatusText === statusFilter;
+    return textMatch && locationMatch && classMatch && statusMatch;
   });
   const selectedAsset = assets.find((asset) => asset.id === selectedAssetId) ?? assets[0];
   const [page, setPage] = useState(1);
@@ -1137,26 +1183,14 @@ function Assets({
   const currentPage = Math.min(page, totalPages);
   const startIndex = (currentPage - 1) * PAGE_SIZE;
   const visibleAssets = filtered.slice(startIndex, startIndex + PAGE_SIZE);
-  const filterOptions = [
-    ["name", "Name"],
-    ["assetGroup", "Asset Type"],
-    ["room", "Location"],
-    ["manufacturer", "Manufacturer"],
-    ["model", "Model"],
-    ["additionalDescription", "Description"],
-    ["status", "Status"],
-    ["parentAsset", "Parent Asset"],
-    ["qrCode", "QR Code"],
-    ["serialNumber", "Serial No."],
-  ];
-  const siteOptions = Array.from(new Set([...assets.map((asset) => asset.siteCode || asset.site?.name).filter(Boolean), ...locations.map((location) => location.site).filter(Boolean)]));
-  const buildingOptions = Array.from(new Set([...assets.filter((asset) => !siteFilter || asset.siteCode === siteFilter || asset.site?.name === siteFilter).map((asset) => asset.buildingCode || asset.building?.code || asset.building?.name).filter(Boolean), ...locations.filter((location) => !siteFilter || location.site === siteFilter).map((location) => location.building).filter(Boolean)]));
-  const floorOptions = Array.from(new Set([...assets.filter((asset) => (!siteFilter || asset.siteCode === siteFilter || asset.site?.name === siteFilter) && (!buildingFilter || asset.buildingCode === buildingFilter || asset.building?.code === buildingFilter || asset.building?.name === buildingFilter)).map((asset) => asset.floor).filter(Boolean), ...locations.filter((location) => (!siteFilter || location.site === siteFilter) && (!buildingFilter || location.building === buildingFilter)).map((location) => location.floor).filter(Boolean)]));
-  const roomOptions = Array.from(new Set([...assets.filter((asset) => (!siteFilter || asset.siteCode === siteFilter || asset.site?.name === siteFilter) && (!buildingFilter || asset.buildingCode === buildingFilter || asset.building?.code === buildingFilter || asset.building?.name === buildingFilter) && (!floorFilter || asset.floor === floorFilter)).map((asset) => asset.room).filter(Boolean), ...locations.filter((location) => (!siteFilter || location.site === siteFilter) && (!buildingFilter || location.building === buildingFilter) && (!floorFilter || location.floor === floorFilter)).map((location) => location.room).filter(Boolean)]));
+  const filterOptions = assetRegisterColumns;
+  const locationOptions = Array.from(new Set([...assetRows.map((asset) => asset.locationCode).filter(Boolean), ...locations.map((location) => location.code).filter(Boolean)]));
+  const classOptions = Array.from(new Set([...assetRows.map((asset) => asset.classCode || asset.category).filter(Boolean)]));
+  const statusOptions = Array.from(new Set(assetRows.map((asset) => asset.assetStatusText).filter(Boolean)));
 
   useEffect(() => {
     setPage(1);
-  }, [query, assets.length, filterField, filterValue, siteFilter, buildingFilter, floorFilter, roomFilter]);
+  }, [query, assets.length, filterField, filterValue, locationFilter, classFilter, statusFilter]);
 
   return (
     <section className="grid gap-5">
@@ -1184,39 +1218,27 @@ function Assets({
             </div>
           </div>
         )}
-        <div className="mb-4 grid gap-3 rounded-lg bg-slate-50 p-3 md:grid-cols-5">
-          <select value={siteFilter} onChange={(event) => { setSiteFilter(event.target.value); setBuildingFilter(""); setFloorFilter(""); setRoomFilter(""); }} className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold">
-            <option value="">Site</option>
-            {siteOptions.map((site) => <option key={site} value={site}>{site}</option>)}
+        <div className="mb-4 grid gap-3 rounded-lg bg-slate-50 p-3 md:grid-cols-4">
+          <select value={locationFilter} onChange={(event) => setLocationFilter(event.target.value)} className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold">
+            <option value="">LOCATION</option>
+            {locationOptions.map((location) => <option key={location} value={location}>{location}</option>)}
           </select>
-          <select value={buildingFilter} onChange={(event) => { setBuildingFilter(event.target.value); setFloorFilter(""); setRoomFilter(""); }} className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold">
-            <option value="">Building</option>
-            {buildingOptions.map((building) => <option key={building} value={building}>{building}</option>)}
+          <select value={classFilter} onChange={(event) => setClassFilter(event.target.value)} className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold">
+            <option value="">CLASS / CATEGORY</option>
+            {classOptions.map((assetClass) => <option key={assetClass} value={assetClass}>{assetClass}</option>)}
           </select>
-          <select value={floorFilter} onChange={(event) => { setFloorFilter(event.target.value); setRoomFilter(""); }} className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold">
-            <option value="">Floor</option>
-            {floorOptions.map((floor) => <option key={floor} value={floor}>{floor}</option>)}
+          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold">
+            <option value="">ASSETSTATUS</option>
+            {statusOptions.map((status) => <option key={status} value={status}>{status}</option>)}
           </select>
-          <select value={roomFilter} onChange={(event) => setRoomFilter(event.target.value)} className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold">
-            <option value="">Room</option>
-            {roomOptions.map((room) => <option key={room} value={room}>{room}</option>)}
-          </select>
-          <button type="button" onClick={() => { setSiteFilter(""); setBuildingFilter(""); setFloorFilter(""); setRoomFilter(""); }} className="h-11 rounded-lg bg-white px-3 text-sm font-black text-lagoon">Clear Location</button>
+          <button type="button" onClick={() => { setLocationFilter(""); setClassFilter(""); setStatusFilter(""); }} className="h-11 rounded-lg bg-white px-3 text-sm font-black text-lagoon">Clear Filters</button>
         </div>
         <div className="max-w-full overflow-auto rounded-lg border border-slate-200 scrollbar-thin">
-          <table className="min-w-[1500px] border-collapse bg-white text-sm">
+          <table className="min-w-[3600px] border-collapse bg-white text-sm">
             <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
               <tr>
                 <th className="px-3 py-3"><input type="checkbox" /></th>
-                <th className="px-3 py-3">Name</th>
-                <th className="px-3 py-3">Asset Type</th>
-                <th className="px-3 py-3">Location</th>
-                <th className="px-3 py-3">Manufacturer</th>
-                <th className="px-3 py-3">Model</th>
-                <th className="px-3 py-3">URL</th>
-                <th className="px-3 py-3">Description</th>
-                <th className="px-3 py-3">Serial No.</th>
-                <th className="px-3 py-3">Status</th>
+                {assetRegisterColumns.map(([, label]) => <th key={label} className="px-3 py-3">{label}</th>)}
                 {isAdmin && <th className="px-3 py-3">Actions</th>}
               </tr>
             </thead>
@@ -1224,15 +1246,11 @@ function Assets({
               {visibleAssets.map((asset) => (
                 <tr key={asset.id} onClick={() => { setSelectedAssetId(asset.id); setPreviewAsset(asset); }} className="cursor-pointer border-t border-slate-100 hover:bg-slate-50">
                   <td className="px-3 py-3"><input type="checkbox" onClick={(event) => event.stopPropagation()} /></td>
-                  <td className="px-3 py-3 font-black text-ink">{asset.assetDescription ?? asset.name}</td>
-                  <td className="px-3 py-3">{asset.assetGroup ?? asset.category}</td>
-                  <td className="px-3 py-3 text-lagoon">{[asset.buildingCode, asset.floor, asset.room].filter(Boolean).join(" > ") || "-"}</td>
-                  <td className="px-3 py-3">{asset.manufacturer}</td>
-                  <td className="px-3 py-3">{asset.model}</td>
-                  <td className="px-3 py-3 text-lagoon">{asset.documentationUrl ? <a href={String(asset.documentationUrl).split(/\s+/)[0]} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>{asset.assetDescription ?? asset.name}</a> : "-"}</td>
-                  <td className="max-w-[360px] px-3 py-3"><div className="line-clamp-2">{asset.additionalDescription || asset.remarks || "-"}</div></td>
-                  <td className="px-3 py-3">{asset.serialNumber || "-"}</td>
-                  <td className="px-3 py-3"><span className="rounded-full bg-lime-100 px-2 py-1 text-xs font-black text-lime-700">{asset.status === "ACTIVE" ? "Online" : asset.status}</span></td>
+                  {assetRegisterColumns.map(([key, label]) => (
+                    <td key={`${asset.id}-${key}`} className={`px-3 py-3 ${label === "LOCATION" ? "font-black text-lagoon" : ""}`}>
+                      {label === "EQUIPMENTVALUE" ? <CurrencyAmount value={asset[key]} /> : displayValue(asset[key])}
+                    </td>
+                  ))}
                   {isAdmin && (
                     <td className="px-3 py-3">
                       <button type="button" disabled={saving} onClick={(event) => { event.stopPropagation(); deleteAsset(asset.id); }} className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Delete</button>
@@ -1257,7 +1275,7 @@ function Assets({
             setPreviewAsset(null);
           }}
         >
-          {canManageAssets && previewAsset.editing && <AssetEditForm asset={previewAsset} teams={teams} users={users} saving={saving} onSubmit={(formData) => updateAsset(previewAsset.id, formData)} />}
+          {canManageAssets && previewAsset.editing && <AssetEditForm asset={previewAsset} teams={teams} users={users} locations={locations} saving={saving} onSubmit={(formData) => updateAsset(previewAsset.id, formData)} />}
         </AssetPreviewModal>
       )}
       {assetWorkOrderDraft && (
@@ -1296,33 +1314,23 @@ function AssetCreateForm({ teams, users, locations, onSubmit, saving }: { teams:
     event.preventDefault();
     const form = event.currentTarget;
     const formData = new FormData(form);
-    const assetNumber = String(formData.get("tag") ?? "").trim();
-    const assetDescription = String(formData.get("assetDescription") ?? "").trim();
-    const assetGroup = String(formData.get("assetGroup") ?? "").trim();
-    const lifeMonths = Number(formData.get("lifeExpectancyMonths") || 96);
-    const purchaseDate = String(formData.get("installDate") || "");
-    const url1 = String(formData.get("documentationUrl") || "").trim();
-    const url2 = String(formData.get("documentationUrl2") || "").trim();
-    const vendors = String(formData.get("contractRef") || "").trim();
-    const parts = String(formData.get("remarks") || "").trim();
-    const replacementCost = String(formData.get("replacementCost") || "").trim();
+    const equipmentNo = String(formData.get("tag") ?? "").trim();
+    const equipmentDesc = String(formData.get("equipmentDesc") ?? "").trim();
+    const classCode = String(formData.get("classCode") ?? "").trim();
+    const category = String(formData.get("category") ?? "").trim();
+    const primarySystem = String(formData.get("primarySystem") ?? "").trim();
+    const locationCode = String(formData.get("locationCode") ?? "").trim();
 
-    formData.set("name", assetDescription || assetNumber);
-    formData.set("category", assetGroup || "General");
-    formData.set("system", String(formData.get("system") || assetGroup || "General"));
+    formData.set("name", equipmentDesc || equipmentNo);
+    formData.set("assetDescription", equipmentDesc || equipmentNo);
+    formData.set("assetGroup", classCode || category || "General");
+    formData.set("category", category || String(formData.get("categoryDesc") || classCode || "General"));
+    formData.set("system", primarySystem || classCode || category || "General");
     formData.set("criticality", "MEDIUM");
     formData.set("conditionScore", "85");
-    if (purchaseDate) {
-      const replacement = new Date(purchaseDate);
-      replacement.setMonth(replacement.getMonth() + (Number.isFinite(lifeMonths) ? lifeMonths : 96));
-      formData.set("replacementDate", replacement.toISOString().slice(0, 10));
-    }
-    formData.set("documentationUrl", [url1, url2].filter(Boolean).join("\n"));
-    formData.set("remarks", [
-      parts ? `Parts: ${parts}` : "",
-      vendors ? `Vendors: ${vendors}` : "",
-      replacementCost ? `Replacement Cost: SAR ${formatCurrencyValue(replacementCost)}` : "",
-    ].filter(Boolean).join("\n"));
+    formData.set("room", locationCode);
+    formData.set("purchaseCost", String(formData.get("equipmentValue") || ""));
+    formData.set("remarks", String(formData.get("additionalNote") || ""));
 
     await onSubmit(formData);
     form.reset();
@@ -1336,43 +1344,56 @@ function AssetCreateForm({ teams, users, locations, onSubmit, saving }: { teams:
         </div>
         <div>
           <h3 className="text-xl font-black">Register Asset</h3>
-          <p className="text-sm font-bold text-slate-500">Manual entry using the asset bulk upload template fields</p>
+          <p className="text-sm font-bold text-slate-500">Manual entry using the Empty-Assets workbook headings</p>
         </div>
       </div>
       <div className="grid gap-3">
-        <AssetTextField label="Entity Name" name="system" />
-        <AssetTextField label="Asset Name" name="assetDescription" />
-        <AssetTextField label="Description" name="additionalDescription" />
-        <AssetLocationSelects locations={locations} />
-        <AssetTextField label="Asset Type" name="assetGroup" />
+        <AssetTextField label="EQUIPMENTNO" name="tag" required />
+        <AssetTextField label="EQUIPMENTDESC" name="equipmentDesc" required />
         <div className="grid gap-3 sm:grid-cols-2">
-          <AssetTextField label="Model No." name="model" />
-          <AssetTextField label="Manufacturer" name="manufacturer" />
+          <AssetTextField label="ASSETSTATUS" name="assetStatusText" defaultValue="INSTALLED" />
+          <AssetTextField label="EQTYPE" name="eqType" defaultValue="ASSET" />
+        </div>
+        <AssetTextField label="ORGANIZATION" name="organization" />
+        <div className="grid gap-3 sm:grid-cols-2">
+          <AssetTextField label="COMMISSIONDATE" name="installDate" type="date" />
+          <AssetTextField label="DEPARTMENT" name="departmentCode" />
+        </div>
+        <AssetTextField label="DEPARTMENT_DESC" name="departmentDesc" />
+        <div className="grid gap-3 sm:grid-cols-2">
+          <AssetTextField label="CLASS" name="classCode" />
+          <AssetTextField label="CLASS_DESC" name="classDesc" />
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
-          <AssetTextField label="Serial No." name="serialNumber" />
-          <AssetTextField label="Purchase Date" name="installDate" type="date" />
-        </div>
-        <AssetTextField label="QR Code" name="qrCode" />
-        <AssetTextField label="Parent Asset" name="parentAsset" />
-        <AssetTextField label="Department Code" name="departmentCode" />
-        <AssetAssignmentFields teams={teams} users={users} />
-        <AssetTextField label="Vendors" name="contractRef" />
-        <AssetTextField label="Asset Code" name="tag" />
-        <AssetTextField label="Parts" name="remarks" />
-        <AssetTextField label="URL 1" name="documentationUrl" />
-        <AssetTextField label="URL Label 1" name="urlLabel1" />
-        <AssetTextField label="URL 2" name="documentationUrl2" />
-        <AssetTextField label="URL Label 2" name="urlLabel2" />
-        <div className="grid gap-3 sm:grid-cols-2">
-          <AssetTextField label="Warranty Expiry Date" name="warrantyExpiry" type="date" />
-          <AssetTextField label="Life Expectancy (in months)" name="lifeExpectancyMonths" type="number" />
+          <AssetTextField label="CATEGORY" name="category" />
+          <AssetTextField label="CATEGORY_DESC" name="categoryDesc" />
         </div>
         <div className="grid gap-3 sm:grid-cols-3">
-          <AssetTextField label="Purchase Cost" name="purchaseCost" type="number" />
-          <AssetTextField label="Replacement Cost" name="replacementCost" type="number" />
-          <AssetTextField label="Salvage Value" name="salvageValue" type="number" />
+          <AssetTextField label="SERIALNUMBER" name="serialNumber" />
+          <AssetTextField label="MODEL" name="model" />
+          <AssetTextField label="MANUFACTURER" name="manufacturer" />
         </div>
+        <AssetTextField label="GSRC" name="gsrc" />
+        <div className="grid gap-3 sm:grid-cols-2">
+          <AssetTextField label="ENDOFUSEFULLIFE" name="replacementDate" type="date" />
+          <AssetTextField label="SERVICELIFE" name="serviceLife" />
+        </div>
+        <AssetTextField label="ATTRIBUTE" name="attribute" />
+        <AssetTextField label="ENVIRONMENT" name="environment" />
+        <div className="grid gap-3 sm:grid-cols-3">
+          <AssetTextField label="PRESSURE_BAR" name="pressureBar" />
+          <AssetTextField label="FLOW_LPS" name="flowLps" />
+          <AssetTextField label="SUPPLY_VOLTAGE_Volt" name="supplyVoltageVolt" />
+        </div>
+        <AssetOutOfServiceSelect />
+        <AssetLocationCodeSelect locations={locations} />
+        <AssetTextField label="LOCATION_DESC" name="locationDesc" />
+        <AssetTextField label="POSITION" name="position" />
+        <AssetTextField label="CLASSORGANIZATION" name="classOrganization" />
+        <AssetTextField label="EQUIPMENTVALUE" name="equipmentValue" type="number" />
+        <AssetTextField label="PRIMARYSYSTEM" name="primarySystem" />
+        <AssetTextField label="ADDITIONAL_NOTE" name="additionalNote" />
+        <AssetAssignmentFields teams={teams} users={users} />
         <button disabled={saving} className="mt-2 flex h-11 items-center justify-center gap-2 rounded-lg bg-ink px-4 font-black text-white disabled:cursor-not-allowed disabled:bg-slate-400">
           <Plus size={18} />
           {saving ? "Saving..." : "Save Asset"}
@@ -1397,61 +1418,40 @@ function AssetTextField({ label, name, required = false, defaultValue = "", type
   );
 }
 
-function AssetLocationSelects({
+function AssetOutOfServiceSelect({ defaultValue = "NO" }: { defaultValue?: string }) {
+  return (
+    <label className="grid gap-1 text-sm font-bold text-slate-600">
+      OUTOFSERVICE
+      <select name="outOfService" defaultValue={defaultValue} className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold outline-none focus:border-lagoon">
+        <option value="NO">NO</option>
+        <option value="YES">YES</option>
+      </select>
+    </label>
+  );
+}
+
+function AssetLocationCodeSelect({
   locations,
-  defaults = {},
+  defaultValue = "",
 }: {
   locations: any[];
-  defaults?: { siteCode?: string; buildingCode?: string; floor?: string; room?: string };
+  defaultValue?: string;
 }) {
-  const [site, setSite] = useState(defaults.siteCode ?? "");
-  const [building, setBuilding] = useState(defaults.buildingCode ?? "");
-  const [floor, setFloor] = useState(defaults.floor ?? "");
-  const [room, setRoom] = useState(defaults.room ?? "");
-  const optionValues = (field: "site" | "building" | "floor" | "room") => Array.from(new Set(
-    locations
-      .filter((location) => !site || field === "site" || location.site === site)
-      .filter((location) => !building || field === "site" || field === "building" || location.building === building)
-      .filter((location) => !floor || field === "site" || field === "building" || field === "floor" || location.floor === floor)
-      .map((location) => location[field])
-      .filter(Boolean)
-  ));
   const fieldClass = "h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold outline-none focus:border-lagoon";
+  const options = Array.from(new Map(locations.filter((location) => location.code).map((location) => [location.code, location])).values());
 
   return (
-    <div className="grid gap-3 rounded-lg bg-slate-50 p-3">
-      <p className="text-xs font-black uppercase text-slate-500">Location drill-down</p>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <label className="grid gap-1 text-sm font-bold text-slate-600">
-          Site
-          <select name="siteCode" value={site} onChange={(event) => { setSite(event.target.value); setBuilding(""); setFloor(""); setRoom(""); }} className={fieldClass}>
-            <option value="">Select site</option>
-            {optionValues("site").map((value) => <option key={value} value={value}>{value}</option>)}
-          </select>
-        </label>
-        <label className="grid gap-1 text-sm font-bold text-slate-600">
-          Building
-          <select name="buildingCode" value={building} onChange={(event) => { setBuilding(event.target.value); setFloor(""); setRoom(""); }} className={fieldClass}>
-            <option value="">Select building</option>
-            {optionValues("building").map((value) => <option key={value} value={value}>{value}</option>)}
-          </select>
-        </label>
-        <label className="grid gap-1 text-sm font-bold text-slate-600">
-          Floor
-          <select name="floor" value={floor} onChange={(event) => { setFloor(event.target.value); setRoom(""); }} className={fieldClass}>
-            <option value="">Select floor</option>
-            {optionValues("floor").map((value) => <option key={value} value={value}>{value}</option>)}
-          </select>
-        </label>
-        <label className="grid gap-1 text-sm font-bold text-slate-600">
-          Room
-          <select name="room" value={room} onChange={(event) => setRoom(event.target.value)} className={fieldClass}>
-            <option value="">Select room</option>
-            {optionValues("room").map((value) => <option key={value} value={value}>{value}</option>)}
-          </select>
-        </label>
-      </div>
-    </div>
+    <label className="grid gap-1 text-sm font-bold text-slate-600">
+      LOCATION
+      <select name="locationCode" defaultValue={defaultValue} className={fieldClass}>
+        <option value="">Select LOCATION from location table</option>
+        {options.map((location) => (
+          <option key={location.id ?? location.code} value={location.code}>
+            {location.code}{location.description ? ` - ${location.description}` : ""}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
 
@@ -1531,15 +1531,23 @@ function AssetIdentity({ asset }: { asset: any }) {
           ))}
         </div>
         <div className="mt-4 grid gap-2 text-sm text-slate-700">
-          <span>Serial: {asset.serialNumber ?? "-"}</span>
-          <span>Site / Zone / Building: {asset.siteCode ?? "-"} / {asset.zone ?? "-"} / {asset.buildingCode ?? "-"}</span>
-          <span>Asset group: {asset.assetGroup ?? "-"}</span>
-          <span>Description: {asset.assetDescription ?? asset.name ?? "-"}</span>
-          <span>Additional description: {asset.additionalDescription ?? "-"}</span>
-          <span>Parent asset: {asset.parentAsset ?? "-"}</span>
-          <span>Department: {asset.departmentCode ?? "-"}</span>
-          <span>Floor / Room: {asset.floor ?? "-"} / {asset.room ?? "-"}</span>
-          <span>Remarks: {asset.remarks ?? "-"}</span>
+          <span>EQUIPMENTNO: {asset.tag ?? "-"}</span>
+          <span>EQUIPMENTDESC: {asset.assetDescription ?? asset.name ?? "-"}</span>
+          <span>ASSETSTATUS: {asset.assetStatusText ?? asset.status ?? "-"}</span>
+          <span>EQTYPE: {asset.eqType ?? "-"}</span>
+          <span>ORGANIZATION: {asset.organization ?? "-"}</span>
+          <span>DEPARTMENT: {asset.departmentCode ?? "-"}</span>
+          <span>DEPARTMENT_DESC: {asset.departmentDesc ?? "-"}</span>
+          <span>CLASS: {asset.classCode ?? asset.assetGroup ?? "-"}</span>
+          <span>CLASS_DESC: {asset.classDesc ?? "-"}</span>
+          <span>CATEGORY: {asset.category ?? "-"}</span>
+          <span>CATEGORY_DESC: {asset.categoryDesc ?? "-"}</span>
+          <span>SERIALNUMBER: {asset.serialNumber ?? "-"}</span>
+          <span>MODEL / MANUFACTURER: {asset.model ?? "-"} / {asset.manufacturer ?? "-"}</span>
+          <span>LOCATION: {asset.locationCode ?? asset.room ?? "-"}</span>
+          <span>LOCATION_DESC: {asset.locationDesc ?? "-"}</span>
+          <span>PRIMARYSYSTEM: {asset.primarySystem ?? asset.system ?? "-"}</span>
+          <span>ADDITIONAL_NOTE: {asset.additionalNote ?? asset.remarks ?? "-"}</span>
           <span>Warranty: {asset.warrantyExpiry ? new Date(asset.warrantyExpiry).toLocaleDateString() : "-"}</span>
           <span>Contract: {asset.contractRef ?? "-"}</span>
           <span>Book value: <CurrencyAmount value={bookValue} /></span>
@@ -1549,82 +1557,84 @@ function AssetIdentity({ asset }: { asset: any }) {
   );
 }
 
-function AssetEditForm({ asset, teams, users, saving, onSubmit }: { asset: any; teams: any[]; users: any[]; saving: boolean; onSubmit: (formData: FormData) => void }) {
+function AssetEditForm({ asset, teams, users, locations, saving, onSubmit }: { asset: any; teams: any[]; users: any[]; locations: any[]; saving: boolean; onSubmit: (formData: FormData) => void }) {
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    await onSubmit(new FormData(event.currentTarget));
+    const formData = new FormData(event.currentTarget);
+    const equipmentNo = String(formData.get("tag") ?? "").trim();
+    const equipmentDesc = String(formData.get("equipmentDesc") ?? "").trim();
+    const classCode = String(formData.get("classCode") ?? "").trim();
+    const category = String(formData.get("category") ?? "").trim();
+    const primarySystem = String(formData.get("primarySystem") ?? "").trim();
+    const locationCode = String(formData.get("locationCode") ?? "").trim();
+    formData.set("name", equipmentDesc || equipmentNo);
+    formData.set("assetDescription", equipmentDesc || equipmentNo);
+    formData.set("assetGroup", classCode || category || "General");
+    formData.set("category", category || String(formData.get("categoryDesc") || classCode || "General"));
+    formData.set("system", primarySystem || classCode || category || "General");
+    formData.set("room", locationCode);
+    formData.set("purchaseCost", String(formData.get("equipmentValue") || ""));
+    formData.set("remarks", String(formData.get("additionalNote") || ""));
+    await onSubmit(formData);
   }
 
-  const fieldClass = "h-10 rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-lagoon";
   const textValue = (value: unknown) => (value === null || value === undefined ? "" : String(value));
   const dateValue = (value: unknown) => (value ? new Date(String(value)).toISOString().slice(0, 10) : "");
 
   return (
     <form onSubmit={handleSubmit} className="rounded-lg border border-white/80 bg-white p-5 shadow-lift">
       <h3 className="text-xl font-black">Admin Edit Asset</h3>
-      <p className="mt-1 text-sm font-bold text-slate-500">Same structure as the HVAC asset register template.</p>
+      <p className="mt-1 text-sm font-bold text-slate-500">Same structure as the Empty-Assets workbook.</p>
       <div className="mt-4 grid gap-4">
         <div>
-          <p className="mb-3 text-xs font-black uppercase text-lagoon">HVAC Asset Register Fields</p>
+          <p className="mb-3 text-xs font-black uppercase text-lagoon">Asset Register Fields</p>
           <div className="grid gap-3">
-            <div className="grid grid-cols-3 gap-3">
-              <EditField label="SITE" name="siteCode" defaultValue={textValue(asset.siteCode)} />
-              <EditField label="ZONE" name="zone" defaultValue={textValue(asset.zone)} />
-              <EditField label="BLDG" name="buildingCode" defaultValue={textValue(asset.buildingCode)} />
+            <EditField label="EQUIPMENTNO" name="tag" defaultValue={textValue(asset.tag)} required />
+            <EditField label="EQUIPMENTDESC" name="equipmentDesc" defaultValue={textValue(asset.assetDescription ?? asset.name)} required />
+            <div className="grid gap-3 sm:grid-cols-2">
+              <EditField label="ASSETSTATUS" name="assetStatusText" defaultValue={textValue(asset.assetStatusText ?? (asset.status === "ACTIVE" ? "INSTALLED" : asset.status))} />
+              <EditField label="EQTYPE" name="eqType" defaultValue={textValue(asset.eqType ?? "ASSET")} />
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <EditField label="FLOOR" name="floor" defaultValue={textValue(asset.floor)} />
-              <EditField label="ROOM" name="room" defaultValue={textValue(asset.room)} />
+            <EditField label="ORGANIZATION" name="organization" defaultValue={textValue(asset.organization)} />
+            <div className="grid gap-3 sm:grid-cols-2">
+              <EditField label="COMMISSIONDATE" name="installDate" type="date" defaultValue={dateValue(asset.installDate)} />
+              <EditField label="DEPARTMENT" name="departmentCode" defaultValue={textValue(asset.departmentCode)} />
             </div>
-            <EditField label="Asset Group" name="assetGroup" defaultValue={textValue(asset.assetGroup)} />
-            <EditField label="ASSET NUMBER" name="tag" defaultValue={textValue(asset.tag)} />
-            <EditField label="Asset Description" name="assetDescription" defaultValue={textValue(asset.assetDescription)} />
-            <EditField label="Additional description" name="additionalDescription" defaultValue={textValue(asset.additionalDescription)} />
-            <EditField label="Parent Asset" name="parentAsset" defaultValue={textValue(asset.parentAsset)} />
-            <EditField label="Department" name="departmentCode" defaultValue={textValue(asset.departmentCode)} />
+            <EditField label="DEPARTMENT_DESC" name="departmentDesc" defaultValue={textValue(asset.departmentDesc)} />
+            <div className="grid gap-3 sm:grid-cols-2">
+              <EditField label="CLASS" name="classCode" defaultValue={textValue(asset.classCode ?? asset.assetGroup)} />
+              <EditField label="CLASS_DESC" name="classDesc" defaultValue={textValue(asset.classDesc)} />
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <EditField label="CATEGORY" name="category" defaultValue={textValue(asset.category)} />
+              <EditField label="CATEGORY_DESC" name="categoryDesc" defaultValue={textValue(asset.categoryDesc)} />
+            </div>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <EditField label="SERIALNUMBER" name="serialNumber" defaultValue={textValue(asset.serialNumber)} />
+              <EditField label="MODEL" name="model" defaultValue={textValue(asset.model)} />
+              <EditField label="MANUFACTURER" name="manufacturer" defaultValue={textValue(asset.manufacturer)} />
+            </div>
+            <EditField label="GSRC" name="gsrc" defaultValue={textValue(asset.gsrc)} />
+            <div className="grid gap-3 sm:grid-cols-2">
+              <EditField label="ENDOFUSEFULLIFE" name="replacementDate" type="date" defaultValue={dateValue(asset.replacementDate)} />
+              <EditField label="SERVICELIFE" name="serviceLife" defaultValue={textValue(asset.serviceLife)} />
+            </div>
+            <EditField label="ATTRIBUTE" name="attribute" defaultValue={textValue(asset.attribute)} />
+            <EditField label="ENVIRONMENT" name="environment" defaultValue={textValue(asset.environment)} />
+            <div className="grid gap-3 sm:grid-cols-3">
+              <EditField label="PRESSURE_BAR" name="pressureBar" defaultValue={textValue(asset.pressureBar)} />
+              <EditField label="FLOW_LPS" name="flowLps" defaultValue={textValue(asset.flowLps)} />
+              <EditField label="SUPPLY_VOLTAGE_Volt" name="supplyVoltageVolt" defaultValue={textValue(asset.supplyVoltageVolt)} />
+            </div>
+            <AssetOutOfServiceSelect defaultValue={asset.outOfService ? "YES" : "NO"} />
+            <AssetLocationCodeSelect locations={locations} defaultValue={textValue(asset.locationCode ?? asset.room)} />
+            <EditField label="LOCATION_DESC" name="locationDesc" defaultValue={textValue(asset.locationDesc)} />
+            <EditField label="POSITION" name="position" defaultValue={textValue(asset.position)} />
+            <EditField label="CLASSORGANIZATION" name="classOrganization" defaultValue={textValue(asset.classOrganization)} />
+            <EditField label="EQUIPMENTVALUE" name="equipmentValue" type="number" defaultValue={textValue(asset.equipmentValue ?? asset.purchaseCost)} />
+            <EditField label="PRIMARYSYSTEM" name="primarySystem" defaultValue={textValue(asset.primarySystem ?? asset.system)} />
+            <EditField label="ADDITIONAL_NOTE" name="additionalNote" defaultValue={textValue(asset.additionalNote ?? asset.remarks)} />
             <AssetAssignmentFields teams={teams} users={users} defaultTeam={textValue(asset.assignedTeamCode)} defaultSupervisor={textValue(asset.assignedSupervisorEmail)} />
-            <label className="grid gap-1 text-sm font-bold text-slate-600">
-              Remarks
-              <textarea name="remarks" defaultValue={textValue(asset.remarks)} className="min-h-24 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />
-            </label>
-          </div>
-        </div>
-        <div>
-          <p className="mb-3 text-xs font-black uppercase text-lagoon">Additional CAFM Fields</p>
-          <div className="grid gap-3">
-            <EditField label="System display name" name="name" defaultValue={textValue(asset.name)} />
-            <EditField label="Category" name="category" defaultValue={textValue(asset.category)} />
-            <EditField label="System" name="system" defaultValue={textValue(asset.system)} />
-            <label className="grid gap-1 text-sm font-bold text-slate-600">
-              Criticality
-              <select name="criticality" defaultValue={asset.criticality} className={fieldClass}>
-                <option>LOW</option>
-                <option>MEDIUM</option>
-                <option>HIGH</option>
-                <option>CRITICAL</option>
-              </select>
-            </label>
-            <label className="grid gap-1 text-sm font-bold text-slate-600">
-              Status
-              <select name="status" defaultValue={asset.status} className={fieldClass}>
-                <option>ACTIVE</option>
-                <option>STANDBY</option>
-                <option>DOWN</option>
-                <option>RETIRED</option>
-              </select>
-            </label>
-            <EditField label="Serial number" name="serialNumber" defaultValue={textValue(asset.serialNumber)} />
-            <EditField label="Manufacturer" name="manufacturer" defaultValue={textValue(asset.manufacturer)} />
-            <EditField label="Model" name="model" defaultValue={textValue(asset.model)} />
-            <EditField label="Warranty expiry" name="warrantyExpiry" type="date" defaultValue={dateValue(asset.warrantyExpiry)} />
-            <EditField label="Contract reference" name="contractRef" defaultValue={textValue(asset.contractRef)} />
-            <ImageUploadField name="documentationUrl" defaultValue={textValue(asset.documentationUrl)} />
-            <div className="grid grid-cols-3 gap-3">
-              <EditField label="Cost" name="purchaseCost" type="number" defaultValue={textValue(asset.purchaseCost)} />
-              <EditField label="Salvage" name="salvageValue" type="number" defaultValue={textValue(asset.salvageValue)} />
-              <EditField label="Dep. %" name="depreciationRate" type="number" defaultValue={textValue(asset.depreciationRate)} />
-            </div>
-            <EditField label="Condition score" name="conditionScore" type="number" defaultValue={textValue(asset.conditionScore)} />
           </div>
         </div>
         <button disabled={saving} className="h-11 rounded-lg bg-coral font-black text-white disabled:bg-slate-400">Save Admin Changes</button>
@@ -5013,7 +5023,7 @@ function BulkUpload({ saving, onSubmit, initialModule }: { saving: boolean; onSu
 
 function Templates() {
   const templates = [
-    ["assets", "Assets", "Entity Name,Asset Name,Description,Location Name,Asset Type,Model No.,Manufacturer,Serial No.,Purchase Date,QR Code,Parent Asset,Assigned To,Vendors,Asset Code,Parts,URL 1,URL Label 1,URL 2,URL Label 2,Warranty Expiry Date,Life Expectancy (in months),Purchase Cost,Replacement Cost,Salvage Value"],
+    ["assets", "Assets", assetTemplateHeader],
     ["departments", "Departments", "code,name,siteLocation,description"],
     ["employees", "Employees", "name,email,companyId,nationalityType,departmentCode,siteLocation"],
     ["teams", "Teams", "name,companyIdNumber,departmentCode,service,email,phone"],

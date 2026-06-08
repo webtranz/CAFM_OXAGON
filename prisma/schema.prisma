@@ -233,8 +233,11 @@ model Asset {
   name            String
   category        String
   system          String
+  eqType          String       @default("ASSET")
+  organization    String?
   criticality     Priority
   status          AssetStatus  @default(ACTIVE)
+  assetStatusText String       @default("INSTALLED")
   serialNumber    String?
   siteCode        String?
   zone            String?
@@ -242,6 +245,24 @@ model Asset {
   assetGroup      String?
   assetDescription String?
   additionalDescription String?
+  departmentDesc  String?
+  classCode       String?
+  classDesc       String?
+  categoryDesc    String?
+  gsrc            String?
+  attribute       String?
+  environment     String?
+  pressureBar     String?
+  flowLps         String?
+  supplyVoltageVolt String?
+  outOfService    Boolean      @default(false)
+  serviceLife     String?
+  locationCode    String?
+  locationDesc    String?
+  position        String?
+  classOrganization String?
+  primarySystem   String?
+  additionalNote  String?
   parentAsset     String?
   departmentCode  String?
   assignedTeamCode String?

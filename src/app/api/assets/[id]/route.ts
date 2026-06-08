@@ -5,13 +5,28 @@ import { requireAdmin, requirePermission } from "@/lib/api-auth";
 import { auditAction } from "@/lib/audit";
 import { prisma } from "@/lib/prisma";
 
+const boolInput = z.preprocess((value) => {
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (["yes", "true", "1", "y"].includes(normalized)) return true;
+    if (["no", "false", "0", "n", ""].includes(normalized)) return false;
+  }
+  return value;
+}, z.boolean());
+
 const schema = z.object({
   tag: z.string().optional(),
+  equipmentNo: z.string().optional(),
   name: z.string().optional(),
+  equipmentDesc: z.string().optional(),
   category: z.string().optional(),
   system: z.string().optional(),
+  eqType: z.string().optional(),
+  organization: z.string().optional(),
   criticality: z.string().optional(),
   status: z.string().optional(),
+  assetStatusText: z.string().optional(),
+  assetStatus: z.string().optional(),
   serialNumber: z.string().optional(),
   siteCode: z.string().optional(),
   zone: z.string().optional(),
@@ -19,6 +34,25 @@ const schema = z.object({
   assetGroup: z.string().optional(),
   assetDescription: z.string().optional(),
   additionalDescription: z.string().optional(),
+  departmentDesc: z.string().optional(),
+  classCode: z.string().optional(),
+  classDesc: z.string().optional(),
+  categoryDesc: z.string().optional(),
+  gsrc: z.string().optional(),
+  attribute: z.string().optional(),
+  environment: z.string().optional(),
+  pressureBar: z.string().optional(),
+  flowLps: z.string().optional(),
+  supplyVoltageVolt: z.string().optional(),
+  outOfService: boolInput.optional(),
+  serviceLife: z.string().optional(),
+  locationCode: z.string().optional(),
+  locationDesc: z.string().optional(),
+  position: z.string().optional(),
+  classOrganization: z.string().optional(),
+  equipmentValue: z.coerce.number().min(0).optional(),
+  primarySystem: z.string().optional(),
+  additionalNote: z.string().optional(),
   parentAsset: z.string().optional(),
   departmentCode: z.string().optional(),
   assignedTeamCode: z.string().optional(),
@@ -48,42 +82,64 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const input = schema.parse(await request.json());
     const current = await prisma.asset.findUnique({ where: { id } });
     if (!current) throw new Error("Asset not found");
-    const tag = input.tag || current.tag;
-    const name = input.name || current.name;
-    const category = input.category || current.category;
+    const tag = input.tag || input.equipmentNo || current.tag;
+    const location = input.locationCode ? await prisma.location.findUnique({ where: { code: input.locationCode } }) : null;
+    const name = input.name || input.equipmentDesc || input.assetDescription || current.name;
+    const category = input.category || input.categoryDesc || input.assetGroup || input.classCode || current.category;
     const criticality = input.criticality && ["LOW", "MEDIUM", "HIGH", "CRITICAL"].includes(input.criticality) ? input.criticality as any : current.criticality;
-    const status = input.status && ["ACTIVE", "STANDBY", "DOWN", "RETIRED"].includes(input.status) ? input.status as any : current.status;
+    const status = input.outOfService === true ? "RETIRED" as any : input.outOfService === false ? "ACTIVE" as any : input.status && ["ACTIVE", "STANDBY", "DOWN", "RETIRED"].includes(input.status) ? input.status as any : current.status;
     const updated = await prisma.asset.update({
       where: { id },
       data: {
         tag,
         name,
         category,
-        system: input.system || current.system,
+        system: input.primarySystem || input.system || current.system,
+        eqType: input.eqType,
+        organization: input.organization,
         criticality,
         status,
-        serialNumber: input.serialNumber || null,
-        siteCode: input.siteCode || null,
-        zone: input.zone || null,
-        buildingCode: input.buildingCode || null,
-        assetGroup: input.assetGroup || category,
-        assetDescription: input.assetDescription || name,
-        additionalDescription: input.additionalDescription || null,
-        parentAsset: input.parentAsset || null,
-        departmentCode: input.departmentCode || null,
-        assignedTeamCode: input.assignedTeamCode || null,
-        assignedSupervisorEmail: input.assignedSupervisorEmail || null,
-        remarks: input.remarks || null,
-        manufacturer: input.manufacturer || "Not specified",
-        model: input.model || "Not specified",
+        assetStatusText: input.assetStatusText || input.assetStatus || current.assetStatusText,
+        serialNumber: input.serialNumber || current.serialNumber,
+        siteCode: input.siteCode || location?.site || null,
+        zone: input.zone || location?.parentLocation || null,
+        buildingCode: input.buildingCode || location?.building || null,
+        assetGroup: input.assetGroup || input.classCode || category,
+        assetDescription: input.assetDescription || input.equipmentDesc || name,
+        additionalDescription: input.additionalDescription || input.additionalNote || null,
+        departmentDesc: input.departmentDesc,
+        classCode: input.classCode,
+        classDesc: input.classDesc,
+        categoryDesc: input.categoryDesc,
+        gsrc: input.gsrc,
+        attribute: input.attribute,
+        environment: input.environment,
+        pressureBar: input.pressureBar,
+        flowLps: input.flowLps,
+        supplyVoltageVolt: input.supplyVoltageVolt,
+        outOfService: input.outOfService,
+        serviceLife: input.serviceLife,
+        locationCode: input.locationCode,
+        locationDesc: input.locationDesc || location?.description,
+        position: input.position,
+        classOrganization: input.classOrganization,
+        primarySystem: input.primarySystem,
+        additionalNote: input.additionalNote,
+        parentAsset: input.parentAsset || current.parentAsset,
+        departmentCode: input.departmentCode || current.departmentCode,
+        assignedTeamCode: input.assignedTeamCode || current.assignedTeamCode,
+        assignedSupervisorEmail: input.assignedSupervisorEmail || current.assignedSupervisorEmail,
+        remarks: input.remarks || current.remarks,
+        manufacturer: input.manufacturer || current.manufacturer,
+        model: input.model || current.model,
         installDate: input.installDate ? new Date(input.installDate) : current.installDate,
         replacementDate: input.replacementDate ? new Date(input.replacementDate) : current.replacementDate,
-        floor: input.floor || null,
-        room: input.room || null,
-        warrantyExpiry: input.warrantyExpiry ? new Date(input.warrantyExpiry) : null,
-        contractRef: input.contractRef || null,
-        documentationUrl: input.documentationUrl || null,
-        purchaseCost: input.purchaseCost ?? current.purchaseCost,
+        floor: input.floor || location?.floor || null,
+        room: input.locationCode || input.room || location?.code || null,
+        warrantyExpiry: input.warrantyExpiry ? new Date(input.warrantyExpiry) : current.warrantyExpiry,
+        contractRef: input.contractRef || current.contractRef,
+        documentationUrl: input.documentationUrl || current.documentationUrl,
+        purchaseCost: input.equipmentValue ?? input.purchaseCost ?? current.purchaseCost,
         salvageValue: input.salvageValue ?? current.salvageValue,
         depreciationRate: input.depreciationRate ?? current.depreciationRate,
         conditionScore: input.conditionScore ?? current.conditionScore,

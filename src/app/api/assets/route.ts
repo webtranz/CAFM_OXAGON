@@ -6,12 +6,27 @@ import { requirePermission } from "@/lib/api-auth";
 import { auditAction } from "@/lib/audit";
 import { prisma } from "@/lib/prisma";
 
+const boolInput = z.preprocess((value) => {
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (["yes", "true", "1", "y"].includes(normalized)) return true;
+    if (["no", "false", "0", "n", ""].includes(normalized)) return false;
+  }
+  return value;
+}, z.boolean());
+
 const schema = z.object({
   tag: z.string().optional(),
+  equipmentNo: z.string().optional(),
   name: z.string().optional(),
+  equipmentDesc: z.string().optional(),
   category: z.string().optional(),
   system: z.string().optional(),
+  eqType: z.string().optional(),
+  organization: z.string().optional(),
   criticality: z.string().optional(),
+  assetStatusText: z.string().optional(),
+  assetStatus: z.string().optional(),
   serialNumber: z.string().optional(),
   siteCode: z.string().optional(),
   zone: z.string().optional(),
@@ -19,6 +34,25 @@ const schema = z.object({
   assetGroup: z.string().optional(),
   assetDescription: z.string().optional(),
   additionalDescription: z.string().optional(),
+  departmentDesc: z.string().optional(),
+  classCode: z.string().optional(),
+  classDesc: z.string().optional(),
+  categoryDesc: z.string().optional(),
+  gsrc: z.string().optional(),
+  attribute: z.string().optional(),
+  environment: z.string().optional(),
+  pressureBar: z.string().optional(),
+  flowLps: z.string().optional(),
+  supplyVoltageVolt: z.string().optional(),
+  outOfService: boolInput.optional(),
+  serviceLife: z.string().optional(),
+  locationCode: z.string().optional(),
+  locationDesc: z.string().optional(),
+  position: z.string().optional(),
+  classOrganization: z.string().optional(),
+  equipmentValue: z.coerce.number().min(0).optional(),
+  primarySystem: z.string().optional(),
+  additionalNote: z.string().optional(),
   parentAsset: z.string().optional(),
   departmentCode: z.string().optional(),
   assignedTeamCode: z.string().optional(),
@@ -46,10 +80,13 @@ export async function POST(request: Request) {
     if (error) return error;
     const input = schema.parse(await request.json());
     const count = await prisma.asset.count();
-    const tag = input.tag || `AST-${String(count + 1).padStart(5, "0")}`;
-    const name = input.name || input.assetDescription || `Asset ${count + 1}`;
-    const category = input.category || input.assetGroup || "General";
+    const tag = input.tag || input.equipmentNo || `AST-${String(count + 1).padStart(5, "0")}`;
+    const location = input.locationCode ? await prisma.location.findUnique({ where: { code: input.locationCode } }) : null;
+    const name = input.name || input.equipmentDesc || input.assetDescription || `Asset ${count + 1}`;
+    const category = input.category || input.categoryDesc || input.assetGroup || input.classCode || "General";
     const criticality = ["LOW", "MEDIUM", "HIGH", "CRITICAL"].includes(input.criticality || "") ? input.criticality as "LOW" | "MEDIUM" | "HIGH" | "CRITICAL" : "MEDIUM";
+    const outOfService = input.outOfService ?? false;
+    const status = outOfService ? "RETIRED" : "ACTIVE";
     const site = await prisma.site.findFirst({ include: { buildings: { take: 1 } } });
 
     if (!site) {
@@ -61,15 +98,37 @@ export async function POST(request: Request) {
         tag,
         name,
         category,
-        system: input.system || "General",
+        system: input.primarySystem || input.system || "General",
+        eqType: input.eqType || "ASSET",
+        organization: input.organization || null,
         criticality,
+        status,
+        assetStatusText: input.assetStatusText || input.assetStatus || (outOfService ? "OUT OF SERVICE" : "INSTALLED"),
         serialNumber: input.serialNumber || `${tag}-SN`,
-        siteCode: input.siteCode || null,
-        zone: input.zone || null,
-        buildingCode: input.buildingCode || null,
-        assetGroup: input.assetGroup || category,
-        assetDescription: input.assetDescription || name,
-        additionalDescription: input.additionalDescription || null,
+        siteCode: input.siteCode || location?.site || null,
+        zone: input.zone || location?.parentLocation || null,
+        buildingCode: input.buildingCode || location?.building || null,
+        assetGroup: input.assetGroup || input.classCode || category,
+        assetDescription: input.assetDescription || input.equipmentDesc || name,
+        additionalDescription: input.additionalDescription || input.additionalNote || null,
+        departmentDesc: input.departmentDesc || null,
+        classCode: input.classCode || null,
+        classDesc: input.classDesc || null,
+        categoryDesc: input.categoryDesc || null,
+        gsrc: input.gsrc || null,
+        attribute: input.attribute || null,
+        environment: input.environment || null,
+        pressureBar: input.pressureBar || null,
+        flowLps: input.flowLps || null,
+        supplyVoltageVolt: input.supplyVoltageVolt || null,
+        outOfService,
+        serviceLife: input.serviceLife || null,
+        locationCode: input.locationCode || null,
+        locationDesc: input.locationDesc || location?.description || null,
+        position: input.position || null,
+        classOrganization: input.classOrganization || null,
+        primarySystem: input.primarySystem || null,
+        additionalNote: input.additionalNote || null,
         parentAsset: input.parentAsset || "TOP LEVEL",
         departmentCode: input.departmentCode || null,
         assignedTeamCode: input.assignedTeamCode || null,
@@ -82,12 +141,12 @@ export async function POST(request: Request) {
         warrantyExpiry: input.warrantyExpiry ? new Date(input.warrantyExpiry) : addYears(new Date(), 1),
         contractRef: input.contractRef || "Not assigned",
         documentationUrl: input.documentationUrl || null,
-        purchaseCost: input.purchaseCost ?? 0,
+        purchaseCost: input.equipmentValue ?? input.purchaseCost ?? 0,
         salvageValue: input.salvageValue ?? 0,
         depreciationRate: input.depreciationRate ?? 10,
         conditionScore: input.conditionScore ?? 85,
-        floor: input.floor || "Unassigned",
-        room: input.room || "Unassigned",
+        floor: input.floor || location?.floor || "Unassigned",
+        room: input.locationCode || input.room || location?.code || "Unassigned",
         qrCode: input.qrCode || `CAFM-ASSET:${tag}`,
         siteId: site.id,
         buildingId: site.buildings[0]?.id,
