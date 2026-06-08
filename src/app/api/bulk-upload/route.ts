@@ -337,10 +337,11 @@ async function importInspection(row: Row) {
 }
 
 async function importLocation(row: Row) {
+  const code = required(row, "code", "Location");
   await prisma.location.upsert({
-    where: { code: required(row, "code") },
+    where: { code },
     update: locationPayload(row),
-    create: { code: required(row, "code"), ...locationPayload(row) },
+    create: { code, ...locationPayload(row) },
   });
 }
 
@@ -397,14 +398,22 @@ function employeePayload(row: Row) {
 }
 
 function locationPayload(row: Row) {
+  const parentLocation = value(row, "parentLocation", "Parent Location", "ParentLocation", "zone");
+  const locationClass = value(row, "locationClass", "Class", "class", "type") || "Facility Location";
+  const outOfService = yesNo(value(row, "outOfService", "Out of Service"), false);
   return {
-    site: required(row, "site"),
-    zone: row.zone || "Unassigned",
+    site: value(row, "site", "Site") || "Fadhili Bachelor Camp",
+    zone: parentLocation,
     building: row.building || row.BLDG || "Unassigned",
     floor: row.floor || row.FLOOR || "Unassigned",
     room: row.room || row.ROOM || "Unassigned",
-    type: row.type || "Facility Location",
-    description: row.description || "",
+    type: locationClass,
+    parentLocation,
+    locationClass,
+    outOfService,
+    residential: yesNo(value(row, "residential", "Residential"), false),
+    active: !outOfService,
+    description: value(row, "description", "Description") || "",
   };
 }
 
@@ -421,9 +430,10 @@ function jobPlanPayload(row: Row) {
   };
 }
 
-function required(row: Row, key: string) {
-  if (!row[key]) throw new Error(`${key} is required`);
-  return row[key];
+function required(row: Row, ...keys: string[]) {
+  const found = value(row, ...keys);
+  if (!found) throw new Error(`${keys[0]} is required`);
+  return found;
 }
 
 function value(row: Row, ...keys: string[]) {
@@ -441,6 +451,13 @@ function number(value: string | undefined, fallback: number) {
 
 function integer(value: string | undefined, fallback: number) {
   return Math.round(number(value, fallback));
+}
+
+function yesNo(value: string | undefined, fallback: boolean) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (["yes", "true", "1", "y"].includes(normalized)) return true;
+  if (["no", "false", "0", "n"].includes(normalized)) return false;
+  return fallback;
 }
 
 function date(value: string | undefined, fallback: Date) {

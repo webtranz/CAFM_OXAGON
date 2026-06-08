@@ -129,7 +129,14 @@ async function reportRows(type: string, filters: ReturnType<typeof reportFilters
   }
   if (type === "locations") {
     const rows = await prisma.location.findMany({ orderBy: { code: "asc" } });
-    return rows.map((row) => ({ code: row.code, site: row.site, zone: row.zone, building: row.building, floor: row.floor, room: row.room, type: row.type, description: row.description, active: row.active, createdAt: dateValue(row.createdAt) }));
+    return rows.map((row) => ({
+      Location: row.code,
+      Description: row.description,
+      Class: row.locationClass || row.type,
+      "Parent Location": row.parentLocation || row.zone,
+      "Out of Service": row.outOfService ? "YES" : "NO",
+      Residential: row.residential ? "YES" : "NO",
+    }));
   }
   if (type === "job-plans") {
     const rows = await prisma.jobPlan.findMany({ orderBy: { code: "asc" } });

@@ -4850,29 +4850,36 @@ function ServiceForm({ service, teams, departments, onSubmit, saving }: { servic
 }
 
 function Locations({ locations, submitLocation, deleteLocation, isAdmin, saving }: { locations: any[]; submitLocation: (formData: FormData) => void; deleteLocation: (id: string) => void; isAdmin: boolean; saving: boolean }) {
-  const [siteFilter, setSiteFilter] = useState("");
-  const [buildingFilter, setBuildingFilter] = useState("");
-  const [floorFilter, setFloorFilter] = useState("");
+  const [parentFilter, setParentFilter] = useState("");
+  const [classFilter, setClassFilter] = useState("");
+  const [residentialFilter, setResidentialFilter] = useState("");
   const [query, setQuery] = useState("");
-  const siteOptions = Array.from(new Set(locations.map((location) => location.site).filter(Boolean)));
-  const buildingOptions = Array.from(new Set(locations.filter((location) => !siteFilter || location.site === siteFilter).map((location) => location.building).filter(Boolean)));
-  const floorOptions = Array.from(new Set(locations.filter((location) => (!siteFilter || location.site === siteFilter) && (!buildingFilter || location.building === buildingFilter)).map((location) => location.floor).filter(Boolean)));
-  const filtered = locations.filter((location) => {
-    const haystack = `${location.code} ${location.site} ${location.zone} ${location.building} ${location.floor} ${location.room} ${location.type} ${location.description}`.toLowerCase();
+  const locationRows = locations.map((location) => ({
+    ...location,
+    locationCode: location.code,
+    parentLocationDisplay: location.parentLocation || location.zone || "",
+    classDisplay: location.locationClass || location.type || "",
+    outOfServiceDisplay: location.outOfService ? "YES" : "NO",
+    residentialDisplay: location.residential ? "YES" : "NO",
+  }));
+  const parentOptions = Array.from(new Set(locationRows.map((location) => location.parentLocationDisplay).filter(Boolean)));
+  const classOptions = Array.from(new Set(locationRows.map((location) => location.classDisplay).filter(Boolean)));
+  const filtered = locationRows.filter((location) => {
+    const haystack = `${location.locationCode} ${location.description} ${location.parentLocationDisplay} ${location.classDisplay} ${location.outOfServiceDisplay} ${location.residentialDisplay}`.toLowerCase();
     return (!query || haystack.includes(query.toLowerCase()))
-      && (!siteFilter || location.site === siteFilter)
-      && (!buildingFilter || location.building === buildingFilter)
-      && (!floorFilter || location.floor === floorFilter);
+      && (!parentFilter || location.parentLocationDisplay === parentFilter)
+      && (!classFilter || location.classDisplay === classFilter)
+      && (!residentialFilter || location.residentialDisplay === residentialFilter);
   });
-  const hierarchyRows = siteOptions.map((site) => {
-    const siteRows = locations.filter((location) => location.site === site);
+  const hierarchyRows = parentOptions.map((parentLocation) => {
+    const childRows = locationRows.filter((location) => location.parentLocationDisplay === parentLocation);
     return {
-      id: site,
-      site,
-      buildings: new Set(siteRows.map((location) => location.building)).size,
-      floors: new Set(siteRows.map((location) => `${location.building}-${location.floor}`)).size,
-      rooms: siteRows.length,
-      active: siteRows.filter((location) => location.active).length,
+      id: parentLocation,
+      parentLocation,
+      locations: childRows.length,
+      classes: new Set(childRows.map((location) => location.classDisplay).filter(Boolean)).size,
+      residential: childRows.filter((location) => location.residential).length,
+      outOfService: childRows.filter((location) => location.outOfService).length,
     };
   });
 
@@ -4880,35 +4887,36 @@ function Locations({ locations, submitLocation, deleteLocation, isAdmin, saving 
     <section className="grid gap-5 xl:grid-cols-[1fr_420px]">
       <Panel title="Location Register" icon={MapPinned}>
         <ReportButtons type="locations" label="Locations report" />
-        <div className="mb-4 grid gap-3 rounded-lg bg-slate-50 p-3 md:grid-cols-[1fr_180px_180px_140px_auto]">
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search location, room, building or type" className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-lagoon" />
-          <select value={siteFilter} onChange={(event) => { setSiteFilter(event.target.value); setBuildingFilter(""); setFloorFilter(""); }} className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold">
-            <option value="">All sites</option>
-            {siteOptions.map((site) => <option key={site} value={site}>{site}</option>)}
+        <div className="mb-4 grid gap-3 rounded-lg bg-slate-50 p-3 md:grid-cols-[1fr_220px_180px_160px_auto]">
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search location, description, parent or class" className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-lagoon" />
+          <select value={parentFilter} onChange={(event) => setParentFilter(event.target.value)} className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold">
+            <option value="">All parents</option>
+            {parentOptions.map((parentLocation) => <option key={parentLocation} value={parentLocation}>{parentLocation}</option>)}
           </select>
-          <select value={buildingFilter} onChange={(event) => { setBuildingFilter(event.target.value); setFloorFilter(""); }} className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold">
-            <option value="">All buildings</option>
-            {buildingOptions.map((building) => <option key={building} value={building}>{building}</option>)}
+          <select value={classFilter} onChange={(event) => setClassFilter(event.target.value)} className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold">
+            <option value="">All classes</option>
+            {classOptions.map((locationClass) => <option key={locationClass} value={locationClass}>{locationClass}</option>)}
           </select>
-          <select value={floorFilter} onChange={(event) => setFloorFilter(event.target.value)} className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold">
-            <option value="">All floors</option>
-            {floorOptions.map((floor) => <option key={floor} value={floor}>{floor}</option>)}
+          <select value={residentialFilter} onChange={(event) => setResidentialFilter(event.target.value)} className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold">
+            <option value="">Residential</option>
+            <option value="YES">YES</option>
+            <option value="NO">NO</option>
           </select>
-          <button type="button" onClick={() => { setQuery(""); setSiteFilter(""); setBuildingFilter(""); setFloorFilter(""); }} className="h-11 rounded-lg bg-white px-3 text-sm font-black text-lagoon">Clear</button>
+          <button type="button" onClick={() => { setQuery(""); setParentFilter(""); setClassFilter(""); setResidentialFilter(""); }} className="h-11 rounded-lg bg-white px-3 text-sm font-black text-lagoon">Clear</button>
         </div>
         <div className="mb-4 grid gap-3 md:grid-cols-4">
-          <div className="rounded-lg bg-lagoon/10 p-3"><p className="text-xs font-black uppercase text-lagoon">Sites</p><p className="text-2xl font-black">{siteOptions.length}</p></div>
-          <div className="rounded-lg bg-emerald-50 p-3"><p className="text-xs font-black uppercase text-emerald-700">Buildings</p><p className="text-2xl font-black">{new Set(locations.map((location) => location.building)).size}</p></div>
-          <div className="rounded-lg bg-amber-50 p-3"><p className="text-xs font-black uppercase text-amber-700">Floors</p><p className="text-2xl font-black">{new Set(locations.map((location) => `${location.building}-${location.floor}`)).size}</p></div>
-          <div className="rounded-lg bg-rose-50 p-3"><p className="text-xs font-black uppercase text-rose-700">Rooms</p><p className="text-2xl font-black">{locations.length}</p></div>
+          <div className="rounded-lg bg-lagoon/10 p-3"><p className="text-xs font-black uppercase text-lagoon">Locations</p><p className="text-2xl font-black">{locations.length}</p></div>
+          <div className="rounded-lg bg-emerald-50 p-3"><p className="text-xs font-black uppercase text-emerald-700">Parents</p><p className="text-2xl font-black">{parentOptions.length}</p></div>
+          <div className="rounded-lg bg-amber-50 p-3"><p className="text-xs font-black uppercase text-amber-700">Classes</p><p className="text-2xl font-black">{classOptions.length}</p></div>
+          <div className="rounded-lg bg-rose-50 p-3"><p className="text-xs font-black uppercase text-rose-700">Out of Service</p><p className="text-2xl font-black">{locationRows.filter((location) => location.outOfService).length}</p></div>
         </div>
-        <DataTable rows={filtered} columns={[["code", "Code"], ["site", "Site"], ["zone", "Zone"], ["building", "Building"], ["floor", "Floor"], ["room", "Room"], ["type", "Type"], ["description", "Description"], ["active", "Active"]]} actions={isAdmin ? (row) => <DeleteRowButton saving={saving} onDelete={() => deleteLocation(row.id)} /> : undefined} />
+        <DataTable rows={filtered} columns={[["locationCode", "Location"], ["description", "Description"], ["classDisplay", "Class"], ["parentLocationDisplay", "Parent Location"], ["outOfServiceDisplay", "Out of Service"], ["residentialDisplay", "Residential"]]} actions={isAdmin ? (row) => <DeleteRowButton saving={saving} onDelete={() => deleteLocation(row.id)} /> : undefined} />
       </Panel>
       <div className="grid gap-5">
         <Panel title="Location Hierarchy" icon={MapPinned}>
-          <DataTable rows={hierarchyRows} columns={[["site", "Site"], ["buildings", "Buildings"], ["floors", "Floors"], ["rooms", "Rooms"], ["active", "Active Rooms"]]} />
+          <DataTable rows={hierarchyRows} columns={[["parentLocation", "Parent Location"], ["locations", "Locations"], ["classes", "Classes"], ["residential", "Residential"], ["outOfService", "Out of Service"]]} />
         </Panel>
-        <ActionForm title="Add Location" onSubmit={submitLocation} fields={["code", "site", "zone", "building", "floor", "room", "type", "description"]} saving={saving} />
+        <ActionForm title="Add Location" onSubmit={submitLocation} fields={["location", "description", "locationClass", "parentLocation", "outOfService", "residential"]} saving={saving} />
       </div>
     </section>
   );
@@ -5014,7 +5022,7 @@ function Templates() {
     ["requests", "Requests", "ticketNo,title,category,departmentCode,serviceCode,assignedTeamCode,requester,channel,priority,status,location,attachmentUrls,rejectionReason,slaHours,description"],
     ["workOrders", "Work Orders", "woNo,title,type,assetType,departmentCode,serviceCode,assignedTeamCode,jobPlanCode,priority,status,assetTag,dueHours,estimatedHours,cost,jobPlan,safetyNotes,workNotes,materialRequest,photoUrls,assetsUsed,inventoryUsed,supervisorDecision"],
     ["jobPlans", "Job Plans", "code,name,assetType,departmentCode,serviceCode,estimatedHours,priority,steps,safetyNotes"],
-    ["locations", "Locations", "code,site,zone,building,floor,room,type,description"],
+    ["locations", "Locations", "Location,Description,Class,Parent Location,Out of Service,Residential"],
     ["inspections", "Inspections", "code,title,area,inspector,risk,score,status,dueAt,findings"],
   ];
 
@@ -6948,7 +6956,7 @@ function ActionForm({ title, fields, onSubmit, saving }: { title: string; fields
       <div className="grid gap-3">
         {fields.map((field) => (
           <label key={field} className="grid gap-1 text-sm font-bold capitalize text-slate-600">
-            {field.replace(/([A-Z])/g, " $1")}
+            {actionFieldLabel(field)}
             {field === "description" || field === "jobPlan" ? (
               <textarea name={field} className="min-h-24 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />
             ) : field === "warrantyExpiry" ? (
@@ -6957,6 +6965,11 @@ function ActionForm({ title, fields, onSubmit, saving }: { title: string; fields
               <select name={field} className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon">
                 <option value="false">false</option>
                 <option value="true">true</option>
+              </select>
+            ) : field === "outOfService" || field === "residential" ? (
+              <select name={field} className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon">
+                <option value="NO">NO</option>
+                <option value="YES">YES</option>
               </select>
             ) : field === "priority" || field === "criticality" ? (
               <select name={field} className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon">
@@ -6984,4 +6997,15 @@ function ActionForm({ title, fields, onSubmit, saving }: { title: string; fields
       </div>
     </form>
   );
+}
+
+function actionFieldLabel(field: string) {
+  const labels: Record<string, string> = {
+    location: "Location",
+    locationClass: "Class",
+    parentLocation: "Parent Location",
+    outOfService: "Out of Service",
+    residential: "Residential",
+  };
+  return labels[field] || field.replace(/([A-Z])/g, " $1");
 }

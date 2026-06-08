@@ -5,16 +5,31 @@ import { requireAdmin, requirePermission } from "@/lib/api-auth";
 import { auditAction } from "@/lib/audit";
 import { prisma } from "@/lib/prisma";
 
+const boolInput = z.preprocess((value) => {
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (["yes", "true", "1", "y"].includes(normalized)) return true;
+    if (["no", "false", "0", "n", ""].includes(normalized)) return false;
+  }
+  return value;
+}, z.boolean());
+
 const schema = z.object({
   code: z.string().optional(),
+  location: z.string().optional(),
   site: z.string().optional(),
   zone: z.string().optional(),
   building: z.string().optional(),
   floor: z.string().optional(),
   room: z.string().optional(),
   type: z.string().optional(),
+  parentLocation: z.string().optional(),
+  locationClass: z.string().optional(),
+  class: z.string().optional(),
   description: z.string().optional(),
-  active: z.coerce.boolean().optional(),
+  outOfService: boolInput.optional(),
+  residential: boolInput.optional(),
+  active: boolInput.optional(),
 });
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -25,18 +40,24 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const input = schema.parse(await request.json());
     const current = await prisma.location.findUnique({ where: { id } });
     if (!current) throw new Error("Location not found");
+    const nextOutOfService = input.outOfService ?? (input.active === undefined ? undefined : !input.active);
+    const nextClass = input.locationClass || input.class || input.type;
     const location = await prisma.location.update({
       where: { id },
       data: {
-        code: input.code,
+        code: input.code || input.location,
         site: input.site,
-        zone: input.zone,
+        zone: input.parentLocation || input.zone,
         building: input.building,
         floor: input.floor,
         room: input.room,
-        type: input.type,
+        type: nextClass,
+        parentLocation: input.parentLocation || input.zone,
+        locationClass: nextClass,
+        outOfService: nextOutOfService,
+        residential: input.residential,
         description: input.description,
-        active: input.active,
+        active: nextOutOfService === undefined ? input.active : !nextOutOfService,
       },
     });
     await auditAction({ user, action: "LOCATION_UPDATE", entity: "location", entityId: id, details: { before: current, input, after: location } });

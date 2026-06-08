@@ -378,6 +378,10 @@ model Location {
   floor        String
   room         String
   type         String
+  parentLocation String  @default("")
+  locationClass  String  @default("Facility Location")
+  outOfService   Boolean @default(false)
+  residential    Boolean @default(false)
   description  String
   active       Boolean  @default(true)
   createdAt    DateTime @default(now())

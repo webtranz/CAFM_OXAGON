@@ -5,14 +5,29 @@ import { requirePermission } from "@/lib/api-auth";
 import { auditAction } from "@/lib/audit";
 import { prisma } from "@/lib/prisma";
 
+const boolInput = z.preprocess((value) => {
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (["yes", "true", "1", "y"].includes(normalized)) return true;
+    if (["no", "false", "0", "n", ""].includes(normalized)) return false;
+  }
+  return value;
+}, z.boolean());
+
 const schema = z.object({
   code: z.string().optional(),
+  location: z.string().optional(),
   site: z.string().optional(),
   zone: z.string().optional(),
   building: z.string().optional(),
   floor: z.string().optional(),
   room: z.string().optional(),
   type: z.string().optional(),
+  parentLocation: z.string().optional(),
+  locationClass: z.string().optional(),
+  class: z.string().optional(),
+  outOfService: boolInput.optional(),
+  residential: boolInput.optional(),
   description: z.string().optional(),
 });
 
@@ -26,15 +41,22 @@ export async function POST(request: Request) {
     if (error) return error;
     const input = schema.parse(await request.json());
     const count = await prisma.location.count();
-    const code = input.code || `LOC-${String(count + 1).padStart(4, "0")}`;
+    const code = input.code || input.location || `LOC-${String(count + 1).padStart(4, "0")}`;
+    const locationClass = input.locationClass || input.class || input.type || "Facility Location";
+    const outOfService = input.outOfService ?? false;
     const data = {
       code,
       site: input.site || "Main Site",
-      zone: input.zone || "General",
+      zone: input.parentLocation || input.zone || "",
       building: input.building || "Building",
       floor: input.floor || "Floor",
       room: input.room || "Room",
-      type: input.type || "General",
+      type: locationClass,
+      parentLocation: input.parentLocation || input.zone || "",
+      locationClass,
+      outOfService,
+      residential: input.residential ?? false,
+      active: !outOfService,
       description: input.description || "",
     };
     const location = await prisma.location.upsert({
