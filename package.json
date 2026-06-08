@@ -12,6 +12,7 @@
     "db:migrate": "prisma migrate deploy",
     "db:seed": "tsx prisma/seed.ts",
     "admin:reset-password": "tsx scripts/reset-admin-password.ts",
+    "db:flush-dummy-data": "tsx scripts/flush-dummy-data.ts",
     "test:housing": "tsx scripts/housing-rules.test.ts",
     "dokploy:release": "prisma db push && prisma db seed && node scripts/start-local.mjs"
   },
