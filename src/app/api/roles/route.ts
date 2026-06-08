@@ -30,3 +30,38 @@ export async function POST(request: Request) {
     return apiError(error, "Unable to save role");
   }
 }
+
+export async function DELETE(request: Request) {
+  try {
+    const { error } = await requirePermission("roles.manage");
+    if (error) return error;
+
+    const name = new URL(request.url).searchParams.get("name")?.trim();
+    if (!name) {
+      return NextResponse.json({ message: "Role name is required." }, { status: 400 });
+    }
+
+    const role = await prisma.role.findUnique({ where: { name } });
+    if (!role) {
+      return NextResponse.json({ message: "Role not found." }, { status: 404 });
+    }
+
+    if (role.standard || role.name === "Admin") {
+      return NextResponse.json({ message: "Standard roles cannot be deleted." }, { status: 400 });
+    }
+
+    const assignedUsers = await prisma.user.count({ where: { role: role.name } });
+    if (assignedUsers > 0) {
+      return NextResponse.json({ message: "Assign users to another role before deleting this role." }, { status: 400 });
+    }
+
+    await prisma.$transaction([
+      prisma.rolePermission.deleteMany({ where: { role: role.name } }),
+      prisma.role.delete({ where: { name: role.name } }),
+    ]);
+
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    return apiError(error, "Unable to delete role");
+  }
+}

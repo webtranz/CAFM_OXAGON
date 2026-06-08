@@ -917,6 +917,7 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { id?: st
               submitRole={(formData) => postRecord("/api/roles", formData, "Custom role")}
               updateUser={(id, formData) => patchRecord(`/api/users/${id}`, Object.fromEntries(formData.entries()) as Record<string, string>, "User updated.")}
               deleteUser={(id) => deleteRecord(`/api/users/${id}`, "User deleted.")}
+              deleteRole={(roleName) => deleteRecord(`/api/roles?name=${encodeURIComponent(roleName)}`, "Role deleted.")}
               refreshData={refreshData}
               setToast={(message) => setToast(cleanMessage(message))}
               saveRolePermissions={async (role, permissionCodes) => {
@@ -4996,6 +4997,7 @@ function UsersRoles({
   submitRole,
   updateUser,
   deleteUser,
+  deleteRole,
   saveRolePermissions,
   saving,
   setToast,
@@ -5010,6 +5012,7 @@ function UsersRoles({
   submitRole: (formData: FormData) => void;
   updateUser: (id: string, formData: FormData) => void;
   deleteUser: (id: string) => void;
+  deleteRole: (role: string) => void;
   saveRolePermissions: (role: string, permissionCodes: string[]) => void;
   refreshData: () => void;
   saving: boolean;
@@ -5030,6 +5033,9 @@ function UsersRoles({
     groups[permission.module] = [...(groups[permission.module] ?? []), permission];
     return groups;
   }, {});
+  const selectedRoleRecord = roles.find((item) => item.name === role);
+  const roleAssignedUsers = users.filter((user) => user.role === role).length;
+  const canDeleteRole = !defaultRoleNames.includes(role) && !selectedRoleRecord?.standard && roleAssignedUsers === 0;
   const [selectedPermissions, setSelectedPermissions] = useState<string[]>(
     rolePermissions.filter((item) => item.role === "Admin").map((item) => item.permission.code),
   );
@@ -5044,9 +5050,27 @@ function UsersRoles({
     setSelectedPermissions((current) => current.includes(code) ? current.filter((item) => item !== code) : [...current, code]);
   }
 
+  function toggleModulePermissions(codes: string[], checked: boolean) {
+    setSelectedPermissions((current) => {
+      if (!checked) return current.filter((code) => !codes.includes(code));
+      return Array.from(new Set([...current, ...codes]));
+    });
+  }
+
   function saveVisiblePermissions() {
     const allowedPermissions = role === "Admin" ? selectedPermissions : selectedPermissions.filter((code) => code !== "documents.upload");
     saveRolePermissions(role, allowedPermissions);
+  }
+
+  function deleteSelectedRole() {
+    if (!canDeleteRole) {
+      setToast(roleAssignedUsers > 0 ? "Assign users to another role before deleting this role." : "Standard roles cannot be deleted.");
+      return;
+    }
+    if (!window.confirm(`Delete role "${role}"?`)) return;
+    const deletedRole = role;
+    changeRole("Admin");
+    deleteRole(deletedRole);
   }
 
   return (
@@ -5081,11 +5105,37 @@ function UsersRoles({
               {roleOptions(roles).map((item) => <option key={item}>{item}</option>)}
             </select>
             <button onClick={saveVisiblePermissions} className="rounded-lg bg-ink px-4 py-2 text-sm font-black text-white">Save Permissions</button>
+            <button
+              type="button"
+              disabled={saving || !canDeleteRole}
+              onClick={deleteSelectedRole}
+              title={canDeleteRole ? "Delete selected role" : roleAssignedUsers > 0 ? "Assign users to another role before deleting" : "Standard roles cannot be deleted"}
+              className="rounded-lg bg-coral px-4 py-2 text-sm font-black text-white disabled:bg-slate-300"
+            >
+              Delete Role
+            </button>
           </div>
           <div className="grid gap-4">
-            {Object.entries(groupedPermissions).map(([module, modulePermissions]) => (
+            {Object.entries(groupedPermissions).map(([module, modulePermissions]) => {
+              const moduleCodes = modulePermissions.map((permission) => permission.code);
+              const allSelected = moduleCodes.every((code) => selectedPermissions.includes(code));
+              const someSelected = !allSelected && moduleCodes.some((code) => selectedPermissions.includes(code));
+              return (
               <div key={module} className="rounded-lg border border-slate-200 bg-white p-3">
-                <h4 className="text-sm font-black text-ink">{module}</h4>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <h4 className="text-sm font-black text-ink">{module}</h4>
+                  <label className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-xs font-black text-slate-600">
+                    <input
+                      type="checkbox"
+                      checked={allSelected}
+                      ref={(input) => {
+                        if (input) input.indeterminate = someSelected;
+                      }}
+                      onChange={(event) => toggleModulePermissions(moduleCodes, event.target.checked)}
+                    />
+                    Select All
+                  </label>
+                </div>
                 <div className="mt-3 grid gap-2 md:grid-cols-2">
                   {modulePermissions.map((permission) => (
                     <label key={permission.code} className="flex items-start gap-3 rounded-lg bg-slate-50 p-3 text-sm">
@@ -5099,7 +5149,8 @@ function UsersRoles({
                   ))}
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         </Panel>
       </div>
@@ -5131,9 +5182,10 @@ function RoleForm({ onSubmit, saving }: { onSubmit: (formData: FormData) => void
   );
 }
 
+const defaultRoleNames = ["Admin", "Department Supervisor", "Supervisor", "Service Team", "Technician", "Helpdesk", "Reception", "Resident", "Requester", "Read-only"];
+
 function roleOptions(roles: any[]) {
-  const defaults = ["Admin", "Department Supervisor", "Supervisor", "Service Team", "Technician", "Helpdesk", "Reception", "Resident", "Requester"];
-  return Array.from(new Set([...defaults, ...roles.map((role) => role.name)]));
+  return Array.from(new Set([...defaultRoleNames, ...roles.map((role) => role.name)]));
 }
 
 function UserForm({ title, user, teams, departments, users, roles, onSubmit, saving }: { title: string; user?: any; teams: any[]; departments: any[]; users: any[]; roles: any[]; onSubmit: (formData: FormData) => void; saving: boolean }) {
