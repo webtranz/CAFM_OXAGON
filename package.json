@@ -14,7 +14,7 @@
     "admin:reset-password": "tsx scripts/reset-admin-password.ts",
     "db:flush-dummy-data": "tsx scripts/flush-dummy-data.ts",
     "test:housing": "tsx scripts/housing-rules.test.ts",
-    "dokploy:release": "prisma db push && prisma db seed && node scripts/start-local.mjs"
+    "dokploy:release": "prisma migrate deploy && node scripts/start-local.mjs"
   },
   "dependencies": {
     "@prisma/client": "6.19.3",

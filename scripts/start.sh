@@ -17,20 +17,25 @@ if [ -n "${DATABASE_URL:-}" ]; then
 
   attempt=1
   max_attempts=20
-  until ./node_modules/.bin/prisma db push; do
+  until ./node_modules/.bin/prisma migrate deploy; do
     if [ "$attempt" -ge "$max_attempts" ]; then
-      echo "Database schema push failed after ${max_attempts} attempts. Starting app so health checks and logs remain available."
+      echo "Database migration failed after ${max_attempts} attempts. Trying prisma db push as a schema fallback."
+      ./node_modules/.bin/prisma db push || echo "Database schema push fallback failed. Starting app so health checks and logs remain available."
       break
     fi
-    echo "Database not ready yet. Retrying schema push in 3 seconds... (${attempt}/${max_attempts})"
+    echo "Database not ready yet. Retrying migration in 3 seconds... (${attempt}/${max_attempts})"
     attempt=$((attempt + 1))
     sleep 3
   done
 
-  if ./node_modules/.bin/prisma db seed; then
-    echo "Database seed completed."
+  if [ "${RUN_DB_SEED:-no}" = "yes" ]; then
+    if ./node_modules/.bin/prisma db seed; then
+      echo "Database seed completed."
+    else
+      echo "Database seed failed. App will still start; check /api/health for DB status."
+    fi
   else
-    echo "Database seed skipped or failed. App will still start; check /api/health for DB status."
+    echo "Database seed skipped. Set RUN_DB_SEED=yes to seed/reset demo data."
   fi
 else
   echo "No database URL found. Starting in demo mode without database initialization."
