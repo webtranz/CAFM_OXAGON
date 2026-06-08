@@ -47,11 +47,16 @@ async function resetOperationalData() {
 
 async function main() {
   const passwordHash = await bcrypt.hash(process.env.SEED_USER_PASSWORD || randomUUID(), 10);
-  const adminPasswordHash = await bcrypt.hash(process.env.ADMIN_INITIAL_PASSWORD || randomUUID(), 10);
+  const adminInitialPassword = process.env.ADMIN_INITIAL_PASSWORD;
+  const adminPasswordHash = await bcrypt.hash(adminInitialPassword || randomUUID(), 10);
 
   const admin = await prisma.user.upsert({
     where: { email: "admin@cafm.local" },
-    update: { role: "Admin", active: true },
+    update: {
+      role: "Admin",
+      active: true,
+      ...(adminInitialPassword ? { passwordHash: adminPasswordHash } : {}),
+    },
     create: {
       name: "System Administrator",
       email: "admin@cafm.local",
