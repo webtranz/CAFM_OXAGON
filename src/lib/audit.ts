@@ -1,5 +1,15 @@
 import { prisma } from "@/lib/prisma";
 
+function serializeDetails(details: unknown) {
+  if (details === undefined || details === null || details === "") return null;
+  if (typeof details === "string") return details;
+  return JSON.stringify(details, (_key, value) => {
+    if (typeof value === "bigint") return value.toString();
+    if (value instanceof Date) return value.toISOString();
+    return value;
+  });
+}
+
 export async function auditAction({
   user,
   action,
@@ -11,7 +21,7 @@ export async function auditAction({
   action: string;
   entity: string;
   entityId: string;
-  details?: string;
+  details?: unknown;
 }) {
   try {
     await prisma.auditLog.create({
@@ -22,7 +32,16 @@ export async function auditAction({
         action,
         entity,
         entityId,
-        details: details || null,
+        details: serializeDetails({
+          at: new Date().toISOString(),
+          actor: {
+            id: user?.id ?? null,
+            name: user?.name ?? null,
+            email: user?.email ?? null,
+            role: user?.role ?? null,
+          },
+          details,
+        }),
       },
     });
   } catch {

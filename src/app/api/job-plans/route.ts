@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { apiError } from "@/lib/api-response";
-import { requirePermission } from "@/lib/api-auth";
+import { requireAdmin, requirePermission } from "@/lib/api-auth";
+import { auditAction } from "@/lib/audit";
 import { prisma } from "@/lib/prisma";
 
 const schema = z.object({
@@ -20,9 +21,25 @@ export async function GET() {
   return NextResponse.json(await prisma.jobPlan.findMany({ orderBy: { code: "asc" } }));
 }
 
+export async function DELETE(request: Request) {
+  try {
+    const { error, user } = await requireAdmin();
+    if (error) return error;
+    const id = new URL(request.url).searchParams.get("id");
+    if (!id) throw new Error("Job plan id is required");
+    const current = await prisma.jobPlan.findUnique({ where: { id } });
+    if (!current) throw new Error("Job plan not found");
+    await prisma.jobPlan.delete({ where: { id } });
+    await auditAction({ user, action: "JOB_PLAN_DELETE", entity: "job_plan", entityId: id, details: { deletedRecord: current } });
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    return apiError(error, "Unable to delete job plan");
+  }
+}
+
 export async function POST(request: Request) {
   try {
-    const { error } = await requirePermission("work.manage");
+    const { error, user } = await requirePermission("work.manage");
     if (error) return error;
     const input = schema.parse(await request.json());
     const count = await prisma.jobPlan.count();
@@ -43,6 +60,7 @@ export async function POST(request: Request) {
       update: data,
       create: data,
     });
+    await auditAction({ user, action: "JOB_PLAN_SAVE", entity: "job_plan", entityId: jobPlan.id, details: { input, savedRecord: jobPlan } });
     return NextResponse.json(jobPlan, { status: 201 });
   } catch (error) {
     return apiError(error, "Unable to save job plan");

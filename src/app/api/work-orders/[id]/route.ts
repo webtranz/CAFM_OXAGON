@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { apiError } from "@/lib/api-response";
 import { accessRole, canManageDepartmentRecord } from "@/lib/access-control";
+import { requireAdmin } from "@/lib/api-auth";
 import { auditAction } from "@/lib/audit";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -181,7 +182,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     if (updated.requestId && status === "CLOSED") {
       await prisma.serviceRequest.update({ where: { id: updated.requestId }, data: { status: "CLOSED" } });
     }
-    await auditAction({ user, action: `WORK_ORDER_${nextStatus || "UPDATE"}`, entity: "work_order", entityId: id, details: input.materialRequest || input.supervisorDecision || input.workNotes });
+    await auditAction({ user, action: `WORK_ORDER_${nextStatus || "UPDATE"}`, entity: "work_order", entityId: id, details: { before: current, input, after: updated } });
 
     return NextResponse.json(updated);
   } catch (error) {
@@ -191,14 +192,13 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
 export async function DELETE(_: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const { error, user } = await requireAdmin();
+    if (error) return error;
     const { id } = await params;
     const current = await prisma.workOrder.findUnique({ where: { id } });
-    const user = await getCurrentUser();
-    if (!canManageDepartmentRecord(user, current?.departmentCode)) {
-      return apiError(new Error("You do not have permission to delete this work order."), "Access denied", 403);
-    }
+    if (!current) throw new Error("Work order not found");
     await prisma.workOrder.delete({ where: { id } });
-    await auditAction({ user, action: "WORK_ORDER_DELETE", entity: "work_order", entityId: id });
+    await auditAction({ user, action: "WORK_ORDER_DELETE", entity: "work_order", entityId: id, details: { deletedRecord: current } });
     return NextResponse.json({ ok: true });
   } catch (error) {
     return apiError(error, "Unable to delete work order");

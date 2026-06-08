@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import Image from "next/image";
 import {
   Activity,
@@ -505,6 +506,7 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { id?: st
   const can = (permission?: string) => user.role === "Admin" || !permission || (!isReadOnlyUser && permissionCodes.has(permission));
   const canOpenModule = (moduleId: string) => (isReadOnlyUser && readOnlyModules.has(moduleId)) || can(modulePermissions[moduleId]);
   const canViewActive = canOpenModule(active);
+  const isAdmin = roleKindLabel(user.role) === "admin";
   const actionPermissions = {
     manageRequests: can("requests.manage"),
     approveRequests: can("requests.approve"),
@@ -812,6 +814,8 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { id?: st
               users={records.users}
               locations={records.locations}
               canManageAssets={can("assets.manage")}
+              isAdmin={isAdmin}
+              deleteAsset={(id) => deleteRecord(`/api/assets/${id}`, "Asset deleted.")}
             />
           )}
           {canViewActive && active === "work" && (
@@ -844,11 +848,11 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { id?: st
               saving={saving}
             />
           )}
-          {canViewActive && active === "jobPlans" && <JobPlans jobPlans={records.jobPlans} services={records.services} departments={records.departments} saving={saving} submitJobPlan={(formData) => postRecord("/api/job-plans", formData, "Job plan")} />}
-          {canViewActive && active === "locations" && <Locations locations={records.locations} saving={saving} submitLocation={(formData) => postRecord("/api/locations", formData, "Location")} />}
-          {canViewActive && active === "ppm" && <Ppm ppms={records.ppms} assets={records.assets} workOrders={records.workOrders} saving={saving} submitPpm={(formData) => postRecord("/api/ppm", formData, "PPM")} updatePpm={(body) => patchRecord("/api/ppm", body, "PPM updated.")} />}
-          {canViewActive && active === "inventory" && <Inventory inventory={records.inventory} saving={saving} submitInventory={(formData) => postRecord("/api/inventory", formData, "Inventory item")} />}
-          {canViewActive && active === "hse" && <Hse inspections={records.inspections} saving={saving} submitInspection={(formData) => postRecord("/api/inspections", formData, "Inspection")} />}
+          {canViewActive && active === "jobPlans" && <JobPlans jobPlans={records.jobPlans} services={records.services} departments={records.departments} saving={saving} isAdmin={isAdmin} submitJobPlan={(formData) => postRecord("/api/job-plans", formData, "Job plan")} deleteJobPlan={(id) => deleteRecord(`/api/job-plans?id=${encodeURIComponent(id)}`, "Job plan deleted.")} />}
+          {canViewActive && active === "locations" && <Locations locations={records.locations} saving={saving} isAdmin={isAdmin} submitLocation={(formData) => postRecord("/api/locations", formData, "Location")} deleteLocation={(id) => deleteRecord(`/api/locations/${id}`, "Location deleted.")} />}
+          {canViewActive && active === "ppm" && <Ppm ppms={records.ppms} assets={records.assets} workOrders={records.workOrders} saving={saving} isAdmin={isAdmin} submitPpm={(formData) => postRecord("/api/ppm", formData, "PPM")} updatePpm={(body) => patchRecord("/api/ppm", body, "PPM updated.")} deletePpm={(id) => deleteRecord(`/api/ppm?id=${encodeURIComponent(id)}`, "PPM deleted.")} />}
+          {canViewActive && active === "inventory" && <Inventory inventory={records.inventory} saving={saving} isAdmin={isAdmin} submitInventory={(formData) => postRecord("/api/inventory", formData, "Inventory item")} deleteInventory={(id) => deleteRecord(`/api/inventory?id=${encodeURIComponent(id)}`, "Inventory item deleted.")} />}
+          {canViewActive && active === "hse" && <Hse inspections={records.inspections} saving={saving} isAdmin={isAdmin} submitInspection={(formData) => postRecord("/api/inspections", formData, "Inspection")} deleteInspection={(id) => deleteRecord(`/api/inspections?id=${encodeURIComponent(id)}`, "Inspection deleted.")} />}
           {canViewActive && active === "compliance" && (
             <ComplianceCertification
               records={records.complianceCertificates ?? []}
@@ -859,6 +863,8 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { id?: st
               saving={saving}
               navigate={navigate}
               submitCertificate={(formData) => postRecord("/api/compliance", formData, "Compliance certificate")}
+              isAdmin={isAdmin}
+              deleteCertificate={(id) => deleteRecord(`/api/compliance?id=${encodeURIComponent(id)}`, "Compliance certificate deleted.")}
             />
           )}
           {canViewActive && active === "documents" && (
@@ -871,6 +877,8 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { id?: st
               view={activeView}
               refreshData={refreshData}
               canUploadDocuments={roleKindLabel(user.role) === "admin"}
+              isAdmin={isAdmin}
+              deleteDocument={(id) => deleteRecord(`/api/document-uploads?id=${encodeURIComponent(id)}`, "Document deleted.")}
             />
           )}
           {canViewActive && active === "incidents" && (
@@ -898,6 +906,8 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { id?: st
               deleteTeam={(id) => deleteRecord(`/api/teams/${id}`, "Team deleted.")}
               deleteService={(id) => deleteRecord(`/api/services/${id}`, "Service deleted.")}
               deleteDepartment={(id) => deleteRecord(`/api/departments/${id}`, "Department deleted.")}
+              deleteCategory={(id) => deleteRecord(`/api/asset-categories?id=${encodeURIComponent(id)}`, "Asset category deleted.")}
+              isAdmin={isAdmin}
               view={activeView}
             />
           )}
@@ -918,6 +928,7 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { id?: st
               updateUser={(id, formData) => patchRecord(`/api/users/${id}`, Object.fromEntries(formData.entries()) as Record<string, string>, "User updated.")}
               deleteUser={(id) => deleteRecord(`/api/users/${id}`, "User deleted.")}
               deleteRole={(roleName) => deleteRecord(`/api/roles?name=${encodeURIComponent(roleName)}`, "Role deleted.")}
+              isAdmin={isAdmin}
               refreshData={refreshData}
               setToast={(message) => setToast(cleanMessage(message))}
               saveRolePermissions={async (role, permissionCodes) => {
@@ -956,6 +967,7 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { id?: st
               saving={saving}
               canManage={can("housing.manage")}
               canApprove={can("housing.approve")}
+              isAdmin={isAdmin}
               userRole={user.role}
               submitHousing={(formData) => postRecord("/api/housing", formData, "Housing record")}
               updateHousing={(type, id, body) => patchRecord(`/api/housing/${type}/${id}`, body, "Housing record updated.")}
@@ -1079,6 +1091,8 @@ function Assets({
   users,
   locations,
   canManageAssets,
+  isAdmin,
+  deleteAsset,
   saving,
 }: {
   assets: any[];
@@ -1094,6 +1108,8 @@ function Assets({
   users: any[];
   locations: any[];
   canManageAssets: boolean;
+  isAdmin: boolean;
+  deleteAsset: (id: string) => void;
   saving: boolean;
 }) {
   const [previewAsset, setPreviewAsset] = useState<any | null>(null);
@@ -1201,6 +1217,7 @@ function Assets({
                 <th className="px-3 py-3">Description</th>
                 <th className="px-3 py-3">Serial No.</th>
                 <th className="px-3 py-3">Status</th>
+                {isAdmin && <th className="px-3 py-3">Actions</th>}
               </tr>
             </thead>
             <tbody>
@@ -1216,6 +1233,11 @@ function Assets({
                   <td className="max-w-[360px] px-3 py-3"><div className="line-clamp-2">{asset.additionalDescription || asset.remarks || "-"}</div></td>
                   <td className="px-3 py-3">{asset.serialNumber || "-"}</td>
                   <td className="px-3 py-3"><span className="rounded-full bg-lime-100 px-2 py-1 text-xs font-black text-lime-700">{asset.status === "ACTIVE" ? "Online" : asset.status}</span></td>
+                  {isAdmin && (
+                    <td className="px-3 py-3">
+                      <button type="button" disabled={saving} onClick={(event) => { event.stopPropagation(); deleteAsset(asset.id); }} className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Delete</button>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
@@ -1665,6 +1687,7 @@ function WorkOrders({
   const [overdueOnly, setOverdueOnly] = useState(false);
   const [monthDate, setMonthDate] = useState(() => new Date());
   const isTechnician = roleKindLabel(role) === "technician";
+  const isAdmin = roleKindLabel(role) === "admin";
   const canAssignOrEdit = permissions.manageWork && !isTechnician;
   const canExecute = permissions.executeWork;
   const canFinalReview = permissions.verifyWork && !isTechnician;
@@ -1838,7 +1861,7 @@ function WorkOrders({
                           {canExecute && work.status !== "CLOSED" && work.status !== "PENDING_SUPERVISOR_REVIEW" && <button type="button" disabled={workAction === `${work.id}:complete`} onClick={(event) => { event.stopPropagation(); runWorkAction(`${work.id}:complete`, work, () => updateWorkStatus(work.id, "COMPLETED")); }} className="rounded-lg bg-leaf px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Submit Review</button>}
                           {canFinalReview && ["PENDING_SUPERVISOR_REVIEW", "COMPLETED"].includes(work.status) && <button type="button" disabled={workAction === `${work.id}:close`} onClick={(event) => { event.stopPropagation(); setSelectedWorkId(work.id); setReviewWork({ work, action: "close" }); }} className="rounded-lg bg-ink px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Close Work Order</button>}
                           {canFinalReview && ["PENDING_SUPERVISOR_REVIEW", "COMPLETED"].includes(work.status) && <button type="button" disabled={workAction === `${work.id}:reopen`} onClick={(event) => { event.stopPropagation(); setSelectedWorkId(work.id); setReviewWork({ work, action: "reopen" }); }} className="rounded-lg bg-amber-600 px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Reopen</button>}
-                          {canAssignOrEdit && work.status !== "CLOSED" && <button type="button" disabled={workAction === `${work.id}:delete`} onClick={(event) => { event.stopPropagation(); runWorkAction(`${work.id}:delete`, work, () => deleteWorkOrder(work.id)); }} className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Delete</button>}
+                          {isAdmin && work.status !== "CLOSED" && <button type="button" disabled={workAction === `${work.id}:delete`} onClick={(event) => { event.stopPropagation(); runWorkAction(`${work.id}:delete`, work, () => deleteWorkOrder(work.id)); }} className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Delete</button>}
                         </div>
                       </td>
                     </tr>
@@ -2082,6 +2105,7 @@ function Helpdesk({
   const [categoryFilter, setCategoryFilter] = useState("All");
   const [overdueOnly, setOverdueOnly] = useState(false);
   const isSupervisorView = roleKindLabel(role) === "admin" || roleKindLabel(role) === "supervisor";
+  const isAdmin = roleKindLabel(role) === "admin";
   const requestCategories = ["All", ...Array.from(new Set(requests.map((request) => request.category).filter(Boolean)))];
   const filteredRequests = useMemo(() => {
     return requests.filter((request) => {
@@ -2246,7 +2270,7 @@ function Helpdesk({
                         <button type="button" onClick={(event) => { event.stopPropagation(); setSelectedRequestId(request.id); setPreviewRequest(request); }} className="rounded-lg bg-slate-700 px-3 py-2 text-xs font-black text-white">Preview</button>
                         {isSupervisorView && permissions.manageRequests && <button type="button" disabled={Boolean(request.workOrder) || requestAction === `${request.id}:wo`} onClick={(event) => { event.stopPropagation(); runRequestAction(`${request.id}:wo`, request, () => convertRequest(request.id, { assignedTeamCode: assignment.assignedTeamCode })); }} className="rounded-lg bg-ink px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">{requestAction === `${request.id}:wo` ? "Creating..." : request.workOrder ? "WO Created" : "Create WO"}</button>}
                         {isSupervisorView && permissions.approveRequests && <button type="button" disabled={requestAction === `${request.id}:reject`} onClick={(event) => { event.stopPropagation(); runRequestAction(`${request.id}:reject`, request, () => updateRequest(request.id, requestFormData(request, "REJECTED", "Rejected by supervisor/helpdesk", { assignedTeamCode: assignment.assignedTeamCode }))); }} className="rounded-lg bg-amber-600 px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">{requestAction === `${request.id}:reject` ? "Saving..." : "Reject"}</button>}
-                        {isSupervisorView && permissions.manageRequests && <button type="button" disabled={requestAction === `${request.id}:delete`} onClick={(event) => { event.stopPropagation(); runRequestAction(`${request.id}:delete`, request, () => deleteRequest(request.id)); }} className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">{requestAction === `${request.id}:delete` ? "Deleting..." : "Delete"}</button>}
+                        {isAdmin && permissions.manageRequests && <button type="button" disabled={requestAction === `${request.id}:delete`} onClick={(event) => { event.stopPropagation(); runRequestAction(`${request.id}:delete`, request, () => deleteRequest(request.id)); }} className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">{requestAction === `${request.id}:delete` ? "Deleting..." : "Delete"}</button>}
                       </div>
                       {isSupervisorView && permissions.manageRequests && (
                         <select
@@ -3436,6 +3460,8 @@ function Ppm({
   workOrders,
   submitPpm,
   updatePpm,
+  deletePpm,
+  isAdmin,
   saving,
 }: {
   ppms: any[];
@@ -3443,6 +3469,8 @@ function Ppm({
   workOrders: any[];
   submitPpm: (formData: FormData) => void;
   updatePpm: (body: Record<string, unknown>) => Promise<void> | void;
+  deletePpm: (id: string) => void;
+  isAdmin: boolean;
   saving: boolean;
 }) {
   const [previewPpm, setPreviewPpm] = useState<any | null>(null);
@@ -3505,6 +3533,7 @@ function Ppm({
                         <div className="flex gap-2">
                           <button type="button" onClick={(event) => { event.stopPropagation(); setPreviewPpm(ppm); }} className="rounded-lg bg-lagoon px-3 py-2 text-xs font-black text-white">Preview</button>
                           <button type="button" disabled={saving} onClick={(event) => { event.stopPropagation(); updatePpm({ id: ppm.id, active: !ppm.active }); }} className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-black text-slate-700">{ppm.active ? "Pause" : "Activate"}</button>
+                          {isAdmin && <button type="button" disabled={saving} onClick={(event) => { event.stopPropagation(); deletePpm(ppm.id); }} className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Delete</button>}
                         </div>
                       </td>
                     </tr>
@@ -3740,7 +3769,7 @@ function PmPreviewModal({
   );
 }
 
-function Inventory({ inventory, submitInventory, saving }: { inventory: any[]; submitInventory: (formData: FormData) => void; saving: boolean }) {
+function Inventory({ inventory, submitInventory, deleteInventory, isAdmin, saving }: { inventory: any[]; submitInventory: (formData: FormData) => void; deleteInventory: (id: string) => void; isAdmin: boolean; saving: boolean }) {
   return (
     <section className="grid gap-5 xl:grid-cols-[1fr_380px]">
       <Panel title="MRO Inventory & Stores" icon={Boxes}>
@@ -3756,6 +3785,7 @@ function Inventory({ inventory, submitInventory, saving }: { inventory: any[]; s
               ["reorderPoint", "Reorder"],
               ["vendor", "Vendor"],
             ]}
+            actions={isAdmin ? (row) => <DeleteRowButton saving={saving} onDelete={() => deleteInventory(row.id)} /> : undefined}
           />
           <div className="h-72 rounded-lg bg-slate-50 p-3">
             <ResponsiveContainer>
@@ -3776,7 +3806,7 @@ function Inventory({ inventory, submitInventory, saving }: { inventory: any[]; s
   );
 }
 
-function Hse({ inspections, submitInspection, saving }: { inspections: any[]; submitInspection: (formData: FormData) => void; saving: boolean }) {
+function Hse({ inspections, submitInspection, deleteInspection, isAdmin, saving }: { inspections: any[]; submitInspection: (formData: FormData) => void; deleteInspection: (id: string) => void; isAdmin: boolean; saving: boolean }) {
   return (
     <section className="grid gap-5 xl:grid-cols-[1fr_380px]">
       <Panel title="HSE, Compliance & Inspections" icon={ShieldCheck}>
@@ -3792,6 +3822,7 @@ function Hse({ inspections, submitInspection, saving }: { inspections: any[]; su
             ["score", "Score"],
             ["status", "Status"],
           ]}
+          actions={isAdmin ? (row) => <DeleteRowButton saving={saving} onDelete={() => deleteInspection(row.id)} /> : undefined}
         />
         <div className="rounded-lg bg-coral/10 p-4">
           <AlertTriangle className="text-coral" />
@@ -3812,6 +3843,8 @@ function ComplianceCertification({
   inspections,
   view,
   submitCertificate,
+  deleteCertificate,
+  isAdmin,
   saving,
   navigate,
 }: {
@@ -3821,6 +3854,8 @@ function ComplianceCertification({
   inspections: any[];
   view: string;
   submitCertificate: (formData: FormData) => void;
+  deleteCertificate: (id: string) => void;
+  isAdmin: boolean;
   saving: boolean;
   navigate: (moduleId: string, menuKey: string, view?: string) => void;
 }) {
@@ -3993,7 +4028,7 @@ function ComplianceCertification({
             </div>
           )}
 
-          {tab === "certification-register" && <DataTable rows={rows} columns={[["certificateNo", "Certificate No"], ["title", "Title"], ["category", "Category"], ["authority", "Authority"], ["assetTag", "Asset"], ["location", "Location"], ["owner", "Owner"], ["status", "Status"], ["expiryDate", "Expiry"], ["days", "Days"]]} />}
+          {tab === "certification-register" && <DataTable rows={rows} columns={[["certificateNo", "Certificate No"], ["title", "Title"], ["category", "Category"], ["authority", "Authority"], ["assetTag", "Asset"], ["location", "Location"], ["owner", "Owner"], ["status", "Status"], ["expiryDate", "Expiry"], ["days", "Days"]]} actions={isAdmin ? (row) => <DeleteRowButton saving={saving} onDelete={() => deleteCertificate(row.id)} /> : undefined} />}
           {tab === "compliance-non-compliance" && (
             <div className="grid gap-4">
               <div className="grid gap-3 md:grid-cols-4">
@@ -4260,6 +4295,8 @@ function DocumentManagement({
   view,
   refreshData,
   canUploadDocuments,
+  isAdmin,
+  deleteDocument,
 }: {
   assets: any[];
   services: any[];
@@ -4269,6 +4306,8 @@ function DocumentManagement({
   view: string;
   refreshData: () => Promise<void>;
   canUploadDocuments: boolean;
+  isAdmin: boolean;
+  deleteDocument: (id: string) => void;
 }) {
   const [tab, setTab] = useState(view || "documents-om-manuals");
 
@@ -4282,6 +4321,7 @@ function DocumentManagement({
       const asset = assets.find((item) => item.tag === document.assetTag);
       return {
         id: document.id,
+        canDelete: true,
         documentType,
         reference: document.assetTag,
         title: document.fileName,
@@ -4419,6 +4459,7 @@ function DocumentManagement({
                 ["uploadedAt", "Uploaded"],
                 ["size", "Size"],
               ]}
+              actions={isAdmin ? (row) => row.canDelete ? <DeleteRowButton saving={false} onDelete={() => deleteDocument(row.id)} /> : null : undefined}
             />
           )}
           {tab === "documents-warranties" && (
@@ -4436,6 +4477,7 @@ function DocumentManagement({
                 ["uploadedAt", "Uploaded"],
                 ["size", "Size"],
               ]}
+              actions={isAdmin ? (row) => row.canDelete ? <DeleteRowButton saving={false} onDelete={() => deleteDocument(row.id)} /> : null : undefined}
             />
           )}
           {tab === "documents-contracts-slas" && (
@@ -4453,6 +4495,7 @@ function DocumentManagement({
                 ["uploadedAt", "Uploaded"],
                 ["size", "Size"],
               ]}
+              actions={isAdmin ? (row) => row.canDelete ? <DeleteRowButton saving={false} onDelete={() => deleteDocument(row.id)} /> : null : undefined}
             />
           )}
         </div>
@@ -4574,6 +4617,8 @@ function TeamsServices({
   deleteTeam,
   deleteService,
   deleteDepartment,
+  deleteCategory,
+  isAdmin,
   view,
 }: {
   teams: any[];
@@ -4591,6 +4636,8 @@ function TeamsServices({
   deleteTeam: (id: string) => Promise<void> | void;
   deleteService: (id: string) => Promise<void> | void;
   deleteDepartment: (id: string) => Promise<void> | void;
+  deleteCategory: (id: string) => Promise<void> | void;
+  isAdmin: boolean;
   view: string;
 }) {
   const [editingDepartment, setEditingDepartment] = useState<any | null>(null);
@@ -4622,34 +4669,34 @@ function TeamsServices({
           <Panel title="Department Codes" icon={MapPinned}>
             <ReportButtons type="departments" label="Departments report" />
             <DataTable rows={departments} columns={[["code", "Code"], ["name", "Department"], ["siteLocation", "Site"], ["description", "Description"]]} />
-            <SetupActions rows={departments} labelKey="code" onEdit={setEditingDepartment} onDelete={deleteDepartment} saving={saving} />
+            <SetupActions rows={departments} labelKey="code" onEdit={setEditingDepartment} onDelete={deleteDepartment} saving={saving} isAdmin={isAdmin} />
           </Panel>
         )}
         {showTeamCode && (
           <Panel title="Team Codes" icon={Users}>
             <ReportButtons type="teams" label="Team codes report" />
             <DataTable rows={teamRows} columns={[["code", "Team Code"], ["name", "Team Name"], ["departmentName", "Department"], ["departmentCode", "Dept Code"], ["service", "Service"]]} />
-            <SetupActions rows={teamRows} labelKey="code" onEdit={setEditingTeam} onDelete={deleteTeam} saving={saving} />
+            <SetupActions rows={teamRows} labelKey="code" onEdit={setEditingTeam} onDelete={deleteTeam} saving={saving} isAdmin={isAdmin} />
           </Panel>
         )}
         {showServiceTeams && (
           <Panel title="Service Teams" icon={Users}>
             <ReportButtons type="teams" label="Service teams report" />
             <DataTable rows={teamRows} columns={[["code", "Code"], ["name", "Team"], ["companyIdNumber", "Company ID"], ["departmentCode", "Dept"], ["service", "Service"], ["email", "Email"], ["phone", "Phone"]]} />
-            <SetupActions rows={teamRows} labelKey="code" onEdit={setEditingTeam} onDelete={deleteTeam} saving={saving} />
+            <SetupActions rows={teamRows} labelKey="code" onEdit={setEditingTeam} onDelete={deleteTeam} saving={saving} isAdmin={isAdmin} />
           </Panel>
         )}
         {showServices && (
           <Panel title="Services Catalog" icon={ClipboardCheck}>
             <ReportButtons type="services" label="Services report" />
             <DataTable rows={serviceRows} columns={[["code", "Code"], ["name", "Service"], ["departmentName", "Department"], ["departmentCode", "Dept"], ["teamCode", "Team Code"], ["slaHours", "SLA hrs"]]} />
-            <SetupActions rows={serviceRows} labelKey="code" onEdit={setEditingService} onDelete={deleteService} saving={saving} />
+            <SetupActions rows={serviceRows} labelKey="code" onEdit={setEditingService} onDelete={deleteService} saving={saving} isAdmin={isAdmin} />
           </Panel>
         )}
         {showAll && (
           <Panel title="Asset Categories" icon={Boxes}>
             <ReportButtons type="asset-categories" label="Categories report" />
-            <DataTable rows={categories} columns={[["code", "Code"], ["name", "Category"], ["type", "Type"], ["defaultLifeYrs", "Life yrs"], ["statutory", "Statutory"]]} />
+            <DataTable rows={categories} columns={[["code", "Code"], ["name", "Category"], ["type", "Type"], ["defaultLifeYrs", "Life yrs"], ["statutory", "Statutory"]]} actions={isAdmin ? (row) => <DeleteRowButton saving={saving} onDelete={() => deleteCategory(row.id)} /> : undefined} />
           </Panel>
         )}
       </div>
@@ -4679,7 +4726,7 @@ function TeamsServices({
   );
 }
 
-function SetupActions({ rows, labelKey, onEdit, onDelete, saving }: { rows: any[]; labelKey: string; onEdit: (row: any) => void; onDelete: (id: string) => void; saving: boolean }) {
+function SetupActions({ rows, labelKey, onEdit, onDelete, saving, isAdmin }: { rows: any[]; labelKey: string; onEdit: (row: any) => void; onDelete: (id: string) => void; saving: boolean; isAdmin: boolean }) {
   if (!rows.length) return null;
   return (
     <div className="mt-4 grid gap-2">
@@ -4688,7 +4735,7 @@ function SetupActions({ rows, labelKey, onEdit, onDelete, saving }: { rows: any[
           <span className="text-sm font-black">{row[labelKey]} / {row.name}</span>
           <div className="flex gap-2">
             <button type="button" onClick={() => onEdit(row)} className="rounded-lg bg-lagoon px-3 py-2 text-xs font-black text-white">Edit</button>
-            <button type="button" disabled={saving} onClick={() => onDelete(row.id)} className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Delete</button>
+            {isAdmin && <button type="button" disabled={saving} onClick={() => onDelete(row.id)} className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">Delete</button>}
           </div>
         </div>
       ))}
@@ -4802,7 +4849,7 @@ function ServiceForm({ service, teams, departments, onSubmit, saving }: { servic
   );
 }
 
-function Locations({ locations, submitLocation, saving }: { locations: any[]; submitLocation: (formData: FormData) => void; saving: boolean }) {
+function Locations({ locations, submitLocation, deleteLocation, isAdmin, saving }: { locations: any[]; submitLocation: (formData: FormData) => void; deleteLocation: (id: string) => void; isAdmin: boolean; saving: boolean }) {
   const [siteFilter, setSiteFilter] = useState("");
   const [buildingFilter, setBuildingFilter] = useState("");
   const [floorFilter, setFloorFilter] = useState("");
@@ -4855,7 +4902,7 @@ function Locations({ locations, submitLocation, saving }: { locations: any[]; su
           <div className="rounded-lg bg-amber-50 p-3"><p className="text-xs font-black uppercase text-amber-700">Floors</p><p className="text-2xl font-black">{new Set(locations.map((location) => `${location.building}-${location.floor}`)).size}</p></div>
           <div className="rounded-lg bg-rose-50 p-3"><p className="text-xs font-black uppercase text-rose-700">Rooms</p><p className="text-2xl font-black">{locations.length}</p></div>
         </div>
-        <DataTable rows={filtered} columns={[["code", "Code"], ["site", "Site"], ["zone", "Zone"], ["building", "Building"], ["floor", "Floor"], ["room", "Room"], ["type", "Type"], ["description", "Description"], ["active", "Active"]]} />
+        <DataTable rows={filtered} columns={[["code", "Code"], ["site", "Site"], ["zone", "Zone"], ["building", "Building"], ["floor", "Floor"], ["room", "Room"], ["type", "Type"], ["description", "Description"], ["active", "Active"]]} actions={isAdmin ? (row) => <DeleteRowButton saving={saving} onDelete={() => deleteLocation(row.id)} /> : undefined} />
       </Panel>
       <div className="grid gap-5">
         <Panel title="Location Hierarchy" icon={MapPinned}>
@@ -4867,7 +4914,7 @@ function Locations({ locations, submitLocation, saving }: { locations: any[]; su
   );
 }
 
-function JobPlans({ jobPlans, services, departments, submitJobPlan, saving }: { jobPlans: any[]; services: any[]; departments: any[]; submitJobPlan: (formData: FormData) => void; saving: boolean }) {
+function JobPlans({ jobPlans, services, departments, submitJobPlan, deleteJobPlan, isAdmin, saving }: { jobPlans: any[]; services: any[]; departments: any[]; submitJobPlan: (formData: FormData) => void; deleteJobPlan: (id: string) => void; isAdmin: boolean; saving: boolean }) {
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
@@ -4879,7 +4926,7 @@ function JobPlans({ jobPlans, services, departments, submitJobPlan, saving }: { 
     <section className="grid gap-5 xl:grid-cols-[1fr_420px]">
       <Panel title="Job Plans" icon={ClipboardCheck}>
         <ReportButtons type="job-plans" label="Job plans report" />
-        <DataTable rows={jobPlans} columns={[["code", "Code"], ["name", "Name"], ["assetType", "Asset Type"], ["departmentCode", "Dept"], ["serviceCode", "Service"], ["estimatedHours", "Hours"], ["priority", "Priority"], ["active", "Active"]]} />
+        <DataTable rows={jobPlans} columns={[["code", "Code"], ["name", "Name"], ["assetType", "Asset Type"], ["departmentCode", "Dept"], ["serviceCode", "Service"], ["estimatedHours", "Hours"], ["priority", "Priority"], ["active", "Active"]]} actions={isAdmin ? (row) => <DeleteRowButton saving={saving} onDelete={() => deleteJobPlan(row.id)} /> : undefined} />
       </Panel>
       <form onSubmit={handleSubmit} className="rounded-lg border border-white/80 bg-white p-5 shadow-lift">
         <h3 className="text-xl font-black">Add Job Plan</h3>
@@ -4999,6 +5046,7 @@ function UsersRoles({
   updateUser,
   deleteUser,
   deleteRole,
+  isAdmin,
   saveRolePermissions,
   saving,
   setToast,
@@ -5015,6 +5063,7 @@ function UsersRoles({
   updateUser: (id: string, formData: FormData) => void;
   deleteUser: (id: string) => void;
   deleteRole: (role: string) => void;
+  isAdmin: boolean;
   saveRolePermissions: (role: string, permissionCodes: string[]) => void;
   refreshData: () => void;
   saving: boolean;
@@ -5089,23 +5138,25 @@ function UsersRoles({
                 </div>
                 <div className="flex gap-2">
                   <button onClick={() => setEditingUser(account)} className="rounded-lg bg-lagoon px-3 py-2 text-xs font-black text-white">Edit</button>
-                  <button
-                    disabled={account.id === currentUser.id || account.email === currentUser.email}
-                    onClick={() => {
-                      if (account.id === currentUser.id || account.email === currentUser.email) {
-                        setToast("You cannot delete your own user account.");
-                        return;
-                      }
-                      if (account.email === "admin@cafm.local") {
-                        setToast("Initial admin user cannot be deleted.");
-                        return;
-                      }
-                      deleteUser(account.id);
-                    }}
-                    className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white disabled:bg-slate-300"
-                  >
-                    Delete
-                  </button>
+                  {isAdmin && (
+                    <button
+                      disabled={account.id === currentUser.id || account.email === currentUser.email}
+                      onClick={() => {
+                        if (account.id === currentUser.id || account.email === currentUser.email) {
+                          setToast("You cannot delete your own user account.");
+                          return;
+                        }
+                        if (account.email === "admin@cafm.local") {
+                          setToast("Initial admin user cannot be deleted.");
+                          return;
+                        }
+                        deleteUser(account.id);
+                      }}
+                      className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white disabled:bg-slate-300"
+                    >
+                      Delete
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
@@ -5118,15 +5169,17 @@ function UsersRoles({
               {roleOptions(roles).map((item) => <option key={item}>{item}</option>)}
             </select>
             <button onClick={saveVisiblePermissions} className="rounded-lg bg-ink px-4 py-2 text-sm font-black text-white">Save Permissions</button>
-            <button
-              type="button"
-              disabled={saving || !canDeleteRole}
-              onClick={deleteSelectedRole}
-              title={canDeleteRole ? "Delete selected role" : roleAssignedUsers > 0 ? "Assign users to another role before deleting" : "Standard roles cannot be deleted"}
-              className="rounded-lg bg-coral px-4 py-2 text-sm font-black text-white disabled:bg-slate-300"
-            >
-              Delete Role
-            </button>
+            {isAdmin && (
+              <button
+                type="button"
+                disabled={saving || !canDeleteRole}
+                onClick={deleteSelectedRole}
+                title={canDeleteRole ? "Delete selected role" : roleAssignedUsers > 0 ? "Assign users to another role before deleting" : "Standard roles cannot be deleted"}
+                className="rounded-lg bg-coral px-4 py-2 text-sm font-black text-white disabled:bg-slate-300"
+              >
+                Delete Role
+              </button>
+            )}
           </div>
           <div className="grid gap-4">
             {Object.entries(groupedPermissions).map(([module, modulePermissions]) => {
@@ -5496,6 +5549,7 @@ function HousingOperations({
   saving,
   canManage,
   canApprove,
+  isAdmin,
   userRole,
   submitHousing,
   updateHousing,
@@ -5507,6 +5561,7 @@ function HousingOperations({
   saving: boolean;
   canManage: boolean;
   canApprove: boolean;
+  isAdmin: boolean;
   userRole: string;
   submitHousing: (formData: FormData) => void;
   updateHousing: (type: string, id: string, body: Record<string, unknown>) => Promise<void> | void;
@@ -5900,7 +5955,7 @@ function HousingOperations({
           type={selected.type}
           record={selected.record}
           history={history.filter((item) => item.entityId === selected.record.id || item.roomId === selected.record.id || item.bookingId === selected.record.id)}
-          canManage={canManage}
+          canDelete={isAdmin}
           onClose={() => setSelected(null)}
           onDelete={() => {
             deleteHousing(selected.type, selected.record.id);
@@ -6584,7 +6639,7 @@ function HousingForm({ title, type, saving, onSubmit, children }: { title: strin
   );
 }
 
-function HousingPreviewModal({ type, record, history, canManage, onClose, onDelete }: { type: string; record: any; history: any[]; canManage: boolean; onClose: () => void; onDelete: () => void }) {
+function HousingPreviewModal({ type, record, history, canDelete, onClose, onDelete }: { type: string; record: any; history: any[]; canDelete: boolean; onClose: () => void; onDelete: () => void }) {
   const attachments = attachmentList(record.photoUrls || record.attachmentUrls);
   const images = attachments.filter(isImageUrl);
   return (
@@ -6616,7 +6671,7 @@ function HousingPreviewModal({ type, record, history, canManage, onClose, onDele
             )) : <p className="rounded-lg bg-slate-50 p-3 text-sm font-bold text-slate-500">No history entries yet.</p>}
           </div>
         </div>
-        {canManage && <button type="button" onClick={onDelete} className="h-11 rounded-lg bg-coral font-black text-white">Delete {type}</button>}
+        {canDelete && <button type="button" onClick={onDelete} className="h-11 rounded-lg bg-coral font-black text-white">Delete {type}</button>}
       </div>
     </RequestModalShell>
   );
@@ -6764,7 +6819,15 @@ function Panel({ title, icon: Icon, children }: { title: string; icon: any; chil
   );
 }
 
-function DataTable({ rows, columns }: { rows: any[]; columns: [string, string][] }) {
+function DeleteRowButton({ saving, onDelete }: { saving: boolean; onDelete: () => void }) {
+  return (
+    <button type="button" disabled={saving} onClick={onDelete} className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white disabled:bg-slate-400">
+      Delete
+    </button>
+  );
+}
+
+function DataTable({ rows, columns, actions }: { rows: any[]; columns: [string, string][]; actions?: (row: any) => ReactNode }) {
   const [page, setPage] = useState(1);
   const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
@@ -6787,6 +6850,7 @@ function DataTable({ rows, columns }: { rows: any[]; columns: [string, string][]
                   {label}
                 </th>
               ))}
+              {actions && <th className="whitespace-nowrap px-3 py-3 font-black">Actions</th>}
             </tr>
           </thead>
           <tbody>
@@ -6798,6 +6862,7 @@ function DataTable({ rows, columns }: { rows: any[]; columns: [string, string][]
                     <CellValue value={row[key]} field={key} />
                   </td>
                 ))}
+                {actions && <td className="whitespace-nowrap px-3 py-3">{actions(row)}</td>}
               </tr>
             ))}
           </tbody>

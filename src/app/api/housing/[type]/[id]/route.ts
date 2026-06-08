@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { apiError } from "@/lib/api-response";
+import { requireAdmin } from "@/lib/api-auth";
 import { auditAction } from "@/lib/audit";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -19,8 +20,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ty
     const { type, id } = await params;
     const input = bodySchema.parse(await request.json());
     const user = await getCurrentUser();
+    const current = await findHousingRecord(type, id);
     const record = await updateHousingRecord(type, id, input, user);
-    await auditAction({ user, action: `HOUSING_${type.toUpperCase()}_UPDATE`, entity: `housing_${type}`, entityId: id, details: String(input.status || input.remarks || input.notes || "") });
+    await auditAction({ user, action: `HOUSING_${type.toUpperCase()}_UPDATE`, entity: `housing_${type}`, entityId: id, details: { before: current, input, after: record } });
     return NextResponse.json(record);
   } catch (error) {
     return apiError(error, "Unable to update housing record");
@@ -29,14 +31,31 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ty
 
 export async function DELETE(_: Request, { params }: { params: Promise<{ type: string; id: string }> }) {
   try {
+    const { error, user } = await requireAdmin();
+    if (error) return error;
     const { type, id } = await params;
-    const user = await getCurrentUser();
+    const current = await findHousingRecord(type, id);
     await deleteHousingRecord(type, id);
-    await auditAction({ user, action: `HOUSING_${type.toUpperCase()}_DELETE`, entity: `housing_${type}`, entityId: id });
+    await auditAction({ user, action: `HOUSING_${type.toUpperCase()}_DELETE`, entity: `housing_${type}`, entityId: id, details: { deletedRecord: current } });
     return NextResponse.json({ ok: true });
   } catch (error) {
     return apiError(error, "Unable to delete housing record");
   }
+}
+
+async function findHousingRecord(type: string, id: string) {
+  if (type === "property") return prisma.housingProperty.findUnique({ where: { id } });
+  if (type === "block") return prisma.housingBlock.findUnique({ where: { id } });
+  if (type === "room") return prisma.housingRoom.findUnique({ where: { id } });
+  if (type === "bed") return prisma.housingBed.findUnique({ where: { id } });
+  if (type === "resident") return prisma.housingResident.findUnique({ where: { id } });
+  if (type === "booking") return prisma.housingBooking.findUnique({ where: { id } });
+  if (type === "inspection") return prisma.housingInspection.findUnique({ where: { id } });
+  if (type === "asset") return prisma.housingAsset.findUnique({ where: { id } });
+  if (type === "inventory") return prisma.housingInventory.findUnique({ where: { id } });
+  if (type === "notification-setting") return prisma.housingNotificationSetting.findUnique({ where: { id } });
+  if (type === "notification") return prisma.housingNotification.findUnique({ where: { id } });
+  throw new Error("Unsupported housing type.");
 }
 
 async function updateHousingRecord(type: string, id: string, input: Record<string, unknown>, user: Awaited<ReturnType<typeof getCurrentUser>>) {

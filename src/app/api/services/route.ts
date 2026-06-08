@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { apiError } from "@/lib/api-response";
 import { requirePermission } from "@/lib/api-auth";
+import { auditAction } from "@/lib/audit";
 import { prisma } from "@/lib/prisma";
 
 const schema = z.object({
@@ -17,7 +18,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const { error } = await requirePermission("requests.manage");
+    const { error, user } = await requirePermission("requests.manage");
     if (error) return error;
     const input = schema.parse(await request.json());
     const count = await prisma.serviceCatalog.count();
@@ -46,6 +47,7 @@ export async function POST(request: Request) {
         description: `Department ${name}`,
       },
     });
+    await auditAction({ user, action: "SERVICE_SAVE", entity: "service_catalog", entityId: created.id, details: { input, savedRecord: created } });
     return NextResponse.json(created, { status: 201 });
   } catch (error) {
     return apiError(error, "Unable to save service");

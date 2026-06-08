@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { addDays } from "date-fns";
 import { z } from "zod";
 import { apiError } from "@/lib/api-response";
-import { requirePermission } from "@/lib/api-auth";
+import { requireAdmin, requirePermission } from "@/lib/api-auth";
+import { auditAction } from "@/lib/audit";
 import { prisma } from "@/lib/prisma";
 
 const boolValue = z.preprocess((value) => {
@@ -26,9 +27,25 @@ export async function GET() {
   return NextResponse.json(await prisma.preventiveMaintenance.findMany({ orderBy: { nextDue: "asc" } }));
 }
 
+export async function DELETE(request: Request) {
+  try {
+    const { error, user } = await requireAdmin();
+    if (error) return error;
+    const id = new URL(request.url).searchParams.get("id");
+    if (!id) throw new Error("PPM id is required");
+    const current = await prisma.preventiveMaintenance.findUnique({ where: { id } });
+    if (!current) throw new Error("PPM not found");
+    await prisma.preventiveMaintenance.delete({ where: { id } });
+    await auditAction({ user, action: "PPM_DELETE", entity: "preventive_maintenance", entityId: id, details: { deletedRecord: current } });
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    return apiError(error, "Unable to delete PPM");
+  }
+}
+
 export async function POST(request: Request) {
   try {
-    const { error } = await requirePermission("ppm.manage");
+    const { error, user } = await requirePermission("ppm.manage");
     if (error) return error;
     const input = schema.parse(await request.json());
     const count = await prisma.preventiveMaintenance.count();
@@ -48,6 +65,7 @@ export async function POST(request: Request) {
       update: data,
       create: data,
     });
+    await auditAction({ user, action: "PPM_SAVE", entity: "preventive_maintenance", entityId: created.id, details: { input, savedRecord: created } });
     return NextResponse.json(created, { status: 201 });
   } catch (error) {
     return apiError(error, "Unable to save PPM");
@@ -56,12 +74,14 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
-    const { error } = await requirePermission("ppm.manage");
+    const { error, user } = await requirePermission("ppm.manage");
     if (error) return error;
     const input = schema.extend({ id: z.string().optional() }).parse(await request.json());
     const id = input.id || undefined;
     const code = input.code || undefined;
     if (!id && !code) throw new Error("PPM id or code is required");
+    const current = await prisma.preventiveMaintenance.findUnique({ where: id ? { id } : { code: code! } });
+    if (!current) throw new Error("PPM not found");
     const data = {
       name: input.name,
       assetTag: input.assetTag,
@@ -75,6 +95,7 @@ export async function PATCH(request: Request) {
       where: id ? { id } : { code: code! },
       data,
     });
+    await auditAction({ user, action: "PPM_UPDATE", entity: "preventive_maintenance", entityId: updated.id, details: { before: current, input, after: updated } });
     return NextResponse.json(updated);
   } catch (error) {
     return apiError(error, "Unable to update PPM");

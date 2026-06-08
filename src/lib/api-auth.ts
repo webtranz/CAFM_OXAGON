@@ -33,3 +33,12 @@ export async function requirePermission(code: string) {
   if (!allowed) return { user: null, error: authError("Access denied.", 403) };
   return { user, error: null };
 }
+
+export async function requireAdmin() {
+  const { user, error } = await requireUser();
+  if (error) return { user: null, error };
+  if (accessRole(user) !== "admin") {
+    return { user: null, error: authError("Only administrators can perform this action.", 403) };
+  }
+  return { user, error: null };
+}

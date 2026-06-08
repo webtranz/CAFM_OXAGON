@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { apiError } from "@/lib/api-response";
-import { requirePermission } from "@/lib/api-auth";
+import { requireAdmin, requirePermission } from "@/lib/api-auth";
+import { auditAction } from "@/lib/audit";
 import { prisma } from "@/lib/prisma";
 
 const schema = z.object({
@@ -17,7 +18,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const { error } = await requirePermission("roles.manage");
+    const { error, user } = await requirePermission("roles.manage");
     if (error) return error;
     const input = schema.parse(await request.json());
     const role = await prisma.role.upsert({
@@ -25,6 +26,7 @@ export async function POST(request: Request) {
       update: { description: input.description || "" },
       create: { name: input.name, description: input.description || "", standard: false },
     });
+    await auditAction({ user, action: "ROLE_SAVE", entity: "role", entityId: role.id, details: { input, savedRecord: role } });
     return NextResponse.json(role, { status: 201 });
   } catch (error) {
     return apiError(error, "Unable to save role");
@@ -33,7 +35,7 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
-    const { error } = await requirePermission("roles.manage");
+    const { error, user } = await requireAdmin();
     if (error) return error;
 
     const name = new URL(request.url).searchParams.get("name")?.trim();
@@ -59,6 +61,7 @@ export async function DELETE(request: Request) {
       prisma.rolePermission.deleteMany({ where: { role: role.name } }),
       prisma.role.delete({ where: { name: role.name } }),
     ]);
+    await auditAction({ user, action: "ROLE_DELETE", entity: "role", entityId: role.id, details: { deletedRecord: role } });
 
     return NextResponse.json({ ok: true });
   } catch (error) {

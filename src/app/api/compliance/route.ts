@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { addDays } from "date-fns";
 import { z } from "zod";
 import { apiError } from "@/lib/api-response";
-import { requirePermission } from "@/lib/api-auth";
+import { requireAdmin, requirePermission } from "@/lib/api-auth";
+import { auditAction } from "@/lib/audit";
 import { prisma } from "@/lib/prisma";
 
 const schema = z.object({
@@ -30,6 +31,22 @@ function parseDate(value: string | undefined, fallback: Date) {
   return Number.isNaN(parsed.getTime()) ? fallback : parsed;
 }
 
+export async function DELETE(request: Request) {
+  try {
+    const { error, user } = await requireAdmin();
+    if (error) return error;
+    const id = new URL(request.url).searchParams.get("id");
+    if (!id) throw new Error("Compliance certificate id is required");
+    const current = await prisma.complianceCertificate.findUnique({ where: { id } });
+    if (!current) throw new Error("Compliance certificate not found");
+    await prisma.complianceCertificate.delete({ where: { id } });
+    await auditAction({ user, action: "COMPLIANCE_CERTIFICATE_DELETE", entity: "compliance_certificate", entityId: id, details: { deletedRecord: current } });
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    return apiError(error, "Unable to delete compliance certificate");
+  }
+}
+
 export async function GET() {
   const { error } = await requirePermission("compliance.view");
   if (error) return error;
@@ -38,7 +55,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const { error } = await requirePermission("compliance.manage");
+    const { error, user } = await requirePermission("compliance.manage");
     if (error) return error;
     const input = schema.parse(await request.json());
     const count = await prisma.complianceCertificate.count();
@@ -79,6 +96,7 @@ export async function POST(request: Request) {
         notes: input.notes || "No notes recorded.",
       },
     });
+    await auditAction({ user, action: "COMPLIANCE_CERTIFICATE_SAVE", entity: "compliance_certificate", entityId: created.id, details: { input, savedRecord: created } });
     return NextResponse.json(created, { status: 201 });
   } catch (error) {
     return apiError(error, "Unable to save compliance certificate");

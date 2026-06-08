@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { apiError } from "@/lib/api-response";
 import { requirePermission } from "@/lib/api-auth";
+import { auditAction } from "@/lib/audit";
 import { prisma } from "@/lib/prisma";
 
 const schema = z.object({
@@ -11,7 +12,7 @@ const schema = z.object({
 
 export async function POST(request: Request) {
   try {
-    const { error } = await requirePermission("roles.manage");
+    const { error, user } = await requirePermission("roles.manage");
     if (error) return error;
     const input = schema.parse(await request.json());
     const permissionCodes = input.role === "Admin" ? input.permissionCodes : input.permissionCodes.filter((code) => code !== "documents.upload");
@@ -20,6 +21,17 @@ export async function POST(request: Request) {
     await prisma.rolePermission.createMany({
       data: permissions.map((permission) => ({ role: input.role, permissionId: permission.id })),
       skipDuplicates: true,
+    });
+    await auditAction({
+      user,
+      action: "ROLE_PERMISSIONS_UPDATE",
+      entity: "role_permissions",
+      entityId: input.role,
+      details: {
+        role: input.role,
+        requestedPermissionCodes: input.permissionCodes,
+        appliedPermissionCodes: permissions.map((permission) => permission.code),
+      },
     });
     return NextResponse.json({ ok: true });
   } catch (error) {

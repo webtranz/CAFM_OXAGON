@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { addDays } from "date-fns";
 import { z } from "zod";
 import { apiError } from "@/lib/api-response";
-import { requirePermission } from "@/lib/api-auth";
+import { requireAdmin, requirePermission } from "@/lib/api-auth";
+import { auditAction } from "@/lib/audit";
 import { prisma } from "@/lib/prisma";
 
 const schema = z.object({
@@ -16,7 +17,7 @@ const schema = z.object({
 
 export async function POST(request: Request) {
   try {
-    const { error } = await requirePermission("reports.view");
+    const { error, user } = await requirePermission("reports.view");
     if (error) return error;
     const input = schema.parse(await request.json());
     const count = await prisma.inspection.count();
@@ -35,8 +36,25 @@ export async function POST(request: Request) {
       },
     });
 
+    await auditAction({ user, action: "INSPECTION_CREATE", entity: "inspection", entityId: created.id, details: { input, createdRecord: created } });
     return NextResponse.json(created, { status: 201 });
   } catch (error) {
     return apiError(error, "Unable to create inspection");
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const { error, user } = await requireAdmin();
+    if (error) return error;
+    const id = new URL(request.url).searchParams.get("id");
+    if (!id) throw new Error("Inspection id is required");
+    const current = await prisma.inspection.findUnique({ where: { id } });
+    if (!current) throw new Error("Inspection not found");
+    await prisma.inspection.delete({ where: { id } });
+    await auditAction({ user, action: "INSPECTION_DELETE", entity: "inspection", entityId: id, details: { deletedRecord: current } });
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    return apiError(error, "Unable to delete inspection");
   }
 }

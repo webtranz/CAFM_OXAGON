@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { addDays, addHours, addYears } from "date-fns";
 import { apiError } from "@/lib/api-response";
 import { requirePermission } from "@/lib/api-auth";
+import { auditAction } from "@/lib/audit";
 import { csvResponse, parseCsv } from "@/lib/csv";
 import { prisma } from "@/lib/prisma";
 
@@ -9,7 +10,7 @@ type Row = Record<string, string>;
 
 export async function POST(request: Request) {
   try {
-    const { error } = await requirePermission("assets.manage");
+    const { error, user } = await requirePermission("assets.manage");
     if (error) return error;
     const formData = await request.formData();
     const module = String(formData.get("module") || "");
@@ -32,7 +33,23 @@ export async function POST(request: Request) {
       }
     }
 
-    return NextResponse.json(csvResponse(created, failed), { status: failed.length ? 207 : 201 });
+    const result = csvResponse(created, failed);
+    await auditAction({
+      user,
+      action: "BULK_UPLOAD",
+      entity: "bulk_upload",
+      entityId: module || "unknown",
+      details: {
+        module,
+        fileName: file.name,
+        fileSize: file.size,
+        totalRows: rows.length,
+        created,
+        failed,
+        result,
+      },
+    });
+    return NextResponse.json(result, { status: failed.length ? 207 : 201 });
   } catch (error) {
     return apiError(error, "Bulk upload failed");
   }

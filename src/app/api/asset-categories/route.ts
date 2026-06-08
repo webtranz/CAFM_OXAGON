@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { apiError } from "@/lib/api-response";
-import { requirePermission } from "@/lib/api-auth";
+import { requireAdmin, requirePermission } from "@/lib/api-auth";
+import { auditAction } from "@/lib/audit";
 import { prisma } from "@/lib/prisma";
 
 const schema = z.object({
@@ -17,9 +18,25 @@ export async function GET() {
   return NextResponse.json(await prisma.assetCategory.findMany({ orderBy: { name: "asc" } }));
 }
 
+export async function DELETE(request: Request) {
+  try {
+    const { error, user } = await requireAdmin();
+    if (error) return error;
+    const id = new URL(request.url).searchParams.get("id");
+    if (!id) throw new Error("Asset category id is required");
+    const current = await prisma.assetCategory.findUnique({ where: { id } });
+    if (!current) throw new Error("Asset category not found");
+    await prisma.assetCategory.delete({ where: { id } });
+    await auditAction({ user, action: "ASSET_CATEGORY_DELETE", entity: "asset_category", entityId: id, details: { deletedRecord: current } });
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    return apiError(error, "Unable to delete asset category");
+  }
+}
+
 export async function POST(request: Request) {
   try {
-    const { error } = await requirePermission("assets.manage");
+    const { error, user } = await requirePermission("assets.manage");
     if (error) return error;
     const input = schema.parse(await request.json());
     const count = await prisma.assetCategory.count();
@@ -30,6 +47,7 @@ export async function POST(request: Request) {
       update: { code, name, type: input.type || "General", defaultLifeYrs: input.defaultLifeYrs ?? 5, statutory: input.statutory ?? false, description: input.description || "" },
       create: { code, name, type: input.type || "General", defaultLifeYrs: input.defaultLifeYrs ?? 5, statutory: input.statutory ?? false, description: input.description || "" },
     });
+    await auditAction({ user, action: "ASSET_CATEGORY_SAVE", entity: "asset_category", entityId: created.id, details: { input, savedRecord: created } });
     return NextResponse.json(created, { status: 201 });
   } catch (error) {
     return apiError(error, "Unable to save asset category");

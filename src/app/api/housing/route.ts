@@ -210,7 +210,7 @@ export async function POST(request: Request) {
     const user = await getCurrentUser();
     const actor = user?.name || user?.email || "System";
     const result = await createHousingRecord(input, actor);
-    await auditAction({ user, action: `HOUSING_${input.type.toUpperCase()}_CREATE`, entity: `housing_${input.type}`, entityId: result.id, details: input.name || input.code || input.title });
+    await auditAction({ user, action: `HOUSING_${input.type.toUpperCase()}_CREATE`, entity: `housing_${input.type}`, entityId: result.id, details: { input, createdRecord: result } });
     return NextResponse.json(result, { status: 201 });
   } catch (error) {
     return apiError(error, "Unable to save housing record");

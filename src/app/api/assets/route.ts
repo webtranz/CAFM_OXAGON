@@ -3,6 +3,7 @@ import { addYears } from "date-fns";
 import { z } from "zod";
 import { apiError } from "@/lib/api-response";
 import { requirePermission } from "@/lib/api-auth";
+import { auditAction } from "@/lib/audit";
 import { prisma } from "@/lib/prisma";
 
 const schema = z.object({
@@ -41,7 +42,7 @@ const schema = z.object({
 
 export async function POST(request: Request) {
   try {
-    const { error } = await requirePermission("assets.manage");
+    const { error, user } = await requirePermission("assets.manage");
     if (error) return error;
     const input = schema.parse(await request.json());
     const count = await prisma.asset.count();
@@ -93,6 +94,7 @@ export async function POST(request: Request) {
       },
     });
 
+    await auditAction({ user, action: "ASSET_CREATE", entity: "asset", entityId: created.id, details: { input, createdRecord: created } });
     return NextResponse.json(created, { status: 201 });
   } catch (error) {
     return apiError(error, "Unable to create asset");

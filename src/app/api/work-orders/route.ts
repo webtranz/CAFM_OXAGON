@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { addHours } from "date-fns";
 import { accessRole } from "@/lib/access-control";
+import { auditAction } from "@/lib/audit";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
@@ -86,6 +87,7 @@ export async function POST(request: Request) {
       });
     }
 
+    await auditAction({ user, action: "WORK_ORDER_CREATE", entity: "work_order", entityId: created.id, details: { input, createdRecord: created } });
     return NextResponse.json(created, { status: 201 });
   } catch (error) {
     return NextResponse.json(

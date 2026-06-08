@@ -69,7 +69,7 @@ export async function POST(requestBody: Request, { params }: { params: Promise<{
       });
     }
 
-    await prisma.serviceRequest.update({
+    const updatedRequest = await prisma.serviceRequest.update({
       where: { id },
       data: {
         status: "APPROVED",
@@ -78,7 +78,13 @@ export async function POST(requestBody: Request, { params }: { params: Promise<{
         reviewedAt: new Date(),
       },
     });
-    await auditAction({ user, action: "SERVICE_REQUEST_CONVERT_TO_WORK_ORDER", entity: "service_request", entityId: id, details: workOrder.woNo });
+    await auditAction({
+      user,
+      action: "SERVICE_REQUEST_CONVERT_TO_WORK_ORDER",
+      entity: "service_request",
+      entityId: id,
+      details: { input: body, sourceRequest: request, selectedAsset, createdWorkOrder: workOrder, updatedRequest },
+    });
     return NextResponse.json(workOrder, { status: 201 });
   } catch (error) {
     return apiError(error, "Unable to convert request to work order");

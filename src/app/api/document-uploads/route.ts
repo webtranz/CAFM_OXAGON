@@ -3,6 +3,8 @@ import { mkdir, writeFile } from "fs/promises";
 import path from "path";
 import { NextResponse } from "next/server";
 import { accessRole } from "@/lib/access-control";
+import { requireAdmin } from "@/lib/api-auth";
+import { auditAction } from "@/lib/audit";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
@@ -16,6 +18,22 @@ const allowedExtensions = new Set([".pdf", ".png", ".jpg", ".jpeg", ".webp", ".g
 
 function safeSegment(value: string) {
   return value.trim().replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80);
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const { error, user } = await requireAdmin();
+    if (error) return error;
+    const id = new URL(request.url).searchParams.get("id");
+    if (!id) return NextResponse.json({ message: "Document id is required." }, { status: 400 });
+    const current = await prisma.documentUpload.findUnique({ where: { id } });
+    if (!current) return NextResponse.json({ message: "Document not found." }, { status: 404 });
+    await prisma.documentUpload.delete({ where: { id } });
+    await auditAction({ user, action: "DOCUMENT_UPLOAD_DELETE", entity: "document_upload", entityId: id, details: { deletedRecord: current } });
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    return NextResponse.json({ message: error instanceof Error ? error.message : "Unable to delete document." }, { status: 500 });
+  }
 }
 
 function hasExecutableSignature(buffer: Buffer) {
@@ -82,6 +100,22 @@ export async function POST(request: Request) {
         },
       });
       saved.push(record);
+      await auditAction({
+        user,
+        action: "DOCUMENT_UPLOAD_CREATE",
+        entity: "document_upload",
+        entityId: record.id,
+        details: {
+          category,
+          assetTag,
+          originalName,
+          storedUrl: fileUrl,
+          fileSize: file.size,
+          mimeType: file.type || "application/octet-stream",
+          checksum: record.checksum,
+          uploadedBy: record.uploadedBy,
+        },
+      });
     }
 
     return NextResponse.json({ documents: saved }, { status: 201 });

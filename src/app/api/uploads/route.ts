@@ -3,12 +3,13 @@ import path from "path";
 import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/api-auth";
+import { auditAction } from "@/lib/audit";
 
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
 const imageExtensions = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp"]);
 
 export async function POST(request: Request) {
-  const { error } = await requireUser();
+  const { error, user } = await requireUser();
   if (error) return error;
   const formData = await request.formData();
   const files = formData.getAll("files").filter((item): item is File => item instanceof File && item.size > 0);
@@ -25,6 +26,18 @@ export async function POST(request: Request) {
     const buffer = Buffer.from(await file.arrayBuffer());
     await writeFile(path.join(uploadDir, filename), buffer);
     urls.push(`/uploads/${filename}`);
+    await auditAction({
+      user,
+      action: "FILE_UPLOAD",
+      entity: "upload",
+      entityId: filename,
+      details: {
+        originalName: file.name,
+        storedUrl: `/uploads/${filename}`,
+        size: file.size,
+        mimeType: file.type || null,
+      },
+    });
   }
 
   return NextResponse.json({ urls });

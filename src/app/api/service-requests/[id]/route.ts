@@ -3,6 +3,7 @@ import { z } from "zod";
 import { addHours } from "date-fns";
 import { apiError } from "@/lib/api-response";
 import { canManageDepartmentRecord } from "@/lib/access-control";
+import { requireAdmin } from "@/lib/api-auth";
 import { auditAction } from "@/lib/audit";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -81,7 +82,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         approvedAt: status === "APPROVED" ? new Date() : undefined,
       },
     });
-    await auditAction({ user, action: `SERVICE_REQUEST_${status}`, entity: "service_request", entityId: id, details: input.rejectionReason || undefined });
+    await auditAction({ user, action: `SERVICE_REQUEST_${status}`, entity: "service_request", entityId: id, details: { before: current, input, after: updated } });
 
     return NextResponse.json(updated);
   } catch (error) {
@@ -91,14 +92,13 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
 export async function DELETE(_: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const { error, user } = await requireAdmin();
+    if (error) return error;
     const { id } = await params;
     const current = await prisma.serviceRequest.findUnique({ where: { id } });
-    const user = await getCurrentUser();
-    if (!canManageDepartmentRecord(user, current?.departmentCode)) {
-      return apiError(new Error("You do not have permission to delete this request."), "Access denied", 403);
-    }
+    if (!current) throw new Error("Service request not found");
     await prisma.serviceRequest.delete({ where: { id } });
-    await auditAction({ user, action: "SERVICE_REQUEST_DELETE", entity: "service_request", entityId: id });
+    await auditAction({ user, action: "SERVICE_REQUEST_DELETE", entity: "service_request", entityId: id, details: { deletedRecord: current } });
     return NextResponse.json({ ok: true });
   } catch (error) {
     return apiError(error, "Unable to delete service request");
