@@ -582,34 +582,6 @@ async function main() {
 
   await Promise.all(
     [
-      ["KAFD-A-G-LOBBY", "King Abdullah Financial District", "CB", "Tower A", "G", "Main Lobby", "Public", "Main reception and visitor lobby."],
-      ["KAFD-A-18-PLANT", "King Abdullah Financial District", "CB", "Tower A", "18", "Plant Room", "Plant", "Primary MEP plant room for Tower A level 18."],
-      ["KAFD-A-18-OFFICE", "King Abdullah Financial District", "CB", "Tower A", "18", "Executive Offices", "Office", "Executive office suite and meeting rooms."],
-      ["KAFD-A-B2-GEN", "King Abdullah Financial District", "CB", "Tower A", "B2", "Generator Room", "Plant", "Emergency generator room."],
-      ["KAFD-A-B2-FIRE", "King Abdullah Financial District", "CB", "Tower A", "B2", "Fire Pump Room", "Life Safety", "Fire pump and controller room."],
-      ["KAFD-A-B2-CHILLER", "King Abdullah Financial District", "CB", "Tower A", "B2", "Chiller Plant", "Plant", "Chiller and chilled water plant space."],
-      ["KAFD-A-G-LIFT", "King Abdullah Financial District", "CB", "Tower A", "G", "Lift Lobby", "Vertical Transport", "Passenger lift lobby."],
-      ["KAFD-A-18-PANTRY", "King Abdullah Financial District", "CB", "Tower A", "18", "Pantry", "Support", "Floor pantry and small wet area."],
-    ].map(([code, siteName, zone, building, floor, room, type, description]) =>
-      prisma.location.upsert({
-        where: { code: String(code) },
-        update: {},
-        create: {
-          code: String(code),
-          site: String(siteName),
-          zone: String(zone),
-          building: String(building),
-          floor: String(floor),
-          room: String(room),
-          type: String(type),
-          description: String(description),
-        },
-      }),
-    ),
-  );
-
-  await Promise.all(
-    [
       ["JP-HVAC-FILTER", "AHU Filter Replacement", "HVAC", "MEP", "HVAC-REQ", 2, "MEDIUM", "Inspect filter bank, isolate AHU if required, replace filters, clean frame, verify differential pressure and update asset history.", "Use PPE, check access permit and verify safe access before removing filters."],
       ["JP-FLS-PUMP", "Fire Pump Weekly Test", "FLS", "MEP", "PLUMB-REQ", 1.5, "CRITICAL", "Check controller, run pump, record suction/discharge pressure, verify jockey pump and alarms.", "Notify control room before test and follow fire system bypass process."],
       ["JP-CHILLER-CB", "Chiller Condition Investigation", "HVAC", "MEP", "HVAC-REQ", 4, "HIGH", "Review BMS trend, inspect vibration, check oil and temperatures, record corrective recommendation.", "Use hearing protection and follow rotating equipment precautions."],

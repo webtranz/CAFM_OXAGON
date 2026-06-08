@@ -85,9 +85,7 @@ export const fallbackData = {
     { id: "role-supervisor", name: "Supervisor", description: "Assign and supervise work", standard: true },
     { id: "role-technician", name: "Technician", description: "Execute and update assigned work", standard: true },
   ],
-  locations: [
-    { id: "loc1", code: "TWA-L18-PLANT", site: "KAFD", zone: "CB", building: "Tower A", floor: "18", room: "Plant Room", type: "Plant", active: true },
-  ],
+  locations: [],
   jobPlans: [
     { id: "jp1", code: "JP-HVAC-FILTER", name: "AHU Filter Replacement", assetType: "HVAC", departmentCode: "MEP", serviceCode: "HVAC-REQ", estimatedHours: 2, priority: "MEDIUM", active: true },
   ],
