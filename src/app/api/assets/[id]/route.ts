@@ -74,6 +74,14 @@ const schema = z.object({
   conditionScore: z.coerce.number().min(0).max(100).optional(),
 });
 
+async function validDepartmentCode(code: string | undefined) {
+  const departmentCode = String(code || "").trim();
+  if (!departmentCode) throw new Error("DEPARTMENT is required and must match Services -> Department Codes.");
+  const department = await prisma.department.findUnique({ where: { code: departmentCode } });
+  if (!department) throw new Error(`DEPARTMENT ${departmentCode} is not defined under Services -> Department Codes.`);
+  return departmentCode;
+}
+
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { error, user } = await requirePermission("assets.manage");
@@ -86,6 +94,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const location = input.locationCode ? await prisma.location.findUnique({ where: { code: input.locationCode } }) : null;
     const name = input.name || input.equipmentDesc || input.assetDescription || current.name;
     const category = input.category || input.categoryDesc || input.assetGroup || input.classCode || current.category;
+    const departmentCode = await validDepartmentCode(input.departmentCode || current.departmentCode || undefined);
     const criticality = input.criticality && ["LOW", "MEDIUM", "HIGH", "CRITICAL"].includes(input.criticality) ? input.criticality as any : current.criticality;
     const status = input.outOfService === true ? "RETIRED" as any : input.outOfService === false ? "ACTIVE" as any : input.status && ["ACTIVE", "STANDBY", "DOWN", "RETIRED"].includes(input.status) ? input.status as any : current.status;
     const updated = await prisma.asset.update({
@@ -126,7 +135,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         primarySystem: input.primarySystem,
         additionalNote: input.additionalNote,
         parentAsset: input.parentAsset || current.parentAsset,
-        departmentCode: input.departmentCode || current.departmentCode,
+        departmentCode,
         assignedTeamCode: input.assignedTeamCode || current.assignedTeamCode,
         assignedSupervisorEmail: input.assignedSupervisorEmail || current.assignedSupervisorEmail,
         remarks: input.remarks || current.remarks,

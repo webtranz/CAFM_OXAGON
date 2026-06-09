@@ -14,7 +14,7 @@ const schema = z.object({
 
 async function serviceData(input: z.infer<typeof schema>) {
   const team = input.teamCode ? await prisma.team.findUnique({ where: { code: input.teamCode } }) : null;
-  const code = await assetDepartment(input.departmentCode);
+  const code = input.departmentCode || undefined;
   const name = input.departmentName || code || "General Service";
   return {
     code,
@@ -26,14 +26,6 @@ async function serviceData(input: z.infer<typeof schema>) {
     teamId: team?.id,
     description: `Department ${name}`,
   };
-}
-
-async function assetDepartment(code: string | undefined) {
-  const departmentCode = String(code || "").trim();
-  if (!departmentCode) throw new Error("Select a department code from the asset register.");
-  const asset = await prisma.asset.findFirst({ where: { departmentCode }, select: { departmentCode: true } });
-  if (!asset) throw new Error(`Department code ${departmentCode} is not linked to any asset.`);
-  return departmentCode;
 }
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {

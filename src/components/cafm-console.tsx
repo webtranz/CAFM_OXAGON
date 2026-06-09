@@ -70,7 +70,6 @@ type ConsoleData = {
   auditLogs: any[];
   complianceCertificates: any[];
   documentUploads: any[];
-  assetDepartmentCodes: any[];
   housing: {
     properties: any[];
     blocks: any[];
@@ -845,6 +844,7 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { id?: st
               teams={records.teams}
               users={records.users}
               locations={records.locations}
+              departments={records.departments}
               canManageAssets={can("assets.manage")}
               isAdmin={isAdmin}
               deleteAsset={(id) => deleteRecord(`/api/assets/${id}`, "Asset deleted.")}
@@ -927,7 +927,6 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { id?: st
               services={records.services}
               categories={records.categories}
               departments={records.departments}
-              assetDepartmentCodes={records.assetDepartmentCodes ?? []}
               saving={saving}
               submitTeam={(formData) => postRecord("/api/teams", formData, "Team")}
               submitService={(formData) => postRecord("/api/services", formData, "Service")}
@@ -1123,6 +1122,7 @@ function Assets({
   teams,
   users,
   locations,
+  departments,
   canManageAssets,
   isAdmin,
   deleteAsset,
@@ -1140,6 +1140,7 @@ function Assets({
   teams: any[];
   users: any[];
   locations: any[];
+  departments: any[];
   canManageAssets: boolean;
   isAdmin: boolean;
   deleteAsset: (id: string) => void;
@@ -1311,7 +1312,7 @@ function Assets({
           {hasMoreAssets ? "Scroll down to load more assets" : "All matching assets loaded"}
         </div>
       </Panel>
-      {canManageAssets && createOpen && <RequestModalShell title="Add Asset" onClose={() => setCreateOpen(false)}><AssetCreateForm teams={teams} users={users} locations={locations} onSubmit={async (formData) => { await submitAsset(formData); setCreateOpen(false); }} saving={saving} /></RequestModalShell>}
+      {canManageAssets && createOpen && <RequestModalShell title="Add Asset" onClose={() => setCreateOpen(false)}><AssetCreateForm teams={teams} users={users} locations={locations} departments={departments} onSubmit={async (formData) => { await submitAsset(formData); setCreateOpen(false); }} saving={saving} /></RequestModalShell>}
       {previewAsset && (
         <AssetPreviewModal
           asset={previewAsset}
@@ -1323,7 +1324,7 @@ function Assets({
             setPreviewAsset(null);
           }}
         >
-          {canManageAssets && previewAsset.editing && <AssetEditForm asset={previewAsset} teams={teams} users={users} locations={locations} saving={saving} onSubmit={(formData) => updateAsset(previewAsset.id, formData)} />}
+          {canManageAssets && previewAsset.editing && <AssetEditForm asset={previewAsset} teams={teams} users={users} locations={locations} departments={departments} saving={saving} onSubmit={(formData) => updateAsset(previewAsset.id, formData)} />}
         </AssetPreviewModal>
       )}
       {assetWorkOrderDraft && (
@@ -1357,7 +1358,7 @@ function Assets({
   );
 }
 
-function AssetCreateForm({ teams, users, locations, onSubmit, saving }: { teams: any[]; users: any[]; locations: any[]; onSubmit: (formData: FormData) => void; saving: boolean }) {
+function AssetCreateForm({ teams, users, locations, departments, onSubmit, saving }: { teams: any[]; users: any[]; locations: any[]; departments: any[]; onSubmit: (formData: FormData) => void; saving: boolean }) {
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
@@ -1405,7 +1406,7 @@ function AssetCreateForm({ teams, users, locations, onSubmit, saving }: { teams:
         <AssetTextField label="ORGANIZATION" name="organization" />
         <div className="grid gap-3 sm:grid-cols-2">
           <AssetTextField label="COMMISSIONDATE" name="installDate" type="date" />
-          <AssetTextField label="DEPARTMENT" name="departmentCode" />
+          <AssetDepartmentCodeSelect departments={departments} />
         </div>
         <AssetTextField label="DEPARTMENT_DESC" name="departmentDesc" />
         <div className="grid gap-3 sm:grid-cols-2">
@@ -1473,6 +1474,20 @@ function AssetOutOfServiceSelect({ defaultValue = "NO" }: { defaultValue?: strin
       <select name="outOfService" defaultValue={defaultValue} className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold outline-none focus:border-lagoon">
         <option value="NO">NO</option>
         <option value="YES">YES</option>
+      </select>
+    </label>
+  );
+}
+
+function AssetDepartmentCodeSelect({ departments, defaultValue = "" }: { departments: any[]; defaultValue?: string }) {
+  return (
+    <label className="grid gap-1 text-sm font-bold text-slate-600">
+      DEPARTMENT
+      <select name="departmentCode" required defaultValue={defaultValue} className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold outline-none focus:border-lagoon">
+        <option value="">Select Services department code</option>
+        {departments.map((department) => (
+          <option key={department.id ?? department.code} value={department.code}>{department.code} - {department.name}</option>
+        ))}
       </select>
     </label>
   );
@@ -1601,7 +1616,7 @@ function AssetIdentity({ asset }: { asset: any }) {
   );
 }
 
-function AssetEditForm({ asset, teams, users, locations, saving, onSubmit }: { asset: any; teams: any[]; users: any[]; locations: any[]; saving: boolean; onSubmit: (formData: FormData) => void }) {
+function AssetEditForm({ asset, teams, users, locations, departments, saving, onSubmit }: { asset: any; teams: any[]; users: any[]; locations: any[]; departments: any[]; saving: boolean; onSubmit: (formData: FormData) => void }) {
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
@@ -1642,7 +1657,7 @@ function AssetEditForm({ asset, teams, users, locations, saving, onSubmit }: { a
             <EditField label="ORGANIZATION" name="organization" defaultValue={textValue(asset.organization)} />
             <div className="grid gap-3 sm:grid-cols-2">
               <EditField label="COMMISSIONDATE" name="installDate" type="date" defaultValue={dateValue(asset.installDate)} />
-              <EditField label="DEPARTMENT" name="departmentCode" defaultValue={textValue(asset.departmentCode)} />
+              <AssetDepartmentCodeSelect departments={departments} defaultValue={textValue(asset.departmentCode)} />
             </div>
             <EditField label="DEPARTMENT_DESC" name="departmentDesc" defaultValue={textValue(asset.departmentDesc)} />
             <div className="grid gap-3 sm:grid-cols-2">
@@ -4660,7 +4675,6 @@ function TeamsServices({
   services,
   categories,
   departments,
-  assetDepartmentCodes,
   saving,
   submitTeam,
   submitService,
@@ -4680,7 +4694,6 @@ function TeamsServices({
   services: any[];
   categories: any[];
   departments: any[];
-  assetDepartmentCodes: any[];
   saving: boolean;
   submitTeam: (formData: FormData) => void;
   submitService: (formData: FormData) => void;
@@ -4715,7 +4728,6 @@ function TeamsServices({
     ...service,
     departmentName: service.name,
     departmentCode: service.code,
-    linkedAssets: assetDepartmentCodes.find((department) => department.code === service.code)?.assetCount ?? 0,
     teamCode: service.team?.code || teams.find((team) => team.id === service.teamId)?.code || "",
   }));
 
@@ -4746,7 +4758,7 @@ function TeamsServices({
         {showServices && (
           <Panel title="Services Catalog" icon={ClipboardCheck}>
             <ReportButtons type="services" label="Services report" />
-            <DataTable rows={serviceRows} columns={[["code", "Code"], ["name", "Service"], ["departmentName", "Department"], ["departmentCode", "Dept"], ["linkedAssets", "Linked Assets"], ["teamCode", "Team Code"], ["slaHours", "SLA hrs"]]} />
+            <DataTable rows={serviceRows} columns={[["code", "Code"], ["name", "Service"], ["departmentName", "Department"], ["departmentCode", "Dept"], ["teamCode", "Team Code"], ["slaHours", "SLA hrs"]]} />
             <SetupActions rows={serviceRows} labelKey="code" onEdit={setEditingService} onDelete={deleteService} saving={saving} isAdmin={isAdmin} />
           </Panel>
         )}
@@ -4761,7 +4773,7 @@ function TeamsServices({
         {showDepartments && <ActionForm title="Create Department Code" onSubmit={submitDepartment} fields={["code", "name", "siteLocation", "description"]} saving={saving} />}
         {showTeamCode && <TeamCodeForm departments={departments} onSubmit={submitTeam} saving={saving} />}
         {showServiceTeams && <TeamForm departments={departments} onSubmit={submitTeam} saving={saving} />}
-        {showServices && <ServiceForm teams={teams} assetDepartmentCodes={assetDepartmentCodes} onSubmit={submitService} saving={saving} />}
+        {showServices && <ServiceForm teams={teams} departments={departments} onSubmit={submitService} saving={saving} />}
         {showAll && <ActionForm title="Add Asset Category" onSubmit={submitCategory} fields={["code", "name", "type", "defaultLifeYrs", "statutory", "description"]} saving={saving} />}
       </div>
       {editingDepartment && (
@@ -4776,7 +4788,7 @@ function TeamsServices({
       )}
       {editingService && (
         <RequestModalShell title={`Edit Service ${editingService.code}`} onClose={() => setEditingService(null)}>
-          <ServiceForm service={editingService} teams={teams} assetDepartmentCodes={assetDepartmentCodes} onSubmit={async (formData) => { await updateService(editingService.id, formData); setEditingService(null); }} saving={saving} />
+          <ServiceForm service={editingService} teams={teams} departments={departments} onSubmit={async (formData) => { await updateService(editingService.id, formData); setEditingService(null); }} saving={saving} />
         </RequestModalShell>
       )}
     </section>
@@ -4874,7 +4886,7 @@ function TeamForm({ team, departments, onSubmit, saving }: { team?: any; departm
   );
 }
 
-function ServiceForm({ service, teams, assetDepartmentCodes, onSubmit, saving }: { service?: any; teams: any[]; assetDepartmentCodes: any[]; onSubmit: (formData: FormData) => void; saving: boolean }) {
+function ServiceForm({ service, teams, departments, onSubmit, saving }: { service?: any; teams: any[]; departments: any[]; onSubmit: (formData: FormData) => void; saving: boolean }) {
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
@@ -4888,9 +4900,9 @@ function ServiceForm({ service, teams, assetDepartmentCodes, onSubmit, saving }:
       <div className="mt-4 grid gap-3">
         <input name="departmentName" defaultValue={service?.departmentName ?? service?.name ?? ""} placeholder="Department / service name" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
         <select name="departmentCode" defaultValue={service?.departmentCode ?? service?.code ?? ""} className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon">
-          <option value="">Select asset department code</option>
-          {assetDepartmentCodes.map((department) => (
-            <option key={department.code} value={department.code}>{department.code} - {department.name} ({department.assetCount} assets)</option>
+          <option value="">Select department code</option>
+          {departments.map((department) => (
+            <option key={department.id ?? department.code} value={department.code}>{department.code} - {department.name}</option>
           ))}
         </select>
         <select name="teamCode" defaultValue={service?.teamCode ?? service?.team?.code ?? ""} className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon">
@@ -6918,6 +6930,8 @@ function Reports() {
 }
 
 function AuditLogs({ logs }: { logs: any[] }) {
+  const [selectedLog, setSelectedLog] = useState<any | null>(null);
+
   return (
     <Panel title="Audit Logs" icon={Activity}>
       <ReportButtons type="audit-logs" label="Audit report" />
@@ -6932,9 +6946,163 @@ function AuditLogs({ logs }: { logs: any[] }) {
           ["entityId", "Record ID"],
           ["details", "Details"],
         ]}
+        renderCell={(row, key) => key === "details" ? <AuditDetailsButton log={row} onOpen={() => setSelectedLog(row)} /> : undefined}
       />
+      {selectedLog && <AuditDetailsModal log={selectedLog} onClose={() => setSelectedLog(null)} />}
     </Panel>
   );
+}
+
+function AuditDetailsButton({ log, onOpen }: { log: any; onOpen: () => void }) {
+  const parsed = parseAuditDetails(log.details);
+  const detailText = auditDetailSummary(parsed);
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="max-w-[260px] rounded-lg border border-lagoon/30 bg-lagoon/10 px-3 py-2 text-left text-xs font-black text-lagoon hover:bg-lagoon hover:text-white"
+      title="Open audit details"
+    >
+      <span className="block truncate">{detailText}</span>
+      <span className="mt-1 block text-[10px] uppercase opacity-75">View details</span>
+    </button>
+  );
+}
+
+function AuditDetailsModal({ log, onClose }: { log: any; onClose: () => void }) {
+  const parsed = parseAuditDetails(log.details);
+  const payload = parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, any> : null;
+  const details = payload?.details ?? parsed;
+  const actor = payload?.actor;
+
+  return (
+    <RequestModalShell title={`Audit Details / ${log.action || "Activity"}`} onClose={onClose}>
+      <div className="grid gap-4">
+        <div className="grid gap-3 md:grid-cols-3">
+          <PreviewField label="Action" value={log.action} />
+          <PreviewField label="Record Type" value={log.entity} />
+          <PreviewField label="Record ID" value={log.entityId} />
+          <PreviewField label="Logged At" value={formatDateCell(payload?.at || log.createdAt)} />
+          <PreviewField label="User" value={actor?.name || log.actorName} />
+          <PreviewField label="Role" value={actor?.role || log.role} />
+        </div>
+        <AuditFriendlyDetails value={details} />
+      </div>
+    </RequestModalShell>
+  );
+}
+
+function AuditFriendlyDetails({ value }: { value: unknown }) {
+  if (value === null || value === undefined || value === "") {
+    return <p className="rounded-lg bg-slate-50 p-4 text-sm font-bold text-slate-500">No additional details were recorded for this activity.</p>;
+  }
+
+  if (typeof value !== "object") {
+    return (
+      <section className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+        <p className="text-xs font-black uppercase text-slate-500">Details</p>
+        <p className="mt-2 whitespace-pre-wrap break-words text-sm font-bold text-slate-700">{String(value)}</p>
+      </section>
+    );
+  }
+
+  if (Array.isArray(value)) {
+    return (
+      <section className="rounded-lg border border-slate-200 bg-white p-4">
+        <p className="text-xs font-black uppercase text-slate-500">Details</p>
+        <div className="mt-3 grid gap-2">
+          {value.map((item, index) => <AuditValueBlock key={index} label={`Item ${index + 1}`} value={item} />)}
+        </div>
+      </section>
+    );
+  }
+
+  const entries = Object.entries(value as Record<string, unknown>);
+  return (
+    <div className="grid gap-3">
+      {entries.map(([key, item]) => <AuditValueBlock key={key} label={friendlyAuditLabel(key)} value={item} />)}
+    </div>
+  );
+}
+
+function AuditValueBlock({ label, value }: { label: string; value: unknown }) {
+  if (value === null || value === undefined || value === "") {
+    return (
+      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+        <p className="text-xs font-black uppercase text-slate-500">{label}</p>
+        <p className="mt-1 text-sm font-bold text-slate-400">Not provided</p>
+      </div>
+    );
+  }
+
+  if (typeof value !== "object") {
+    return (
+      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+        <p className="text-xs font-black uppercase text-slate-500">{label}</p>
+        <p className="mt-1 whitespace-pre-wrap break-words text-sm font-bold text-slate-700">{formatAuditScalar(value)}</p>
+      </div>
+    );
+  }
+
+  if (Array.isArray(value)) {
+    return (
+      <div className="rounded-lg border border-slate-200 bg-white p-3">
+        <p className="text-xs font-black uppercase text-slate-500">{label}</p>
+        <div className="mt-2 grid gap-2">
+          {value.map((item, index) => <AuditValueBlock key={index} label={`Item ${index + 1}`} value={item} />)}
+        </div>
+      </div>
+    );
+  }
+
+  const entries = Object.entries(value as Record<string, unknown>);
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-3">
+      <p className="text-xs font-black uppercase text-slate-500">{label}</p>
+      <div className="mt-3 grid gap-2 md:grid-cols-2">
+        {entries.map(([key, item]) => <AuditValueBlock key={key} label={friendlyAuditLabel(key)} value={item} />)}
+      </div>
+    </div>
+  );
+}
+
+function parseAuditDetails(value: unknown) {
+  if (typeof value !== "string") return value;
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return value;
+  }
+}
+
+function auditDetailSummary(value: unknown) {
+  const parsed = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, any> : null;
+  const details = parsed?.details ?? value;
+  if (details && typeof details === "object" && !Array.isArray(details)) {
+    const keys = Object.keys(details);
+    if (keys.includes("before") && keys.includes("after")) return "Before and after changes";
+    if (keys.includes("createdRecord")) return "Created record details";
+    if (keys.includes("savedRecord")) return "Saved record details";
+    if (keys.includes("deletedRecord")) return "Deleted record details";
+    if (keys.length) return keys.map(friendlyAuditLabel).slice(0, 3).join(", ");
+  }
+  if (typeof details === "string" && details.trim()) return details;
+  return "Open activity details";
+}
+
+function friendlyAuditLabel(key: string) {
+  return key
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function formatAuditScalar(value: unknown) {
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  if (typeof value === "string" && isDateLikeString(value)) return formatDateCell(value);
+  return String(value);
 }
 
 function Template({ type, title, value }: { type: string; title: string; value: string }) {
@@ -6971,7 +7139,7 @@ function DeleteRowButton({ saving, onDelete }: { saving: boolean; onDelete: () =
   );
 }
 
-function DataTable({ rows, columns, actions }: { rows: any[]; columns: [string, string][]; actions?: (row: any) => ReactNode }) {
+function DataTable({ rows, columns, actions, renderCell }: { rows: any[]; columns: [string, string][]; actions?: (row: any) => ReactNode; renderCell?: (row: any, key: string) => ReactNode | undefined }) {
   const [page, setPage] = useState(1);
   const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
@@ -7003,7 +7171,7 @@ function DataTable({ rows, columns, actions }: { rows: any[]; columns: [string, 
                 <td className="whitespace-nowrap px-3 py-3 font-black text-slate-500">{startIndex + index + 1}</td>
                 {columns.map(([key]) => (
                   <td key={key} className="max-w-[360px] whitespace-nowrap px-3 py-3">
-                    <CellValue value={row[key]} field={key} />
+                    {renderCell?.(row, key) ?? <CellValue value={row[key]} field={key} />}
                   </td>
                 ))}
                 {actions && <td className="whitespace-nowrap px-3 py-3">{actions(row)}</td>}

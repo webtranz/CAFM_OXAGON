@@ -89,7 +89,7 @@ async function importAsset(row: Row) {
   const system = value(row, "PRIMARYSYSTEM", "system", "Entity Name", "Asset Type") || category;
   const floor = value(row, "floor", "FLOOR") || location?.floor || "Unassigned";
   const room = locationCode || value(row, "room", "ROOM", "ROOM ") || location?.code || "Unassigned";
-  const departmentCode = value(row, "DEPARTMENT", "departmentCode", "Department", "Assigned To") || "";
+  const departmentCode = await validAssetDepartmentCode(value(row, "DEPARTMENT", "departmentCode", "Department", "Assigned To"));
   const cost = number(value(row, "EQUIPMENTVALUE", "purchaseCost", "Purchase Cost"), 0);
   const replacementCost = number(value(row, "replacementCost", "Replacement Cost"), cost);
   const lifeMonths = integer(value(row, "SERVICELIFE", "Life Expectancy (in months)", "lifeExpectancyMonths"), 96);
@@ -298,7 +298,7 @@ async function importEmployee(row: Row) {
 
 async function importService(row: Row) {
   const team = row.teamCode ? await prisma.team.findUnique({ where: { code: row.teamCode } }) : null;
-  const code = await assetDepartmentCode(row.departmentCode || row.code);
+  const code = row.departmentCode || required(row, "code");
   await prisma.serviceCatalog.upsert({
     where: { code },
     update: servicePayload(row, team?.id),
@@ -306,11 +306,11 @@ async function importService(row: Row) {
   });
 }
 
-async function assetDepartmentCode(code: string | undefined) {
+async function validAssetDepartmentCode(code: string | undefined) {
   const departmentCode = String(code || "").trim();
-  if (!departmentCode) throw new Error("departmentCode must match an asset department code");
-  const asset = await prisma.asset.findFirst({ where: { departmentCode }, select: { departmentCode: true } });
-  if (!asset) throw new Error(`Department code ${departmentCode} is not linked to any asset`);
+  if (!departmentCode) throw new Error("DEPARTMENT is required and must match Services -> Department Codes");
+  const department = await prisma.department.findUnique({ where: { code: departmentCode } });
+  if (!department) throw new Error(`DEPARTMENT ${departmentCode} is not defined under Services -> Department Codes`);
   return departmentCode;
 }
 
