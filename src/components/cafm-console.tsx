@@ -70,6 +70,7 @@ type ConsoleData = {
   auditLogs: any[];
   complianceCertificates: any[];
   documentUploads: any[];
+  assetDepartmentCodes: any[];
   housing: {
     properties: any[];
     blocks: any[];
@@ -926,6 +927,7 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { id?: st
               services={records.services}
               categories={records.categories}
               departments={records.departments}
+              assetDepartmentCodes={records.assetDepartmentCodes ?? []}
               saving={saving}
               submitTeam={(formData) => postRecord("/api/teams", formData, "Team")}
               submitService={(formData) => postRecord("/api/services", formData, "Service")}
@@ -4658,6 +4660,7 @@ function TeamsServices({
   services,
   categories,
   departments,
+  assetDepartmentCodes,
   saving,
   submitTeam,
   submitService,
@@ -4677,6 +4680,7 @@ function TeamsServices({
   services: any[];
   categories: any[];
   departments: any[];
+  assetDepartmentCodes: any[];
   saving: boolean;
   submitTeam: (formData: FormData) => void;
   submitService: (formData: FormData) => void;
@@ -4711,6 +4715,7 @@ function TeamsServices({
     ...service,
     departmentName: service.name,
     departmentCode: service.code,
+    linkedAssets: assetDepartmentCodes.find((department) => department.code === service.code)?.assetCount ?? 0,
     teamCode: service.team?.code || teams.find((team) => team.id === service.teamId)?.code || "",
   }));
 
@@ -4741,7 +4746,7 @@ function TeamsServices({
         {showServices && (
           <Panel title="Services Catalog" icon={ClipboardCheck}>
             <ReportButtons type="services" label="Services report" />
-            <DataTable rows={serviceRows} columns={[["code", "Code"], ["name", "Service"], ["departmentName", "Department"], ["departmentCode", "Dept"], ["teamCode", "Team Code"], ["slaHours", "SLA hrs"]]} />
+            <DataTable rows={serviceRows} columns={[["code", "Code"], ["name", "Service"], ["departmentName", "Department"], ["departmentCode", "Dept"], ["linkedAssets", "Linked Assets"], ["teamCode", "Team Code"], ["slaHours", "SLA hrs"]]} />
             <SetupActions rows={serviceRows} labelKey="code" onEdit={setEditingService} onDelete={deleteService} saving={saving} isAdmin={isAdmin} />
           </Panel>
         )}
@@ -4756,7 +4761,7 @@ function TeamsServices({
         {showDepartments && <ActionForm title="Create Department Code" onSubmit={submitDepartment} fields={["code", "name", "siteLocation", "description"]} saving={saving} />}
         {showTeamCode && <TeamCodeForm departments={departments} onSubmit={submitTeam} saving={saving} />}
         {showServiceTeams && <TeamForm departments={departments} onSubmit={submitTeam} saving={saving} />}
-        {showServices && <ServiceForm teams={teams} departments={departments} onSubmit={submitService} saving={saving} />}
+        {showServices && <ServiceForm teams={teams} assetDepartmentCodes={assetDepartmentCodes} onSubmit={submitService} saving={saving} />}
         {showAll && <ActionForm title="Add Asset Category" onSubmit={submitCategory} fields={["code", "name", "type", "defaultLifeYrs", "statutory", "description"]} saving={saving} />}
       </div>
       {editingDepartment && (
@@ -4771,7 +4776,7 @@ function TeamsServices({
       )}
       {editingService && (
         <RequestModalShell title={`Edit Service ${editingService.code}`} onClose={() => setEditingService(null)}>
-          <ServiceForm service={editingService} teams={teams} departments={departments} onSubmit={async (formData) => { await updateService(editingService.id, formData); setEditingService(null); }} saving={saving} />
+          <ServiceForm service={editingService} teams={teams} assetDepartmentCodes={assetDepartmentCodes} onSubmit={async (formData) => { await updateService(editingService.id, formData); setEditingService(null); }} saving={saving} />
         </RequestModalShell>
       )}
     </section>
@@ -4869,7 +4874,7 @@ function TeamForm({ team, departments, onSubmit, saving }: { team?: any; departm
   );
 }
 
-function ServiceForm({ service, teams, departments, onSubmit, saving }: { service?: any; teams: any[]; departments: any[]; onSubmit: (formData: FormData) => void; saving: boolean }) {
+function ServiceForm({ service, teams, assetDepartmentCodes, onSubmit, saving }: { service?: any; teams: any[]; assetDepartmentCodes: any[]; onSubmit: (formData: FormData) => void; saving: boolean }) {
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
@@ -4883,9 +4888,9 @@ function ServiceForm({ service, teams, departments, onSubmit, saving }: { servic
       <div className="mt-4 grid gap-3">
         <input name="departmentName" defaultValue={service?.departmentName ?? service?.name ?? ""} placeholder="Department / service name" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
         <select name="departmentCode" defaultValue={service?.departmentCode ?? service?.code ?? ""} className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon">
-          <option value="">Select department code</option>
-          {departments.map((department) => (
-            <option key={department.id} value={department.code}>{department.code} - {department.name}</option>
+          <option value="">Select asset department code</option>
+          {assetDepartmentCodes.map((department) => (
+            <option key={department.code} value={department.code}>{department.code} - {department.name} ({department.assetCount} assets)</option>
           ))}
         </select>
         <select name="teamCode" defaultValue={service?.teamCode ?? service?.team?.code ?? ""} className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon">

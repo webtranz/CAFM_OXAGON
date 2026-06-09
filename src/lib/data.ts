@@ -59,7 +59,7 @@ export async function getOperatingData(user: OperatingUser = null) {
     const visibleJobPlanWhere = kind === "admin" || kind === "readonly" ? {} : kind === "supervisor" || kind === "technician" ? { departmentCode: { in: departmentsForUser } } : {};
     const visibleUsersWhere = kind === "admin" ? {} : { OR: [{ department: { in: departmentsForUser } }, { id: user?.id || "" }] };
 
-    const [sites, assets, requests, workOrders, inventory, inspections, alerts, teams, services, categories, ppms, users, permissions, departments, employees, rolePermissions, locations, jobPlans, roles, auditLogs, complianceCertificates, documentUploads, housingProperties, housingBlocks, housingRooms, housingBeds, housingResidents, housingBookings, housingInspections, housingAssets, housingInventory, housingApprovals, housingNotifications, housingNotificationSettings, housingHistory] = await Promise.all([
+    const [sites, assets, requests, workOrders, inventory, inspections, alerts, teams, services, categories, ppms, users, permissions, departments, employees, rolePermissions, locations, jobPlans, roles, auditLogs, complianceCertificates, documentUploads, assetDepartmentGroups, housingProperties, housingBlocks, housingRooms, housingBeds, housingResidents, housingBookings, housingInspections, housingAssets, housingInventory, housingApprovals, housingNotifications, housingNotificationSettings, housingHistory] = await Promise.all([
       prisma.site.findMany({ orderBy: { name: "asc" } }),
       prisma.asset.findMany({
         where: visibleAssetWhere,
@@ -105,6 +105,7 @@ export async function getOperatingData(user: OperatingUser = null) {
       prisma.auditLog.findMany({ orderBy: { createdAt: "desc" }, take: 500 }),
       prisma.complianceCertificate.findMany({ orderBy: [{ expiryDate: "asc" }, { certificateNo: "asc" }] }),
       prisma.documentUpload.findMany({ orderBy: { createdAt: "desc" } }),
+      prisma.asset.groupBy({ by: ["departmentCode"], where: { departmentCode: { not: null } }, _count: { _all: true }, orderBy: { departmentCode: "asc" } }),
       prisma.housingProperty.findMany({ orderBy: { name: "asc" } }),
       prisma.housingBlock.findMany({ include: { property: true }, orderBy: { code: "asc" } }),
       prisma.housingRoom.findMany({ include: { property: true, block: true, beds: true }, orderBy: [{ roomNumber: "asc" }] }),
@@ -145,7 +146,17 @@ export async function getOperatingData(user: OperatingUser = null) {
             history: housingHistory,
           };
 
-    return { sites, assets, requests, workOrders, inventory, inspections, alerts, teams, services, categories, ppms: scopedPpms, users, permissions, departments, employees, rolePermissions, locations, jobPlans, roles, auditLogs, complianceCertificates, documentUploads, housing, live: true };
+    const assetDepartmentCodes = assetDepartmentGroups
+      .filter((group) => group.departmentCode)
+      .map((group) => ({
+        code: group.departmentCode,
+        assetCount: group._count._all,
+        name: departments.find((department) => department.code === group.departmentCode)?.name || group.departmentCode,
+      }));
+    const assetDepartmentCodeSet = new Set(assetDepartmentCodes.map((department) => department.code));
+    const linkedServices = services.filter((service) => assetDepartmentCodeSet.has(service.code));
+
+    return { sites, assets, requests, workOrders, inventory, inspections, alerts, teams, services: linkedServices, categories, ppms: scopedPpms, users, permissions, departments, employees, rolePermissions, locations, jobPlans, roles, auditLogs, complianceCertificates, documentUploads, assetDepartmentCodes, housing, live: true };
   } catch {
     return { ...fallbackData, live: false };
   }

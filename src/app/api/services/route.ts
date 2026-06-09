@@ -13,7 +13,26 @@ const schema = z.object({
 });
 
 export async function GET() {
-  return NextResponse.json(await prisma.serviceCatalog.findMany({ include: { team: true }, orderBy: { name: "asc" } }));
+  const departments = await assetDepartments();
+  return NextResponse.json(await prisma.serviceCatalog.findMany({ where: { code: { in: departments } }, include: { team: true }, orderBy: { name: "asc" } }));
+}
+
+async function assetDepartments() {
+  const rows = await prisma.asset.findMany({
+    where: { departmentCode: { not: null } },
+    distinct: ["departmentCode"],
+    select: { departmentCode: true },
+    orderBy: { departmentCode: "asc" },
+  });
+  return rows.map((row) => row.departmentCode).filter(Boolean) as string[];
+}
+
+async function assetDepartment(code: string | undefined) {
+  const departmentCode = String(code || "").trim();
+  if (!departmentCode) throw new Error("Select a department code from the asset register.");
+  const asset = await prisma.asset.findFirst({ where: { departmentCode }, select: { departmentCode: true } });
+  if (!asset) throw new Error(`Department code ${departmentCode} is not linked to any asset.`);
+  return departmentCode;
 }
 
 export async function POST(request: Request) {
@@ -21,9 +40,8 @@ export async function POST(request: Request) {
     const { error, user } = await requirePermission("requests.manage");
     if (error) return error;
     const input = schema.parse(await request.json());
-    const count = await prisma.serviceCatalog.count();
-    const code = input.departmentCode || `SRV-${String(count + 1).padStart(4, "0")}`;
-    const name = input.departmentName || "General Service";
+    const code = await assetDepartment(input.departmentCode);
+    const name = input.departmentName || `Department ${code}`;
     const team = input.teamCode ? await prisma.team.findUnique({ where: { code: input.teamCode } }) : null;
     const created = await prisma.serviceCatalog.upsert({
       where: { code },

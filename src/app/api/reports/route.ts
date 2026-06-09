@@ -120,7 +120,8 @@ async function reportRows(type: string, filters: ReturnType<typeof reportFilters
     return rows.map((row) => ({ code: row.code, name: row.name, type: row.type, supervisor: row.supervisor, phone: row.phone, email: row.email, shift: row.shift, coverage: row.coverage, createdAt: dateValue(row.createdAt) }));
   }
   if (type === "services") {
-    const rows = await prisma.serviceCatalog.findMany({ include: { team: true }, orderBy: { code: "asc" } });
+    const assetDepartments = await prisma.asset.findMany({ where: { departmentCode: { not: null } }, distinct: ["departmentCode"], select: { departmentCode: true }, orderBy: { departmentCode: "asc" } });
+    const rows = await prisma.serviceCatalog.findMany({ where: { code: { in: assetDepartments.map((department) => department.departmentCode).filter(Boolean) as string[] } }, include: { team: true }, orderBy: { code: "asc" } });
     return rows.map((row) => ({ code: row.code, name: row.name, category: row.category, type: row.type, priority: row.priority, slaHours: row.slaHours, teamCode: row.team?.code ?? "", teamName: row.team?.name ?? "", active: row.active, description: row.description, createdAt: dateValue(row.createdAt) }));
   }
   if (type === "asset-categories") {

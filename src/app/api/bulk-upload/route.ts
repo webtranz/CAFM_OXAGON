@@ -298,11 +298,20 @@ async function importEmployee(row: Row) {
 
 async function importService(row: Row) {
   const team = row.teamCode ? await prisma.team.findUnique({ where: { code: row.teamCode } }) : null;
+  const code = await assetDepartmentCode(row.departmentCode || row.code);
   await prisma.serviceCatalog.upsert({
-    where: { code: row.departmentCode || required(row, "code") },
+    where: { code },
     update: servicePayload(row, team?.id),
-    create: { code: row.departmentCode || required(row, "code"), ...servicePayload(row, team?.id) },
+    create: { code, ...servicePayload(row, team?.id) },
   });
+}
+
+async function assetDepartmentCode(code: string | undefined) {
+  const departmentCode = String(code || "").trim();
+  if (!departmentCode) throw new Error("departmentCode must match an asset department code");
+  const asset = await prisma.asset.findFirst({ where: { departmentCode }, select: { departmentCode: true } });
+  if (!asset) throw new Error(`Department code ${departmentCode} is not linked to any asset`);
+  return departmentCode;
 }
 
 async function importCategory(row: Row) {
