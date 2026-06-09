@@ -12,7 +12,7 @@ type OperatingUser = {
 
 function roleKind(user: OperatingUser) {
   const role = String(user?.role ?? "").toLowerCase();
-  if (role === "admin" || role.includes("super admin")) return "admin";
+  if (role === "admin" || role === "administrator" || role.includes("super admin") || role.includes("system admin")) return "admin";
   if (role.includes("supervisor")) return "supervisor";
   if (role.includes("technician") || role.includes("service team")) return "technician";
   if (role.includes("read") || role.includes("viewer") || role.includes("view only")) return "readonly";

@@ -347,6 +347,16 @@ function cleanMessage(message: string) {
     .slice(0, 260);
 }
 
+async function safeJson(response: Response) {
+  const text = await response.text();
+  if (!text) return {};
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { message: text };
+  }
+}
+
 function bulkModuleFromView(view: string) {
   const map: Record<string, string> = {
     "bulk-assets": "assets",
@@ -489,7 +499,7 @@ function DetailPanel({ title, rows }: { title: string; rows: [string, unknown][]
 
 function dashboardSubtitle(role: string, department?: string | null) {
   const lower = role.toLowerCase();
-  if (lower === "admin" || lower.includes("super admin")) {
+  if (lower === "admin" || lower === "administrator" || lower.includes("super admin") || lower.includes("system admin")) {
     return "Admin dashboard: full visibility for service requests, work orders, PPM, users, roles, reports and analytics.";
   }
   if (lower.includes("supervisor")) {
@@ -506,7 +516,7 @@ function dashboardSubtitle(role: string, department?: string | null) {
 
 function roleKindLabel(role: string) {
   const lower = role.toLowerCase();
-  if (lower === "admin" || lower.includes("super admin")) return "admin";
+  if (lower === "admin" || lower === "administrator" || lower.includes("super admin") || lower.includes("system admin")) return "admin";
   if (lower.includes("supervisor")) return "supervisor";
   if (lower.includes("technician") || lower.includes("service team")) return "technician";
   if (lower.includes("read") || lower.includes("viewer") || lower.includes("view only")) return "readonly";
@@ -534,7 +544,7 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { id?: st
   }, [records.rolePermissions, user.role]);
   const isReadOnlyUser = roleKindLabel(user.role) === "readonly";
   const readOnlyModules = new Set(["command", "dashboard", "assets", "work", "ppm", "requests", "reports", "housing", "compliance", "documents", "incidents"]);
-  const can = (permission?: string) => user.role === "Admin" || !permission || (!isReadOnlyUser && permissionCodes.has(permission));
+  const can = (permission?: string) => roleKindLabel(user.role) === "admin" || !permission || (!isReadOnlyUser && permissionCodes.has(permission));
   const canOpenModule = (moduleId: string) => (isReadOnlyUser && readOnlyModules.has(moduleId)) || can(modulePermissions[moduleId]);
   const canViewActive = canOpenModule(active);
   const isAdmin = roleKindLabel(user.role) === "admin";
@@ -572,44 +582,59 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { id?: st
 
   async function submitRequest(formData: FormData) {
     setSaving(true);
-    const payload = Object.fromEntries(formData.entries());
-    const response = await fetch("/api/service-requests", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    const result = await response.json();
-    setToast(response.ok ? `Service request ${result.ticketNo} created and saved.` : cleanMessage(result.message ?? "Service request failed."));
-    if (response.ok) await refreshData();
-    setSaving(false);
+    try {
+      const payload = Object.fromEntries(formData.entries());
+      const response = await fetch("/api/service-requests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const result = await safeJson(response);
+      setToast(response.ok ? `Service request ${result.ticketNo} created and saved.` : cleanMessage(result.message ?? "Service request failed."));
+      if (response.ok) await refreshData();
+    } catch (error) {
+      setToast(cleanMessage(error instanceof Error ? error.message : "Service request failed."));
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function submitWorkOrder(formData: FormData) {
     setSaving(true);
-    const payload = Object.fromEntries(formData.entries());
-    const response = await fetch("/api/work-orders", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    const result = await response.json();
-    setToast(response.ok ? `Work order ${result.woNo} created and saved.` : cleanMessage(result.message ?? "Work order failed."));
-    if (response.ok) await refreshData();
-    setSaving(false);
+    try {
+      const payload = Object.fromEntries(formData.entries());
+      const response = await fetch("/api/work-orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const result = await safeJson(response);
+      setToast(response.ok ? `Work order ${result.woNo} created and saved.` : cleanMessage(result.message ?? "Work order failed."));
+      if (response.ok) await refreshData();
+    } catch (error) {
+      setToast(cleanMessage(error instanceof Error ? error.message : "Work order failed."));
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function postRecord(path: string, formData: FormData, successLabel: string) {
     setSaving(true);
-    const payload = Object.fromEntries(formData.entries());
-    const response = await fetch(path, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    const result = await response.json();
-    setToast(response.ok ? `${successLabel} saved.` : cleanMessage(result.message ?? "Action failed."));
-    if (response.ok) await refreshData();
-    setSaving(false);
+    try {
+      const payload = Object.fromEntries(formData.entries());
+      const response = await fetch(path, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const result = await safeJson(response);
+      setToast(response.ok ? `${successLabel} saved.` : cleanMessage(result.message ?? "Action failed."));
+      if (response.ok) await refreshData();
+    } catch (error) {
+      setToast(cleanMessage(error instanceof Error ? error.message : "Action failed."));
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function bulkUpload(formData: FormData) {
@@ -626,15 +651,20 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { id?: st
 
   async function patchRecord(path: string, body: Record<string, unknown>, successLabel: string) {
     setSaving(true);
-    const response = await fetch(path, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const result = await response.json();
-    setToast(response.ok ? successLabel : cleanMessage(result.message ?? "Action failed."));
-    if (response.ok) await refreshData();
-    setSaving(false);
+    try {
+      const response = await fetch(path, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const result = await safeJson(response);
+      setToast(response.ok ? successLabel : cleanMessage(result.message ?? "Action failed."));
+      if (response.ok) await refreshData();
+    } catch (error) {
+      setToast(cleanMessage(error instanceof Error ? error.message : "Action failed."));
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function updateAsset(id: string, formData: FormData) {
@@ -643,11 +673,16 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { id?: st
 
   async function deleteRecord(path: string, successLabel: string) {
     setSaving(true);
-    const response = await fetch(path, { method: "DELETE" });
-    const result = await response.json();
-    setToast(response.ok ? successLabel : cleanMessage(result.message ?? "Delete failed."));
-    if (response.ok) await refreshData();
-    setSaving(false);
+    try {
+      const response = await fetch(path, { method: "DELETE" });
+      const result = await safeJson(response);
+      setToast(response.ok ? successLabel : cleanMessage(result.message ?? "Delete failed."));
+      if (response.ok) await refreshData();
+    } catch (error) {
+      setToast(cleanMessage(error instanceof Error ? error.message : "Delete failed."));
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function convertRequestToWorkOrder(id: string, assignment: { assignedTeamCode?: string; assignedToEmail?: string; assetTag?: string } = {}) {
