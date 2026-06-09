@@ -81,6 +81,24 @@ async function main() {
   `);
   console.log("Asset import heading columns are ready.");
 
+  await runSql('ALTER TABLE "AuditLog" ADD COLUMN IF NOT EXISTS "logKey" TEXT;');
+  await runSql(`
+    UPDATE "AuditLog"
+    SET "logKey" = 'AUD-' ||
+      to_char("createdAt", 'YYYYMMDD-HH24MISS-MS') || '-' ||
+      regexp_replace(upper("action"), '[^A-Z0-9]+', '-', 'g') || '-' ||
+      left("id", 8)
+    WHERE "logKey" IS NULL;
+  `);
+  await runSql('ALTER TABLE "AuditLog" ALTER COLUMN "logKey" SET NOT NULL;');
+  await runSql('CREATE UNIQUE INDEX IF NOT EXISTS "AuditLog_logKey_key" ON "AuditLog"("logKey");');
+  await runSql('CREATE INDEX IF NOT EXISTS "AuditLog_createdAt_idx" ON "AuditLog"("createdAt");');
+  await runSql('CREATE INDEX IF NOT EXISTS "AuditLog_actorName_idx" ON "AuditLog"("actorName");');
+  await runSql('CREATE INDEX IF NOT EXISTS "AuditLog_role_idx" ON "AuditLog"("role");');
+  await runSql('CREATE INDEX IF NOT EXISTS "AuditLog_action_idx" ON "AuditLog"("action");');
+  await runSql('CREATE INDEX IF NOT EXISTS "AuditLog_entity_idx" ON "AuditLog"("entity");');
+  console.log("Audit log key schema is ready.");
+
   await runSql(`
     DELETE FROM "AuditLog"
     WHERE "createdAt" < now() - interval '30 days';

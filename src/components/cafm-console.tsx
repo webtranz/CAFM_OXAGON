@@ -7020,34 +7020,70 @@ function AuditDetailsButton({ log, onOpen }: { log: any; onOpen: () => void }) {
 }
 
 function AuditDetailsModal({ log, onClose }: { log: any; onClose: () => void }) {
-  const parsed = parseAuditDetails(log.details);
+  const [loadedLog, setLoadedLog] = useState(log);
+  const [loading, setLoading] = useState(!log.details);
+  const [loadError, setLoadError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoadedLog(log);
+    setLoadError("");
+    if (log.details) {
+      setLoading(false);
+      return () => {
+        cancelled = true;
+      };
+    }
+    setLoading(true);
+    fetch(`/api/audit-logs/${encodeURIComponent(log.id)}`)
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Unable to load audit details");
+        return response.json();
+      })
+      .then((record) => {
+        if (!cancelled) setLoadedLog(record);
+      })
+      .catch((error) => {
+        if (!cancelled) setLoadError(error instanceof Error ? error.message : "Unable to load audit details");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [log]);
+
+  const parsed = parseAuditDetails(loadedLog.details);
   const payload = parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, any> : null;
   const details = payload?.details ?? parsed;
   const actor = payload?.actor;
   const bulkEntries = auditBulkEntries(details);
 
   return (
-    <RequestModalShell title={`Audit Details / ${log.action || "Activity"}`} onClose={onClose}>
+    <RequestModalShell title={`Audit Details / ${loadedLog.action || "Activity"}`} onClose={onClose}>
       <div className="grid gap-4">
         <div className="grid gap-3 md:grid-cols-3">
-          <PreviewField label="Log ID" value={log.logKey || log.id} />
-          <PreviewField label="Action" value={log.action} />
-          <PreviewField label="Record Type" value={log.entity} />
-          <PreviewField label="Record ID" value={log.entityId} />
-          <PreviewField label="Logged At" value={formatDateCell(payload?.at || log.createdAt)} />
-          <PreviewField label="User" value={actor?.name || log.actorName} />
-          <PreviewField label="Role" value={actor?.role || log.role} />
+          <PreviewField label="Log ID" value={loadedLog.logKey || loadedLog.id} />
+          <PreviewField label="Action" value={loadedLog.action} />
+          <PreviewField label="Record Type" value={loadedLog.entity} />
+          <PreviewField label="Record ID" value={loadedLog.entityId} />
+          <PreviewField label="Logged At" value={formatDateCell(payload?.at || loadedLog.createdAt)} />
+          <PreviewField label="User" value={actor?.name || loadedLog.actorName} />
+          <PreviewField label="Role" value={actor?.role || loadedLog.role} />
         </div>
+        {loading && <p className="rounded-lg bg-slate-50 p-4 text-sm font-bold text-slate-500">Loading full audit details...</p>}
+        {loadError && <p className="rounded-lg bg-coral/10 p-4 text-sm font-black text-coral">{loadError}</p>}
         {bulkEntries.length > 0 && (
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-lagoon/20 bg-lagoon/5 p-3">
             <p className="text-sm font-black text-lagoon">{bulkEntries.length} bulk upload row entries recorded</p>
             <div className="flex flex-wrap gap-2">
-              <button type="button" onClick={() => downloadBulkAuditEntries(log, bulkEntries)} className="rounded-lg bg-leaf px-3 py-2 text-xs font-black text-white">Export Excel</button>
-              <button type="button" onClick={() => openBulkAuditEntriesTab(log, bulkEntries)} className="rounded-lg bg-ink px-3 py-2 text-xs font-black text-white">Open Separate Tab</button>
+              <button type="button" onClick={() => downloadBulkAuditEntries(loadedLog, bulkEntries)} className="rounded-lg bg-leaf px-3 py-2 text-xs font-black text-white">Export Excel</button>
+              <button type="button" onClick={() => openBulkAuditEntriesTab(loadedLog, bulkEntries)} className="rounded-lg bg-ink px-3 py-2 text-xs font-black text-white">Open Separate Tab</button>
             </div>
           </div>
         )}
-        <AuditFriendlyDetails value={details} />
+        {!loading && !loadError && <AuditFriendlyDetails value={details} />}
       </div>
     </RequestModalShell>
   );

@@ -103,7 +103,11 @@ export async function getOperatingData(user: OperatingUser = null) {
       prisma.location.findMany({ orderBy: [{ code: "asc" }], take: 100 }),
       prisma.jobPlan.findMany({ where: visibleJobPlanWhere, orderBy: { code: "asc" } }),
       prisma.role.findMany({ orderBy: { name: "asc" } }),
-      prisma.auditLog.findMany({ where: { createdAt: { gte: auditRetentionCutoff } }, orderBy: { createdAt: "desc" } }),
+      prisma.auditLog.findMany({
+        where: { createdAt: { gte: auditRetentionCutoff } },
+        orderBy: { createdAt: "desc" },
+        select: { id: true, logKey: true, actorId: true, actorName: true, role: true, action: true, entity: true, entityId: true, createdAt: true },
+      }),
       prisma.complianceCertificate.findMany({ orderBy: [{ expiryDate: "asc" }, { certificateNo: "asc" }] }),
       prisma.documentUpload.findMany({ orderBy: { createdAt: "desc" } }),
       prisma.housingProperty.findMany({ orderBy: { name: "asc" } }),
