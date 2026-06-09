@@ -1,0 +1,10 @@
+CREATE INDEX IF NOT EXISTS "Asset_tag_idx" ON "Asset"("tag");
+CREATE INDEX IF NOT EXISTS "Asset_locationCode_idx" ON "Asset"("locationCode");
+CREATE INDEX IF NOT EXISTS "Asset_classCode_idx" ON "Asset"("classCode");
+CREATE INDEX IF NOT EXISTS "Asset_category_idx" ON "Asset"("category");
+CREATE INDEX IF NOT EXISTS "Asset_assetStatusText_idx" ON "Asset"("assetStatusText");
+CREATE INDEX IF NOT EXISTS "Asset_departmentCode_idx" ON "Asset"("departmentCode");
+CREATE INDEX IF NOT EXISTS "Asset_assignedTeamCode_idx" ON "Asset"("assignedTeamCode");
+CREATE INDEX IF NOT EXISTS "Location_parentLocation_idx" ON "Location"("parentLocation");
+CREATE INDEX IF NOT EXISTS "Location_locationClass_idx" ON "Location"("locationClass");
+CREATE INDEX IF NOT EXISTS "Location_residential_idx" ON "Location"("residential");

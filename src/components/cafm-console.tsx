@@ -1,7 +1,7 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
-import type { ReactNode } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode, UIEvent } from "react";
 import Image from "next/image";
 import {
   Activity,
@@ -529,9 +529,6 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { id?: st
     checkHealth();
   }, []);
 
-  const filteredAssets = useMemo(() => {
-    return records.assets.filter((asset) => `${asset.tag} ${asset.name} ${asset.category} ${asset.assetDescription} ${asset.assetGroup} ${asset.siteCode} ${asset.buildingCode} ${asset.floor} ${asset.room} ${asset.assignedTeamCode} ${asset.assignedSupervisorEmail}`.toLowerCase().includes(query.toLowerCase()));
-  }, [records.assets, query]);
   const permissionCodes = useMemo(() => {
     return new Set(records.rolePermissions.filter((item) => item.role === user.role).map((item) => item.permission.code));
   }, [records.rolePermissions, user.role]);
@@ -834,7 +831,7 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { id?: st
           {canViewActive && active === "command" && <CommandCenter data={records} />}
           {canViewActive && active === "assets" && (
             <Assets
-              assets={filteredAssets}
+              assets={records.assets}
               selectedAssetId={selectedAssetId}
               setSelectedAssetId={setSelectedAssetId}
               query={query}
@@ -1155,7 +1152,12 @@ function Assets({
   const [locationFilter, setLocationFilter] = useState("");
   const [classFilter, setClassFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
-  const assetRows = assets.map((asset) => ({
+  const [page, setPage] = useState(1);
+  const [assetRowsSource, setAssetRowsSource] = useState<any[]>(assets);
+  const [assetTotal, setAssetTotal] = useState(assets.length);
+  const [assetLoading, setAssetLoading] = useState(false);
+  const assetScrollRef = useRef<HTMLDivElement | null>(null);
+  const assetRows = assetRowsSource.map((asset) => ({
     ...asset,
     equipmentNo: asset.tag,
     equipmentDesc: asset.assetDescription ?? asset.name,
@@ -1169,20 +1171,8 @@ function Assets({
     primarySystem: asset.primarySystem ?? asset.system,
     additionalNote: asset.additionalNote ?? asset.remarks,
   }));
-  const filtered = assetRows.filter((asset) => {
-    const text = String(asset[filterField] ?? asset.assetDescription ?? asset.name ?? "").toLowerCase();
-    const textMatch = !filterValue || text.includes(filterValue.toLowerCase());
-    const locationMatch = !locationFilter || asset.locationCode === locationFilter;
-    const classMatch = !classFilter || asset.classCode === classFilter || asset.category === classFilter;
-    const statusMatch = !statusFilter || asset.assetStatusText === statusFilter;
-    return textMatch && locationMatch && classMatch && statusMatch;
-  });
-  const selectedAsset = assets.find((asset) => asset.id === selectedAssetId) ?? assets[0];
-  const [page, setPage] = useState(1);
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const currentPage = Math.min(page, totalPages);
-  const startIndex = (currentPage - 1) * PAGE_SIZE;
-  const visibleAssets = filtered.slice(startIndex, startIndex + PAGE_SIZE);
+  const hasMoreAssets = assetRowsSource.length < assetTotal;
+  const visibleAssets = assetRows;
   const filterOptions = assetRegisterColumns;
   const locationOptions = Array.from(new Set([...assetRows.map((asset) => asset.locationCode).filter(Boolean), ...locations.map((location) => location.code).filter(Boolean)]));
   const classOptions = Array.from(new Set([...assetRows.map((asset) => asset.classCode || asset.category).filter(Boolean)]));
@@ -1190,7 +1180,57 @@ function Assets({
 
   useEffect(() => {
     setPage(1);
-  }, [query, assets.length, filterField, filterValue, locationFilter, classFilter, statusFilter]);
+    assetScrollRef.current?.scrollTo({ top: 0 });
+  }, [query, filterField, filterValue, locationFilter, classFilter, statusFilter]);
+
+  useEffect(() => {
+    setAssetRowsSource(assets);
+    setAssetTotal((current) => Math.max(current, assets.length));
+  }, [assets]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      setAssetLoading(true);
+      try {
+        const params = new URLSearchParams({
+          page: String(page),
+          pageSize: String(PAGE_SIZE),
+          query,
+          filterField,
+          filterValue,
+          locationCode: locationFilter,
+          class: classFilter,
+          status: statusFilter,
+        });
+        const response = await fetch(`/api/assets/filter?${params.toString()}`, { cache: "no-store", signal: controller.signal });
+        if (response.ok) {
+          const result = await response.json();
+          setAssetRowsSource((current) => page === 1 ? result.assets ?? [] : [...current, ...(result.assets ?? [])]);
+          setAssetTotal(Number(result.total ?? result.assets?.length ?? 0));
+        }
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === "AbortError")) {
+          console.error(error);
+        }
+      } finally {
+        if (!controller.signal.aborted) setAssetLoading(false);
+      }
+    }, 250);
+    return () => {
+      controller.abort();
+      window.clearTimeout(timer);
+    };
+  }, [page, query, filterField, filterValue, locationFilter, classFilter, statusFilter]);
+
+  function handleAssetScroll(event: UIEvent<HTMLDivElement>) {
+    const element = event.currentTarget;
+    const nearBottom = element.scrollTop + element.clientHeight >= element.scrollHeight - 240;
+    if (nearBottom && hasMoreAssets && !assetLoading) {
+      setAssetLoading(true);
+      setPage((current) => current + 1);
+    }
+  }
 
   return (
     <section className="grid gap-5">
@@ -1233,7 +1273,11 @@ function Assets({
           </select>
           <button type="button" onClick={() => { setLocationFilter(""); setClassFilter(""); setStatusFilter(""); }} className="h-11 rounded-lg bg-white px-3 text-sm font-black text-lagoon">Clear Filters</button>
         </div>
-        <div className="max-w-full overflow-auto rounded-lg border border-slate-200 scrollbar-thin">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-sm font-black text-slate-600">
+          <span>Showing {visibleAssets.length.toLocaleString()} of {assetTotal.toLocaleString()} assets</span>
+          {assetLoading && <span className="text-lagoon">Loading assets...</span>}
+        </div>
+        <div ref={assetScrollRef} onScroll={handleAssetScroll} className="max-h-[70vh] max-w-full overflow-auto rounded-lg border border-slate-200 scrollbar-thin">
           <table className="min-w-[3600px] border-collapse bg-white text-sm">
             <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
               <tr>
@@ -1261,7 +1305,9 @@ function Assets({
             </tbody>
           </table>
         </div>
-        <div className="mt-3"><PaginationControls page={currentPage} totalPages={totalPages} onPageChange={setPage} totalItems={filtered.length} /></div>
+        <div className="mt-3 text-center text-sm font-black text-slate-500">
+          {hasMoreAssets ? "Scroll down to load more assets" : "All matching assets loaded"}
+        </div>
       </Panel>
       {canManageAssets && createOpen && <RequestModalShell title="Add Asset" onClose={() => setCreateOpen(false)}><AssetCreateForm teams={teams} users={users} locations={locations} onSubmit={async (formData) => { await submitAsset(formData); setCreateOpen(false); }} saving={saving} /></RequestModalShell>}
       {previewAsset && (
@@ -1443,14 +1489,10 @@ function AssetLocationCodeSelect({
   return (
     <label className="grid gap-1 text-sm font-bold text-slate-600">
       LOCATION
-      <select name="locationCode" defaultValue={defaultValue} className={fieldClass}>
-        <option value="">Select LOCATION from location table</option>
-        {options.map((location) => (
-          <option key={location.id ?? location.code} value={location.code}>
-            {location.code}{location.description ? ` - ${location.description}` : ""}
-          </option>
-        ))}
-      </select>
+      <input name="locationCode" defaultValue={defaultValue} list="asset-location-codes" placeholder="Type or select LOCATION code" className={fieldClass} />
+      <datalist id="asset-location-codes">
+        {options.map((location) => <option key={location.id ?? location.code} value={location.code}>{location.description || location.code}</option>)}
+      </datalist>
     </label>
   );
 }
@@ -4864,7 +4906,12 @@ function Locations({ locations, submitLocation, deleteLocation, isAdmin, saving 
   const [classFilter, setClassFilter] = useState("");
   const [residentialFilter, setResidentialFilter] = useState("");
   const [query, setQuery] = useState("");
-  const locationRows = locations.map((location) => ({
+  const [page, setPage] = useState(1);
+  const [locationRowsSource, setLocationRowsSource] = useState<any[]>(locations);
+  const [locationTotal, setLocationTotal] = useState(locations.length);
+  const [locationLoading, setLocationLoading] = useState(false);
+  const locationScrollRef = useRef<HTMLDivElement | null>(null);
+  const locationRows = locationRowsSource.map((location) => ({
     ...location,
     locationCode: location.code,
     parentLocationDisplay: location.parentLocation || location.zone || "",
@@ -4874,13 +4921,7 @@ function Locations({ locations, submitLocation, deleteLocation, isAdmin, saving 
   }));
   const parentOptions = Array.from(new Set(locationRows.map((location) => location.parentLocationDisplay).filter(Boolean)));
   const classOptions = Array.from(new Set(locationRows.map((location) => location.classDisplay).filter(Boolean)));
-  const filtered = locationRows.filter((location) => {
-    const haystack = `${location.locationCode} ${location.description} ${location.parentLocationDisplay} ${location.classDisplay} ${location.outOfServiceDisplay} ${location.residentialDisplay}`.toLowerCase();
-    return (!query || haystack.includes(query.toLowerCase()))
-      && (!parentFilter || location.parentLocationDisplay === parentFilter)
-      && (!classFilter || location.classDisplay === classFilter)
-      && (!residentialFilter || location.residentialDisplay === residentialFilter);
-  });
+  const hasMoreLocations = locationRowsSource.length < locationTotal;
   const hierarchyRows = parentOptions.map((parentLocation) => {
     const childRows = locationRows.filter((location) => location.parentLocationDisplay === parentLocation);
     return {
@@ -4892,6 +4933,58 @@ function Locations({ locations, submitLocation, deleteLocation, isAdmin, saving 
       outOfService: childRows.filter((location) => location.outOfService).length,
     };
   });
+
+  useEffect(() => {
+    setPage(1);
+    locationScrollRef.current?.scrollTo({ top: 0 });
+  }, [query, parentFilter, classFilter, residentialFilter]);
+
+  useEffect(() => {
+    setLocationRowsSource(locations);
+    setLocationTotal((current) => Math.max(current, locations.length));
+  }, [locations]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      setLocationLoading(true);
+      try {
+        const params = new URLSearchParams({
+          page: String(page),
+          pageSize: String(PAGE_SIZE),
+          query,
+          parentLocation: parentFilter,
+          locationClass: classFilter,
+          residential: residentialFilter,
+        });
+        const response = await fetch(`/api/locations?${params.toString()}`, { cache: "no-store", signal: controller.signal });
+        if (response.ok) {
+          const result = await response.json();
+          setLocationRowsSource((current) => page === 1 ? result.locations ?? [] : [...current, ...(result.locations ?? [])]);
+          setLocationTotal(Number(result.total ?? result.locations?.length ?? 0));
+        }
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === "AbortError")) {
+          console.error(error);
+        }
+      } finally {
+        if (!controller.signal.aborted) setLocationLoading(false);
+      }
+    }, 250);
+    return () => {
+      controller.abort();
+      window.clearTimeout(timer);
+    };
+  }, [page, query, parentFilter, classFilter, residentialFilter]);
+
+  function handleLocationScroll(event: UIEvent<HTMLDivElement>) {
+    const element = event.currentTarget;
+    const nearBottom = element.scrollTop + element.clientHeight >= element.scrollHeight - 180;
+    if (nearBottom && hasMoreLocations && !locationLoading) {
+      setLocationLoading(true);
+      setPage((current) => current + 1);
+    }
+  }
 
   return (
     <section className="grid gap-5 xl:grid-cols-[1fr_420px]">
@@ -4915,12 +5008,40 @@ function Locations({ locations, submitLocation, deleteLocation, isAdmin, saving 
           <button type="button" onClick={() => { setQuery(""); setParentFilter(""); setClassFilter(""); setResidentialFilter(""); }} className="h-11 rounded-lg bg-white px-3 text-sm font-black text-lagoon">Clear</button>
         </div>
         <div className="mb-4 grid gap-3 md:grid-cols-4">
-          <div className="rounded-lg bg-lagoon/10 p-3"><p className="text-xs font-black uppercase text-lagoon">Locations</p><p className="text-2xl font-black">{locations.length}</p></div>
+          <div className="rounded-lg bg-lagoon/10 p-3"><p className="text-xs font-black uppercase text-lagoon">Locations</p><p className="text-2xl font-black">{locationTotal}</p></div>
           <div className="rounded-lg bg-emerald-50 p-3"><p className="text-xs font-black uppercase text-emerald-700">Parents</p><p className="text-2xl font-black">{parentOptions.length}</p></div>
           <div className="rounded-lg bg-amber-50 p-3"><p className="text-xs font-black uppercase text-amber-700">Classes</p><p className="text-2xl font-black">{classOptions.length}</p></div>
           <div className="rounded-lg bg-rose-50 p-3"><p className="text-xs font-black uppercase text-rose-700">Out of Service</p><p className="text-2xl font-black">{locationRows.filter((location) => location.outOfService).length}</p></div>
         </div>
-        <DataTable rows={filtered} columns={[["locationCode", "Location"], ["description", "Description"], ["classDisplay", "Class"], ["parentLocationDisplay", "Parent Location"], ["outOfServiceDisplay", "Out of Service"], ["residentialDisplay", "Residential"]]} actions={isAdmin ? (row) => <DeleteRowButton saving={saving} onDelete={() => deleteLocation(row.id)} /> : undefined} />
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-sm font-black text-slate-600">
+          <span>Showing {locationRows.length.toLocaleString()} of {locationTotal.toLocaleString()} locations</span>
+          {locationLoading && <span className="text-lagoon">Loading locations...</span>}
+        </div>
+        <div ref={locationScrollRef} onScroll={handleLocationScroll} className="max-h-[70vh] max-w-full overflow-auto rounded-lg border border-slate-200 scrollbar-thin">
+          <table className="min-w-[980px] border-collapse bg-white text-sm">
+            <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
+              <tr>
+                {["Location", "Description", "Class", "Parent Location", "Out of Service", "Residential", ...(isAdmin ? ["Actions"] : [])].map((label) => <th key={label} className="px-3 py-3">{label}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {locationRows.map((location) => (
+                <tr key={location.id} className="border-t border-slate-100">
+                  <td className="px-3 py-3 font-black text-lagoon">{location.locationCode}</td>
+                  <td className="px-3 py-3">{displayValue(location.description)}</td>
+                  <td className="px-3 py-3">{displayValue(location.classDisplay)}</td>
+                  <td className="px-3 py-3">{displayValue(location.parentLocationDisplay)}</td>
+                  <td className="px-3 py-3">{location.outOfServiceDisplay}</td>
+                  <td className="px-3 py-3">{location.residentialDisplay}</td>
+                  {isAdmin && <td className="px-3 py-3"><DeleteRowButton saving={saving} onDelete={() => deleteLocation(location.id)} /></td>}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="mt-3 text-center text-sm font-black text-slate-500">
+          {hasMoreLocations ? "Scroll down to load more locations" : "All matching locations loaded"}
+        </div>
       </Panel>
       <div className="grid gap-5">
         <Panel title="Location Hierarchy" icon={MapPinned}>

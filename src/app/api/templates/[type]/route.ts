@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/api-auth";
 
 const templates: Record<string, string> = {
-  assets: "Entity Name,Asset Name,Description,Location Name,Asset Type,Model No.,Manufacturer,Serial No.,Purchase Date,QR Code,Parent Asset,Assigned To,Vendors,Asset Code,Parts,URL 1,URL Label 1,URL 2,URL Label 2,Warranty Expiry Date,Life Expectancy (in months),Purchase Cost,Replacement Cost,Salvage Value\n",
+  assets: "EQUIPMENTNO,EQUIPMENTDESC,ASSETSTATUS,EQTYPE,ORGANIZATION,COMMISSIONDATE,DEPARTMENT,DEPARTMENT_DESC,CLASS,CLASS_DESC,CATEGORY,CATEGORY_DESC,SERIALNUMBER,MODEL,MANUFACTURER,GSRC,ENDOFUSEFULLIFE,ATTRIBUTE,ENVIRONMENT,PRESSURE_BAR,FLOW_LPS,SUPPLY_VOLTAGE_Volt,OUTOFSERVICE,SERVICELIFE,LOCATION,LOCATION_DESC,POSITION,CLASSORGANIZATION,EQUIPMENTVALUE,PRIMARYSYSTEM,ADDITIONAL_NOTE\n",
   departments: "code,name,siteLocation,description\n",
   employees: "name,email,companyId,nationalityType,departmentCode,siteLocation\n",
   teams: "name,companyIdNumber,departmentCode,service,email,phone\n",

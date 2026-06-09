@@ -64,6 +64,7 @@ export async function getOperatingData(user: OperatingUser = null) {
       prisma.asset.findMany({
         where: visibleAssetWhere,
         orderBy: [{ tag: "asc" }],
+        take: 100,
         include: {
           site: { select: { name: true } },
           building: { select: { name: true, code: true } },
@@ -98,7 +99,7 @@ export async function getOperatingData(user: OperatingUser = null) {
       prisma.department.findMany({ orderBy: { code: "asc" } }),
       prisma.employee.findMany({ where: kind === "admin" ? {} : { departmentCode: { in: departmentsForUser } }, orderBy: { name: "asc" } }),
       prisma.rolePermission.findMany({ include: { permission: true }, orderBy: { role: "asc" } }),
-      prisma.location.findMany({ orderBy: [{ site: "asc" }, { building: "asc" }, { floor: "asc" }, { room: "asc" }] }),
+      prisma.location.findMany({ orderBy: [{ code: "asc" }], take: 100 }),
       prisma.jobPlan.findMany({ where: visibleJobPlanWhere, orderBy: { code: "asc" } }),
       prisma.role.findMany({ orderBy: { name: "asc" } }),
       prisma.auditLog.findMany({ orderBy: { createdAt: "desc" }, take: 500 }),

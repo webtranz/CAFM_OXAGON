@@ -31,8 +31,46 @@ const schema = z.object({
   description: z.string().optional(),
 });
 
-export async function GET() {
-  return NextResponse.json(await prisma.location.findMany({ orderBy: [{ site: "asc" }, { building: "asc" }, { floor: "asc" }, { room: "asc" }] }));
+export async function GET(request: Request) {
+  const { error } = await requirePermission("requests.manage");
+  if (error) return error;
+  const url = new URL(request.url);
+  const query = url.searchParams.get("query")?.trim() || "";
+  const parentLocation = url.searchParams.get("parentLocation")?.trim() || "";
+  const locationClass = url.searchParams.get("locationClass")?.trim() || "";
+  const residential = url.searchParams.get("residential")?.trim() || "";
+  const pageInput = Number(url.searchParams.get("page") || 1);
+  const pageSizeInput = Number(url.searchParams.get("pageSize") || 100);
+  const page = Number.isFinite(pageInput) ? Math.max(1, Math.floor(pageInput)) : 1;
+  const pageSize = Number.isFinite(pageSizeInput) ? Math.min(200, Math.max(25, Math.floor(pageSizeInput))) : 100;
+  const where: any = {
+    ...(parentLocation ? { parentLocation } : {}),
+    ...(locationClass ? { locationClass } : {}),
+    ...(residential === "YES" ? { residential: true } : {}),
+    ...(residential === "NO" ? { residential: false } : {}),
+  };
+  if (query) {
+    where.OR = [
+      { code: { contains: query, mode: "insensitive" } },
+      { description: { contains: query, mode: "insensitive" } },
+      { parentLocation: { contains: query, mode: "insensitive" } },
+      { locationClass: { contains: query, mode: "insensitive" } },
+      { site: { contains: query, mode: "insensitive" } },
+      { building: { contains: query, mode: "insensitive" } },
+      { floor: { contains: query, mode: "insensitive" } },
+      { room: { contains: query, mode: "insensitive" } },
+    ];
+  }
+  const [total, locations] = await Promise.all([
+    prisma.location.count({ where }),
+    prisma.location.findMany({
+      where,
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+      orderBy: [{ code: "asc" }],
+    }),
+  ]);
+  return NextResponse.json({ locations, total, page, pageSize, totalPages: Math.max(1, Math.ceil(total / pageSize)) });
 }
 
 export async function POST(request: Request) {

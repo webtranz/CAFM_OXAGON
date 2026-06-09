@@ -406,6 +406,10 @@ model Location {
   description  String
   active       Boolean  @default(true)
   createdAt    DateTime @default(now())
+
+  @@index([parentLocation])
+  @@index([locationClass])
+  @@index([residential])
 }
 
 model JobPlan {

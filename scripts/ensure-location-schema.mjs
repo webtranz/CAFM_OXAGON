@@ -53,6 +53,16 @@ async function main() {
   await runSql('ALTER TABLE "Asset" ADD COLUMN IF NOT EXISTS "classOrganization" TEXT;');
   await runSql('ALTER TABLE "Asset" ADD COLUMN IF NOT EXISTS "primarySystem" TEXT;');
   await runSql('ALTER TABLE "Asset" ADD COLUMN IF NOT EXISTS "additionalNote" TEXT;');
+  await runSql('CREATE INDEX IF NOT EXISTS "Asset_tag_idx" ON "Asset"("tag");');
+  await runSql('CREATE INDEX IF NOT EXISTS "Asset_locationCode_idx" ON "Asset"("locationCode");');
+  await runSql('CREATE INDEX IF NOT EXISTS "Asset_classCode_idx" ON "Asset"("classCode");');
+  await runSql('CREATE INDEX IF NOT EXISTS "Asset_category_idx" ON "Asset"("category");');
+  await runSql('CREATE INDEX IF NOT EXISTS "Asset_assetStatusText_idx" ON "Asset"("assetStatusText");');
+  await runSql('CREATE INDEX IF NOT EXISTS "Asset_departmentCode_idx" ON "Asset"("departmentCode");');
+  await runSql('CREATE INDEX IF NOT EXISTS "Asset_assignedTeamCode_idx" ON "Asset"("assignedTeamCode");');
+  await runSql('CREATE INDEX IF NOT EXISTS "Location_parentLocation_idx" ON "Location"("parentLocation");');
+  await runSql('CREATE INDEX IF NOT EXISTS "Location_locationClass_idx" ON "Location"("locationClass");');
+  await runSql('CREATE INDEX IF NOT EXISTS "Location_residential_idx" ON "Location"("residential");');
   await runSql(`
     UPDATE "Asset"
     SET "assetStatusText" = CASE WHEN "status" = 'ACTIVE' THEN 'INSTALLED' ELSE "status"::TEXT END,
