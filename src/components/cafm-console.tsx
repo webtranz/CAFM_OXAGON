@@ -87,6 +87,19 @@ type ConsoleData = {
   };
 };
 
+type AuditEntry = {
+  row?: number;
+  status?: string;
+  module?: string;
+  recordType?: string;
+  recordId?: string;
+  recordKey?: string;
+  displayName?: string;
+  action?: string;
+  message?: string;
+  [key: string]: any;
+};
+
 type ActionPermissions = {
   manageRequests: boolean;
   approveRequests: boolean;
@@ -6913,6 +6926,8 @@ function Reports() {
 }
 
 function AuditLogs({ logs }: { logs: any[] }) {
+  const [selectedLog, setSelectedLog] = useState<any | null>(null);
+
   return (
     <Panel title="Audit Logs" icon={Activity}>
       <ReportButtons type="audit-logs" label="Audit report" />
@@ -6927,9 +6942,220 @@ function AuditLogs({ logs }: { logs: any[] }) {
           ["entityId", "Record ID"],
           ["details", "Details"],
         ]}
+        renderCell={(row, key) => key === "details" ? <AuditDetailsButton log={row} onOpen={() => setSelectedLog(row)} /> : undefined}
       />
+      {selectedLog && <AuditDetailsModal log={selectedLog} onClose={() => setSelectedLog(null)} />}
     </Panel>
   );
+}
+
+function AuditDetailsButton({ log, onOpen }: { log: any; onOpen: () => void }) {
+  const parsed = parseAuditDetails(log.details);
+  const entries = auditDetailEntries(parsed);
+
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="flex max-w-[320px] items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-xs font-black text-lagoon shadow-sm hover:border-lagoon hover:bg-lagoon/5"
+    >
+      <span>View details</span>
+      {entries.length > 1 && <span className="rounded-full bg-leaf/10 px-2 py-0.5 text-[11px] text-leaf">{entries.length} rows</span>}
+      <span className="truncate text-slate-500">{auditDetailSummary(parsed)}</span>
+    </button>
+  );
+}
+
+function AuditDetailsModal({ log, onClose }: { log: any; onClose: () => void }) {
+  const parsed = parseAuditDetails(log.details);
+  const entries = auditDetailEntries(parsed);
+  const detailBody = auditDetailBody(parsed);
+
+  return (
+    <RequestModalShell title="Audit Log Details" onClose={onClose}>
+      <div className="grid gap-4">
+        <div className="grid gap-3 md:grid-cols-3">
+          <PreviewField label="Time" value={formatDateCell(log.createdAt)} />
+          <PreviewField label="User" value={log.actorName || "-"} />
+          <PreviewField label="Role" value={log.role || "-"} />
+          <PreviewField label="Action" value={String(log.action || "").replaceAll("_", " ")} />
+          <PreviewField label="Record Type" value={log.entity || "-"} />
+          <PreviewField label="Record ID" value={log.entityId || "-"} />
+        </div>
+
+        {entries.length > 1 && (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-lagoon/20 bg-lagoon/5 p-4">
+            <div>
+              <p className="font-black text-ink">Bulk task details</p>
+              <p className="text-sm font-bold text-slate-600">{entries.length} row-level results are available for export.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => downloadAuditEntries(log, entries)}
+              className="rounded-lg bg-leaf px-4 py-2 text-sm font-black text-white"
+            >
+              Export to Excel
+            </button>
+          </div>
+        )}
+
+        <div className="rounded-lg border border-slate-200">
+          <div className="border-b border-slate-200 bg-slate-50 px-4 py-3">
+            <p className="text-sm font-black text-ink">Readable Details</p>
+          </div>
+          <div className="grid gap-3 p-4 md:grid-cols-2">
+            <AuditDetailValue label="Logged At" value={parsed?.at} />
+            <AuditDetailValue label="Actor" value={parsed?.actor?.name || parsed?.actor?.email} />
+            {Object.entries(detailBody).map(([key, value]) => (
+              <AuditDetailValue key={key} label={friendlyAuditLabel(key)} value={value} />
+            ))}
+          </div>
+        </div>
+
+        {entries.length > 0 && (
+          <div className="rounded-lg border border-slate-200">
+            <div className="border-b border-slate-200 bg-slate-50 px-4 py-3">
+              <p className="text-sm font-black text-ink">Row Results</p>
+            </div>
+            <div className="max-h-80 overflow-auto">
+              <table className="min-w-full text-sm">
+                <thead className="bg-white text-left text-xs uppercase text-slate-500">
+                  <tr>
+                    <th className="px-3 py-2 font-black">Row</th>
+                    <th className="px-3 py-2 font-black">Status</th>
+                    <th className="px-3 py-2 font-black">Record</th>
+                    <th className="px-3 py-2 font-black">Message</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {entries.slice(0, 200).map((entry, index) => (
+                    <tr key={`${entry.row}-${index}`} className="border-t border-slate-100">
+                      <td className="px-3 py-2 font-bold text-slate-600">{entry.row ?? index + 1}</td>
+                      <td className="px-3 py-2">
+                        <span className={`rounded-full px-2 py-1 text-xs font-black ${entry.status === "SUCCESS" ? "bg-leaf/10 text-leaf" : "bg-coral/10 text-coral"}`}>
+                          {entry.status || "-"}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 font-bold text-slate-700">{entry.recordKey || entry.displayName || entry.recordId || "-"}</td>
+                      <td className="px-3 py-2 text-slate-600">{entry.message || entry.action || "-"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {entries.length > 200 && <p className="border-t border-slate-100 p-3 text-sm font-bold text-slate-500">Showing first 200 rows. Export to Excel for the full list.</p>}
+            </div>
+          </div>
+        )}
+      </div>
+    </RequestModalShell>
+  );
+}
+
+function AuditDetailValue({ label, value }: { label: string; value: any }) {
+  if (value === undefined || value === null || value === "" || label === "Entries") return null;
+  if (Array.isArray(value)) {
+    return (
+      <div className="rounded-lg bg-slate-50 p-3 md:col-span-2">
+        <p className="text-xs font-black uppercase text-slate-500">{label}</p>
+        <p className="mt-1 text-sm font-black text-slate-700">{value.length} item{value.length === 1 ? "" : "s"}</p>
+      </div>
+    );
+  }
+  if (typeof value === "object") {
+    return (
+      <div className="rounded-lg bg-slate-50 p-3 md:col-span-2">
+        <p className="text-xs font-black uppercase text-slate-500">{label}</p>
+        <div className="mt-2 grid gap-2 md:grid-cols-2">
+          {Object.entries(value).map(([key, item]) => (
+            <div key={key} className="rounded-lg bg-white p-2">
+              <p className="text-[11px] font-black uppercase text-slate-400">{friendlyAuditLabel(key)}</p>
+              <p className="break-words text-sm font-bold text-slate-700">{formatAuditValue(item)}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  return <PreviewField label={label} value={formatAuditValue(value)} />;
+}
+
+function parseAuditDetails(value: any) {
+  if (!value) return {};
+  if (typeof value === "object") return value;
+  try {
+    return JSON.parse(String(value));
+  } catch {
+    return { details: String(value) };
+  }
+}
+
+function auditDetailBody(details: any) {
+  if (!details || typeof details !== "object") return {};
+  if (details.details && typeof details.details === "object") return details.details;
+  return details;
+}
+
+function auditDetailEntries(details: any): AuditEntry[] {
+  const body = auditDetailBody(details);
+  if (Array.isArray(body.entries)) return body.entries;
+  if (Array.isArray(body.failed)) {
+    return body.failed.map((item: any) => ({
+      row: item.row,
+      status: "FAILED",
+      message: item.message,
+      recordKey: item.recordKey,
+      displayName: item.displayName,
+    }));
+  }
+  return [];
+}
+
+function auditDetailSummary(details: any) {
+  const body = auditDetailBody(details);
+  if (!body || typeof body !== "object") return "-";
+  if (body.module || body.totalRows !== undefined) {
+    return `${body.module || "bulk task"}: ${body.created ?? 0}/${body.totalRows ?? 0} saved`;
+  }
+  const firstUseful = Object.entries(body).find(([key, value]) => !["entries", "failed", "result"].includes(key) && value !== undefined && value !== null && value !== "");
+  return firstUseful ? `${friendlyAuditLabel(firstUseful[0])}: ${formatAuditValue(firstUseful[1])}` : "Open";
+}
+
+function friendlyAuditLabel(value: string) {
+  return String(value)
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replaceAll("_", " ")
+    .replaceAll("-", " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function formatAuditValue(value: any): string {
+  if (value === null || value === undefined || value === "") return "-";
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  if (typeof value === "string" && isDateLikeString(value)) return formatDateCell(value);
+  if (Array.isArray(value)) return `${value.length} item${value.length === 1 ? "" : "s"}`;
+  if (typeof value === "object") return value.name || value.email || value.id || JSON.stringify(value);
+  return String(value);
+}
+
+function downloadAuditEntries(log: any, entries: AuditEntry[]) {
+  const columns = ["row", "status", "module", "recordType", "recordId", "recordKey", "displayName", "action", "message"];
+  const html = `<!doctype html><html><head><meta charset="utf-8" /></head><body><table><thead><tr>${columns.map((column) => `<th>${escapeHtml(friendlyAuditLabel(column))}</th>`).join("")}</tr></thead><tbody>${entries.map((entry) => `<tr>${columns.map((column) => `<td>${escapeHtml(formatAuditValue(entry[column]))}</td>`).join("")}</tr>`).join("")}</tbody></table></body></html>`;
+  const blob = new Blob([html], { type: "application/vnd.ms-excel;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `audit-${String(log.action || "details").toLowerCase()}-${new Date().toISOString().slice(0, 10)}.xls`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function escapeHtml(value: string) {
+  return value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char] || char));
 }
 
 function Template({ type, title, value }: { type: string; title: string; value: string }) {
@@ -6966,7 +7192,17 @@ function DeleteRowButton({ saving, onDelete }: { saving: boolean; onDelete: () =
   );
 }
 
-function DataTable({ rows, columns, actions }: { rows: any[]; columns: [string, string][]; actions?: (row: any) => ReactNode }) {
+function DataTable({
+  rows,
+  columns,
+  actions,
+  renderCell,
+}: {
+  rows: any[];
+  columns: [string, string][];
+  actions?: (row: any) => ReactNode;
+  renderCell?: (row: any, key: string) => ReactNode | undefined;
+}) {
   const [page, setPage] = useState(1);
   const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
@@ -6998,7 +7234,7 @@ function DataTable({ rows, columns, actions }: { rows: any[]; columns: [string, 
                 <td className="whitespace-nowrap px-3 py-3 font-black text-slate-500">{startIndex + index + 1}</td>
                 {columns.map(([key]) => (
                   <td key={key} className="max-w-[360px] whitespace-nowrap px-3 py-3">
-                    <CellValue value={row[key]} field={key} />
+                    {renderCell?.(row, key) ?? <CellValue value={row[key]} field={key} />}
                   </td>
                 ))}
                 {actions && <td className="whitespace-nowrap px-3 py-3">{actions(row)}</td>}

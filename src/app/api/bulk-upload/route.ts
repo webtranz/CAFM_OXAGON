@@ -7,6 +7,13 @@ import { csvResponse, parseCsv } from "@/lib/csv";
 import { prisma } from "@/lib/prisma";
 
 type Row = Record<string, string>;
+type ImportResult = {
+  action: string;
+  recordType: string;
+  recordId?: string;
+  recordKey?: string;
+  displayName?: string;
+};
 
 export async function POST(request: Request) {
   try {
@@ -22,14 +29,28 @@ export async function POST(request: Request) {
 
     const rows = parseCsv(await file.text());
     const failed: Array<{ row: number; message: string }> = [];
+    const entries: Array<ImportResult & { row: number; status: "SUCCESS" | "FAILED"; module: string; message?: string }> = [];
     let created = 0;
 
     for (const [index, row] of rows.entries()) {
+      const rowNumber = index + 2;
       try {
-        await importRow(module, row);
+        const imported = await importRow(module, row);
+        entries.push({ row: rowNumber, status: "SUCCESS", module, ...imported });
         created += 1;
       } catch (error) {
-        failed.push({ row: index + 2, message: error instanceof Error ? error.message : "Import failed" });
+        const message = error instanceof Error ? error.message : "Import failed";
+        failed.push({ row: rowNumber, message });
+        entries.push({
+          row: rowNumber,
+          status: "FAILED",
+          module,
+          action: "SKIPPED",
+          recordType: module || "unknown",
+          recordKey: rowIdentifier(module, row),
+          displayName: rowDisplayName(row),
+          message,
+        });
       }
     }
 
@@ -46,6 +67,7 @@ export async function POST(request: Request) {
         totalRows: rows.length,
         created,
         failed,
+        entries,
         result,
       },
     });
@@ -177,11 +199,13 @@ async function importAsset(row: Row) {
       actor: "Admin",
     },
   });
+  return importResult("asset", "UPSERT", asset, tag, name);
 }
 
 async function importInventory(row: Row) {
-  await prisma.inventoryItem.upsert({
-    where: { sku: required(row, "sku") },
+  const sku = required(row, "sku");
+  const item = await prisma.inventoryItem.upsert({
+    where: { sku },
     update: {
       name: required(row, "name"),
       category: row.category || "General",
@@ -193,7 +217,7 @@ async function importInventory(row: Row) {
       location: row.location || "Central Store",
     },
     create: {
-      sku: required(row, "sku"),
+      sku,
       name: required(row, "name"),
       category: row.category || "General",
       unit: row.unit || "pcs",
@@ -204,12 +228,13 @@ async function importInventory(row: Row) {
       location: row.location || "Central Store",
     },
   });
+  return importResult("inventory_item", "UPSERT", item, sku, item.name);
 }
 
 async function importRequest(row: Row) {
   const count = await prisma.serviceRequest.count();
   const slaHours = integer(row.slaHours, priority(row.priority) === "CRITICAL" ? 4 : 24);
-  await prisma.serviceRequest.create({
+  const request = await prisma.serviceRequest.create({
     data: {
       ticketNo: row.ticketNo || `SR-${String(count + 24001).padStart(5, "0")}`,
       title: required(row, "title"),
@@ -229,12 +254,13 @@ async function importRequest(row: Row) {
       description: row.description || row.title || "Bulk uploaded request",
     },
   });
+  return importResult("service_request", "CREATE", request, request.ticketNo, request.title);
 }
 
 async function importWorkOrder(row: Row) {
   const count = await prisma.workOrder.count();
   const asset = row.assetTag ? await prisma.asset.findUnique({ where: { tag: row.assetTag } }) : null;
-  await prisma.workOrder.create({
+  const workOrder = await prisma.workOrder.create({
     data: {
       woNo: row.woNo || `WO-${String(count + 81001).padStart(5, "0")}`,
       title: required(row, "title"),
@@ -261,61 +287,72 @@ async function importWorkOrder(row: Row) {
       supervisorDecision: row.supervisorDecision || "",
     },
   });
+  return importResult("work_order", "CREATE", workOrder, workOrder.woNo, workOrder.title);
 }
 
 async function importTeam(row: Row) {
-  await prisma.team.upsert({
-    where: { code: row.departmentCode || required(row, "code") },
+  const code = row.departmentCode || required(row, "code");
+  const team = await prisma.team.upsert({
+    where: { code },
     update: teamPayload(row),
-    create: { code: row.departmentCode || required(row, "code"), ...teamPayload(row) },
+    create: { code, ...teamPayload(row) },
   });
+  return importResult("team", "UPSERT", team, code, team.name);
 }
 
 async function importDepartment(row: Row) {
-  await prisma.department.upsert({
-    where: { code: required(row, "code") },
+  const code = required(row, "code");
+  const department = await prisma.department.upsert({
+    where: { code },
     update: {
       name: required(row, "name"),
       siteLocation: row.siteLocation || "Unassigned",
       description: row.description || "",
     },
     create: {
-      code: required(row, "code"),
+      code,
       name: required(row, "name"),
       siteLocation: row.siteLocation || "Unassigned",
       description: row.description || "",
     },
   });
+  return importResult("department", "UPSERT", department, code, department.name);
 }
 
 async function importEmployee(row: Row) {
-  await prisma.employee.upsert({
-    where: { companyId: required(row, "companyId") },
+  const companyId = required(row, "companyId");
+  const employee = await prisma.employee.upsert({
+    where: { companyId },
     update: employeePayload(row),
-    create: { companyId: required(row, "companyId"), ...employeePayload(row) },
+    create: { companyId, ...employeePayload(row) },
   });
+  return importResult("employee", "UPSERT", employee, companyId, employee.name);
 }
 
 async function importService(row: Row) {
   const team = row.teamCode ? await prisma.team.findUnique({ where: { code: row.teamCode } }) : null;
-  await prisma.serviceCatalog.upsert({
-    where: { code: row.departmentCode || required(row, "code") },
+  const code = row.departmentCode || required(row, "code");
+  const service = await prisma.serviceCatalog.upsert({
+    where: { code },
     update: servicePayload(row, team?.id),
-    create: { code: row.departmentCode || required(row, "code"), ...servicePayload(row, team?.id) },
+    create: { code, ...servicePayload(row, team?.id) },
   });
+  return importResult("service_catalog", "UPSERT", service, code, service.name);
 }
 
 async function importCategory(row: Row) {
-  await prisma.assetCategory.upsert({
-    where: { code: required(row, "code") },
+  const code = required(row, "code");
+  const category = await prisma.assetCategory.upsert({
+    where: { code },
     update: categoryPayload(row),
-    create: { code: required(row, "code"), ...categoryPayload(row) },
+    create: { code, ...categoryPayload(row) },
   });
+  return importResult("asset_category", "UPSERT", category, code, category.name);
 }
 
 async function importInspection(row: Row) {
   const count = await prisma.inspection.count();
-  await prisma.inspection.create({
+  const inspection = await prisma.inspection.create({
     data: {
       code: row.code || `INS-${String(count + 1001).padStart(5, "0")}`,
       title: required(row, "title"),
@@ -328,23 +365,45 @@ async function importInspection(row: Row) {
       findings: row.findings || "No findings recorded.",
     },
   });
+  return importResult("inspection", "CREATE", inspection, inspection.code, inspection.title);
 }
 
 async function importLocation(row: Row) {
   const code = required(row, "code", "Location");
-  await prisma.location.upsert({
+  const location = await prisma.location.upsert({
     where: { code },
     update: locationPayload(row),
     create: { code, ...locationPayload(row) },
   });
+  return importResult("location", "UPSERT", location, code, location.description || code);
 }
 
 async function importJobPlan(row: Row) {
-  await prisma.jobPlan.upsert({
-    where: { code: required(row, "code") },
+  const code = required(row, "code");
+  const jobPlan = await prisma.jobPlan.upsert({
+    where: { code },
     update: jobPlanPayload(row),
-    create: { code: required(row, "code"), ...jobPlanPayload(row) },
+    create: { code, ...jobPlanPayload(row) },
   });
+  return importResult("job_plan", "UPSERT", jobPlan, code, jobPlan.name);
+}
+
+function importResult(recordType: string, action: string, record: { id?: string } | null | undefined, recordKey?: string, displayName?: string): ImportResult {
+  return {
+    action,
+    recordType,
+    recordId: record?.id,
+    recordKey,
+    displayName,
+  };
+}
+
+function rowIdentifier(module: string, row: Row) {
+  return value(row, "tag", "EQUIPMENTNO", "ASSET NUMBER", "sku", "ticketNo", "woNo", "code", "Location", "companyId", "email") || module || "unknown";
+}
+
+function rowDisplayName(row: Row) {
+  return value(row, "name", "title", "EQUIPMENTDESC", "Asset Name", "description", "Description");
 }
 
 function teamPayload(row: Row) {
