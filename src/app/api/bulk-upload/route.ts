@@ -78,6 +78,9 @@ export async function POST(request: Request) {
 }
 
 async function importRow(module: string, row: Row) {
+  if (module === "sites") return importSite(row);
+  if (module === "buildings") return importBuilding(row);
+  if (module === "spaces") return importSpace(row);
   if (module === "assets") return importAsset(row);
   if (module === "inventory") return importInventory(row);
   if (module === "requests") return importRequest(row);
@@ -117,12 +120,83 @@ async function firstSite() {
   });
 }
 
+async function ensureSite(row: Row = {}) {
+  const name = value(row, "site", "siteName", "name", "Site") || "Fadhili Bachelor Camp";
+  const city = value(row, "city", "City") || "Fadhili";
+  const country = value(row, "country", "Country") || "Saudi Arabia";
+  const type = value(row, "type", "siteType", "Type") || "Accommodation Camp";
+  const areaSqm = integer(value(row, "areaSqm", "area", "AreaSqm"), 0);
+  return prisma.site.upsert({
+    where: { name_city_country: { name, city, country } },
+    update: { type, areaSqm },
+    create: { name, city, country, type, areaSqm },
+  });
+}
+
+async function ensureBuilding(row: Row = {}, siteInput?: { id: string }) {
+  const site = siteInput || await ensureSite(row);
+  const code = value(row, "buildingCode", "code", "building", "Building", "BLDG") || "FBC";
+  const name = value(row, "buildingName", "name", "description", "Description") || code;
+  const floors = integer(value(row, "floors", "floorCount"), 1);
+  const areaSqm = integer(value(row, "areaSqm", "area", "AreaSqm"), 0);
+  return prisma.building.upsert({
+    where: { code },
+    update: { name, siteId: site.id, floors, areaSqm },
+    create: { code, name, siteId: site.id, floors, areaSqm },
+  });
+}
+
+async function siteAndBuildingForAsset(location: { site?: string | null; building?: string | null; description?: string | null } | null, row: Row) {
+  const site = await ensureSite({
+    site: value(row, "siteCode", "SITE") || location?.site || "Fadhili Bachelor Camp",
+    city: value(row, "siteCity") || "Fadhili",
+    country: value(row, "siteCountry") || "Saudi Arabia",
+    type: value(row, "siteType") || "Accommodation Camp",
+  });
+  const buildingCode = value(row, "buildingCode", "BLDG") || location?.building || "FBC";
+  const building = await ensureBuilding({
+    code: buildingCode,
+    name: location?.description || buildingCode,
+    floors: value(row, "buildingFloors") || "1",
+    areaSqm: value(row, "buildingAreaSqm") || "0",
+  }, site);
+  return { site, building };
+}
+
+async function importSite(row: Row) {
+  const site = await ensureSite(row);
+  return importResult("site", "UPSERT", site, site.name, site.name);
+}
+
+async function importBuilding(row: Row) {
+  const site = await ensureSite(row);
+  const building = await ensureBuilding(row, site);
+  return importResult("building", "UPSERT", building, building.code, building.name);
+}
+
+async function importSpace(row: Row) {
+  const site = await ensureSite(row);
+  const building = await ensureBuilding(row, site);
+  const name = value(row, "name", "space", "room", "code") || "Space";
+  const floor = value(row, "floor", "FLOOR") || "Ground";
+  const type = value(row, "type", "spaceType", "locationClass") || "Space";
+  const capacity = integer(value(row, "capacity"), 0);
+  const areaSqm = integer(value(row, "areaSqm", "area"), 0);
+  const occupancy = integer(value(row, "occupancy"), 0);
+  const space = await prisma.space.upsert({
+    where: { buildingId_floor_name: { buildingId: building.id, floor, name } },
+    update: { type, capacity, areaSqm, occupancy },
+    create: { buildingId: building.id, name, floor, type, capacity, areaSqm, occupancy },
+  });
+  return importResult("space", "UPSERT", space, `${building.code}/${floor}/${name}`, name);
+}
+
 async function importAsset(row: Row) {
-  const site = await firstSite();
   const tag = value(row, "EQUIPMENTNO", "tag", "ASSET NUMBER", "assetNumber", "Asset Code");
   if (!tag) throw new Error("EQUIPMENTNO is required");
   const locationCode = value(row, "LOCATION", "Location", "Location Name", "location", "ROOM", "room");
   const location = locationCode ? await prisma.location.findUnique({ where: { code: locationCode } }) : null;
+  const hierarchy = location || value(row, "siteCode", "SITE", "buildingCode", "BLDG") ? await siteAndBuildingForAsset(location, row) : { site: await firstSite(), building: null };
   const name = value(row, "EQUIPMENTDESC", "name", "Asset Name", "Asset Description", "Asset Description ", "assetDescription") || tag;
   const description = value(row, "ADDITIONAL_NOTE", "Description", "Additional description", "additionalDescription");
   const category = value(row, "CATEGORY", "category", "Asset Type", "Asset Group", "Asset Group ", "assetGroup") || "General";
@@ -203,8 +277,8 @@ async function importAsset(row: Row) {
     create: {
       tag,
       ...assetData,
-      siteId: site.id,
-      buildingId: site.buildings[0]?.id,
+      siteId: hierarchy.site.id,
+      buildingId: hierarchy.building?.id ?? ("buildings" in hierarchy.site ? hierarchy.site.buildings[0]?.id : undefined),
     },
   });
 

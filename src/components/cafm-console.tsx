@@ -5128,6 +5128,9 @@ function BulkUpload({ saving, onSubmit, initialModule }: { saving: boolean; onSu
           <label className="grid gap-1 text-sm font-bold text-slate-600">
             Module
             <select name="module" value={module} onChange={(event) => setModule(event.target.value)} className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon">
+              <option value="sites">Sites</option>
+              <option value="buildings">Buildings</option>
+              <option value="spaces">Spaces</option>
               <option value="assets">Assets</option>
               <option value="categories">Asset Categories</option>
               <option value="inventory">Inventory</option>
@@ -5157,6 +5160,9 @@ function BulkUpload({ saving, onSubmit, initialModule }: { saving: boolean; onSu
 
 function Templates() {
   const templates = [
+    ["sites", "Sites", "name,city,country,type,areaSqm"],
+    ["buildings", "Buildings", "code,name,site,city,country,floors,areaSqm"],
+    ["spaces", "Spaces", "code,name,site,city,country,buildingCode,floor,type,capacity,areaSqm,occupancy"],
     ["assets", "Assets", assetTemplateHeader],
     ["departments", "Departments", "code,name,siteLocation,description"],
     ["employees", "Employees", "name,email,companyId,nationalityType,departmentCode,siteLocation"],
