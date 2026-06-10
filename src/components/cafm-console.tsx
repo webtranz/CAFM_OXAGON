@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useEffect, useId, useMemo, useRef, useState } from "react";
 import type { ReactNode, UIEvent } from "react";
 import Image from "next/image";
 import {
@@ -2579,6 +2579,12 @@ function resolveLocationCode(locations: any[], value: string) {
   return locations.find((location) => saved === location.code || saved.startsWith(`${location.code} /`) || saved.includes(location.code))?.code || "";
 }
 
+function findLocationBySearch(locations: any[], value: string) {
+  const search = String(value || "").trim();
+  if (!search) return undefined;
+  return locations.find((location) => location.code === search || locationSelectLabel(location) === search || serviceRequestLocationLabel(location) === search);
+}
+
 function sortedUnique(values: string[]) {
   return Array.from(new Set(values.map((value) => String(value || "").trim()).filter(Boolean))).sort((first, second) => first.localeCompare(second, undefined, { numeric: true, sensitivity: "base" }));
 }
@@ -2597,6 +2603,7 @@ function ServiceRequestForm({ title, request, services, categories, departments,
   );
   const initialLocationCode = useMemo(() => resolveLocationCode(activeLocations, request?.location ?? ""), [activeLocations, request?.location]);
   const initialLocation = activeLocations.find((location) => location.code === initialLocationCode);
+  const locationListId = useId();
   const formClass = mode === "modal" ? "" : "rounded-lg border border-white/80 bg-white p-5 shadow-lift";
   const [priority, setPriority] = useState(request?.priority ?? "MEDIUM");
   const [departmentCode, setDepartmentCode] = useState(request?.departmentCode ?? "");
@@ -2606,6 +2613,7 @@ function ServiceRequestForm({ title, request, services, categories, departments,
   const [buildingValue, setBuildingValue] = useState(initialLocation?.building ?? "");
   const [floorValue, setFloorValue] = useState(initialLocation?.floor ?? "");
   const [locationCodeValue, setLocationCodeValue] = useState(initialLocationCode);
+  const [locationSearchValue, setLocationSearchValue] = useState(initialLocation ? locationSelectLabel(initialLocation) : "");
   const [assetTagValue, setAssetTagValue] = useState(request?.assetTag ?? "");
   const [categoryValue, setCategoryValue] = useState(request?.category ?? "");
   const [showCategoryCreate, setShowCategoryCreate] = useState(false);
@@ -2642,7 +2650,7 @@ function ServiceRequestForm({ title, request, services, categories, departments,
     [activeLocations, siteValue, parentLocationValue, buildingValue, floorValue],
   );
   const selectedLocation = activeLocations.find((location) => location.code === locationCodeValue);
-  const locationValue = selectedLocation ? serviceRequestLocationLabel(selectedLocation) : request?.location ?? "";
+  const locationValue = selectedLocation ? serviceRequestLocationLabel(selectedLocation) : "";
   const filteredAssets = useMemo(() => scopedAssetOptions(assets, departmentCode, selectedTeamCode, locationValue), [assets, departmentCode, selectedTeamCode, locationValue]);
 
   useEffect(() => {
@@ -2660,6 +2668,7 @@ function ServiceRequestForm({ title, request, services, categories, departments,
   useEffect(() => {
     if (locationCodeValue && !finalLocationOptions.some((location) => location.code === locationCodeValue)) {
       setLocationCodeValue("");
+      setLocationSearchValue("");
     }
   }, [finalLocationOptions, locationCodeValue]);
   const priorities = [
@@ -2721,68 +2730,87 @@ function ServiceRequestForm({ title, request, services, categories, departments,
         <input type="hidden" name="priority" value={priority} />
         <input type="hidden" name="location" value={locationValue} />
         <div className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 md:grid-cols-2">
-          <select
+          <input
             value={siteValue}
+            list={`${locationListId}-sites`}
+            placeholder="1. Site"
             onChange={(event) => {
               setSiteValue(event.target.value);
               setParentLocationValue("");
               setBuildingValue("");
               setFloorValue("");
               setLocationCodeValue("");
+              setLocationSearchValue("");
             }}
             className="h-11 rounded-lg border border-slate-200 bg-white px-3 outline-none focus:border-lagoon"
-          >
-            <option value="">1. Site</option>
-            {siteOptions.map((site) => <option key={site} value={site}>{site}</option>)}
-          </select>
-          <select
+          />
+          <datalist id={`${locationListId}-sites`}>
+            {siteOptions.map((site) => <option key={site} value={site} />)}
+          </datalist>
+          <input
             value={parentLocationValue}
+            list={`${locationListId}-parents`}
+            placeholder="2. Parent Location"
             onChange={(event) => {
               setParentLocationValue(event.target.value);
               setBuildingValue("");
               setFloorValue("");
               setLocationCodeValue("");
+              setLocationSearchValue("");
             }}
             disabled={!siteValue}
-            className="h-11 rounded-lg border border-slate-200 bg-white px-3 outline-none focus:border-lagoon"
-          >
-            <option value="">2. Parent Location</option>
-            {parentLocationOptions.map((parentLocation) => <option key={parentLocation} value={parentLocation}>{parentLocation}</option>)}
-          </select>
-          <select
+            className="h-11 rounded-lg border border-slate-200 bg-white px-3 outline-none focus:border-lagoon disabled:bg-slate-100"
+          />
+          <datalist id={`${locationListId}-parents`}>
+            {parentLocationOptions.map((parentLocation) => <option key={parentLocation} value={parentLocation} />)}
+          </datalist>
+          <input
             value={buildingValue}
+            list={`${locationListId}-buildings`}
+            placeholder="3. Building / Area"
             onChange={(event) => {
               setBuildingValue(event.target.value);
               setFloorValue("");
               setLocationCodeValue("");
+              setLocationSearchValue("");
             }}
             disabled={!parentLocationValue}
-            className="h-11 rounded-lg border border-slate-200 bg-white px-3 outline-none focus:border-lagoon"
-          >
-            <option value="">3. Building / Area</option>
-            {buildingOptions.map((building) => <option key={building} value={building}>{building}</option>)}
-          </select>
-          <select
+            className="h-11 rounded-lg border border-slate-200 bg-white px-3 outline-none focus:border-lagoon disabled:bg-slate-100"
+          />
+          <datalist id={`${locationListId}-buildings`}>
+            {buildingOptions.map((building) => <option key={building} value={building} />)}
+          </datalist>
+          <input
             value={floorValue}
+            list={`${locationListId}-floors`}
+            placeholder="4. Floor / Level"
             onChange={(event) => {
               setFloorValue(event.target.value);
               setLocationCodeValue("");
+              setLocationSearchValue("");
             }}
             disabled={!buildingValue}
-            className="h-11 rounded-lg border border-slate-200 bg-white px-3 outline-none focus:border-lagoon"
-          >
-            <option value="">4. Floor / Level</option>
-            {floorOptions.map((floor) => <option key={floor} value={floor}>{floor}</option>)}
-          </select>
-          <select
-            value={locationCodeValue}
-            onChange={(event) => setLocationCodeValue(event.target.value)}
+            className="h-11 rounded-lg border border-slate-200 bg-white px-3 outline-none focus:border-lagoon disabled:bg-slate-100"
+          />
+          <datalist id={`${locationListId}-floors`}>
+            {floorOptions.map((floor) => <option key={floor} value={floor} />)}
+          </datalist>
+          <input
+            value={locationSearchValue}
+            list={`${locationListId}-final-locations`}
+            placeholder="5. Final Location / Space"
+            onChange={(event) => {
+              const nextValue = event.target.value;
+              const selected = findLocationBySearch(finalLocationOptions, nextValue);
+              setLocationSearchValue(nextValue);
+              setLocationCodeValue(selected?.code ?? "");
+            }}
             disabled={!floorValue}
-            className="h-11 rounded-lg border border-slate-200 bg-white px-3 outline-none focus:border-lagoon md:col-span-2"
-          >
-            <option value="">5. Final Location / Space</option>
-            {finalLocationOptions.map((location) => <option key={location.code} value={location.code}>{locationSelectLabel(location)}</option>)}
-          </select>
+            className="h-11 rounded-lg border border-slate-200 bg-white px-3 outline-none focus:border-lagoon disabled:bg-slate-100 md:col-span-2"
+          />
+          <datalist id={`${locationListId}-final-locations`}>
+            {finalLocationOptions.map((location) => <option key={location.code} value={locationSelectLabel(location)} />)}
+          </datalist>
         </div>
         <div className="grid gap-3 md:grid-cols-2">
           <div className="grid gap-2">
