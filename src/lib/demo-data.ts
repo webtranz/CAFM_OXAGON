@@ -68,6 +68,7 @@ export const fallbackData = {
     { id: "p1", code: "PM-HVAC-001", name: "Monthly AHU Service", assetTag: "AHU-RYD-01-004", frequency: "Monthly", nextDue: new Date(), durationHrs: 2, active: true },
   ],
   users: [
+    { id: "sandbox-admin", name: "Sandbox Administrator", email: "sandbox@cafm.local", role: "Admin", department: "Administration", active: true, team: null },
     { id: "u1", name: "System Administrator", email: "admin@cafm.local", role: "Admin", department: "Administration", active: true, team: null },
     { id: "u2", name: "Admin User", email: "admin@admin.com", role: "Admin", department: "Administration", active: true, team: null },
   ],

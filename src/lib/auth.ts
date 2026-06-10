@@ -3,6 +3,15 @@ import { createHmac, timingSafeEqual } from "crypto";
 import { prisma } from "@/lib/prisma";
 
 export const sessionCookieName = "cafm_session";
+export const sandboxAdmin = {
+  id: "sandbox-admin",
+  name: "Sandbox Administrator",
+  email: "sandbox@cafm.local",
+  role: "Admin",
+  department: "Administration",
+  team: null,
+};
+export const sandboxAdminPassword = "Sandbox@12345";
 const sessionMaxAgeSeconds = 60 * 60 * 12;
 
 function sessionSecret() {
@@ -34,6 +43,10 @@ export async function getCurrentUser() {
   const token = jar.get(sessionCookieName)?.value;
   const userId = token ? verifySessionToken(token) : null;
   if (!userId) return null;
+
+  if (!process.env.DATABASE_URL && userId === sandboxAdmin.id) {
+    return sandboxAdmin;
+  }
 
   try {
     return await prisma.user.findUnique({

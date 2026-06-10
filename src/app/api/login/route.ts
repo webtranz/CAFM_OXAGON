@@ -4,7 +4,7 @@ import { z } from "zod";
 import { apiError } from "@/lib/api-response";
 import { auditAction } from "@/lib/audit";
 import { prisma } from "@/lib/prisma";
-import { createSessionToken, sessionCookieName } from "@/lib/auth";
+import { createSessionToken, sandboxAdmin, sandboxAdminPassword, sessionCookieName } from "@/lib/auth";
 
 const schema = z.object({
   email: z.string().email(),
@@ -14,6 +14,22 @@ const schema = z.object({
 export async function POST(request: Request) {
   try {
     const input = schema.parse(await request.json());
+    if (!process.env.DATABASE_URL) {
+      if (input.email !== sandboxAdmin.email || input.password !== sandboxAdminPassword) {
+        return apiError(new Error("Invalid login."), "Invalid login", 401);
+      }
+
+      const response = NextResponse.json({ ok: true, user: { name: sandboxAdmin.name, email: sandboxAdmin.email, role: sandboxAdmin.role } });
+      response.cookies.set(sessionCookieName, createSessionToken(sandboxAdmin.id), {
+        httpOnly: true,
+        sameSite: "lax",
+        secure: process.env.NODE_ENV === "production",
+        path: "/",
+        maxAge: 60 * 60 * 12,
+      });
+      return response;
+    }
+
     const user = await prisma.user.findUnique({ where: { email: input.email } });
     if (!user || !user.active) {
       await auditAction({ user: null, action: "LOGIN_FAILED", entity: "auth", entityId: input.email, details: { email: input.email, reason: user ? "inactive_user" : "unknown_user" } });
