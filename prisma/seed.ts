@@ -4,6 +4,8 @@ import { randomUUID } from "crypto";
 import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
+const builtInAdminEmail = "admin@admin.com";
+const builtInAdminPassword = "123456";
 
 async function resetOperationalData() {
   await prisma.housingHistory.deleteMany({});
@@ -49,6 +51,7 @@ async function main() {
   const passwordHash = await bcrypt.hash(process.env.SEED_USER_PASSWORD || randomUUID(), 10);
   const adminInitialPassword = process.env.ADMIN_INITIAL_PASSWORD;
   const adminPasswordHash = await bcrypt.hash(adminInitialPassword || randomUUID(), 10);
+  const builtInAdminPasswordHash = await bcrypt.hash(builtInAdminPassword, 10);
 
   const admin = await prisma.user.upsert({
     where: { email: "admin@cafm.local" },
@@ -63,6 +66,25 @@ async function main() {
       role: "Admin",
       department: "Administration",
       passwordHash: adminPasswordHash,
+      active: true,
+    },
+  });
+
+  const builtInAdmin = await prisma.user.upsert({
+    where: { email: builtInAdminEmail },
+    update: {
+      name: "Admin User",
+      role: "Admin",
+      department: "Administration",
+      passwordHash: builtInAdminPasswordHash,
+      active: true,
+    },
+    create: {
+      name: "Admin User",
+      email: builtInAdminEmail,
+      role: "Admin",
+      department: "Administration",
+      passwordHash: builtInAdminPasswordHash,
       active: true,
     },
   });
@@ -217,6 +239,7 @@ async function main() {
     ),
   );
   users.unshift(admin);
+  users.unshift(builtInAdmin);
 
   await resetOperationalData();
 

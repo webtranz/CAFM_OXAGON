@@ -74,7 +74,7 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
     if (user?.email === currentUser?.email) {
       return apiError(new Error("You cannot delete your own user account."), "Unable to delete user", 400);
     }
-    if (user?.email === "admin@cafm.local") {
+    if (user?.email === "admin@cafm.local" || user?.email === "admin@admin.com") {
       return apiError(new Error("Initial admin user cannot be deleted."), "Unable to delete user", 400);
     }
     await prisma.user.delete({ where: { id } });

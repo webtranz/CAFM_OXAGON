@@ -69,6 +69,7 @@ export const fallbackData = {
   ],
   users: [
     { id: "u1", name: "System Administrator", email: "admin@cafm.local", role: "Admin", department: "Administration", active: true, team: null },
+    { id: "u2", name: "Admin User", email: "admin@admin.com", role: "Admin", department: "Administration", active: true, team: null },
   ],
   permissions: [
     { id: "perm1", code: "assets.manage", name: "Manage Assets", module: "Assets", description: "Create and edit assets" },
