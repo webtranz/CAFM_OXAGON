@@ -2519,8 +2519,23 @@ function assetMatchesLocation(asset: any, location: string) {
 }
 
 function assetMatchesDepartment(asset: any, departmentCode: string, assignedTeamCode = "") {
-  if (!departmentCode && !assignedTeamCode) return true;
-  return [asset.departmentCode, asset.assignedTeamCode].filter(Boolean).includes(departmentCode) || (assignedTeamCode ? asset.assignedTeamCode === assignedTeamCode : false);
+  const requestedCodes = [departmentCode, assignedTeamCode].filter(Boolean).map((code) => String(code).trim().toUpperCase());
+  if (!requestedCodes.length) return true;
+  const directCodes = [asset.departmentCode, asset.assignedTeamCode].filter(Boolean).map((code) => String(code).trim().toUpperCase());
+  const combinedCodeSegments = [
+    asset.tag,
+    asset.assetNumber,
+    asset.equipmentNo,
+    asset.classCode,
+    asset.category,
+    asset.assetGroup,
+    asset.primarySystem,
+    asset.system,
+  ]
+    .filter(Boolean)
+    .flatMap((code) => String(code).toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean));
+
+  return requestedCodes.some((code) => directCodes.includes(code) || combinedCodeSegments.includes(code));
 }
 
 function serviceMatchesDepartment(service: any, departmentCode: string) {
