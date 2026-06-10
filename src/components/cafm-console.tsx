@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useId, useMemo, useRef, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode, UIEvent } from "react";
 import Image from "next/image";
 import {
@@ -2589,6 +2589,108 @@ function sortedUnique(values: string[]) {
   return Array.from(new Set(values.map((value) => String(value || "").trim()).filter(Boolean))).sort((first, second) => first.localeCompare(second, undefined, { numeric: true, sensitivity: "base" }));
 }
 
+type SearchableOption = { value: string; label: string };
+
+function SearchableDropdownField({
+  value,
+  options,
+  placeholder,
+  disabled = false,
+  className = "",
+  onInput,
+  onSelect,
+}: {
+  value: string;
+  options: SearchableOption[];
+  placeholder: string;
+  disabled?: boolean;
+  className?: string;
+  onInput: (value: string) => void;
+  onSelect: (option: SearchableOption) => void;
+}) {
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
+  const [open, setOpen] = useState(false);
+  const [highlightedIndex, setHighlightedIndex] = useState(0);
+  const search = String(value || "").trim().toLowerCase();
+  const filteredOptions = useMemo(() => {
+    const rows = search
+      ? options.filter((option) => `${option.value} ${option.label}`.toLowerCase().includes(search))
+      : options;
+    return rows.slice(0, 120);
+  }, [options, search]);
+
+  useEffect(() => {
+    function handlePointerDown(event: MouseEvent) {
+      if (!wrapperRef.current?.contains(event.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handlePointerDown);
+    return () => document.removeEventListener("mousedown", handlePointerDown);
+  }, []);
+
+  useEffect(() => {
+    setHighlightedIndex(0);
+  }, [search, options]);
+
+  function choose(option: SearchableOption) {
+    onSelect(option);
+    setOpen(false);
+  }
+
+  return (
+    <div ref={wrapperRef} className={`relative ${className}`}>
+      <input
+        value={value}
+        placeholder={placeholder}
+        disabled={disabled}
+        onFocus={() => !disabled && setOpen(true)}
+        onClick={() => !disabled && setOpen(true)}
+        onChange={(event) => {
+          onInput(event.target.value);
+          setOpen(true);
+        }}
+        onKeyDown={(event) => {
+          if (disabled) return;
+          if (/^[a-z0-9]$/i.test(event.key)) setOpen(true);
+          if (event.key === "ArrowDown") {
+            event.preventDefault();
+            setOpen(true);
+            setHighlightedIndex((current) => Math.min(current + 1, Math.max(filteredOptions.length - 1, 0)));
+          }
+          if (event.key === "ArrowUp") {
+            event.preventDefault();
+            setHighlightedIndex((current) => Math.max(current - 1, 0));
+          }
+          if (event.key === "Enter" && open && filteredOptions[highlightedIndex]) {
+            event.preventDefault();
+            choose(filteredOptions[highlightedIndex]);
+          }
+          if (event.key === "Escape") setOpen(false);
+        }}
+        className="h-11 w-full rounded-lg border border-slate-200 bg-white px-3 outline-none focus:border-lagoon disabled:bg-slate-100"
+      />
+      {open && !disabled && (
+        <div className="absolute left-0 right-0 top-[calc(100%+4px)] z-50 max-h-64 overflow-auto rounded-lg border border-slate-200 bg-white py-1 text-sm shadow-xl">
+          {filteredOptions.length ? (
+            filteredOptions.map((option, index) => (
+              <button
+                key={`${option.value}-${option.label}`}
+                type="button"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => choose(option)}
+                className={`block w-full px-3 py-2 text-left font-bold ${index === highlightedIndex ? "bg-lagoon/10 text-lagoon" : "text-slate-700 hover:bg-slate-50"}`}
+              >
+                {option.label}
+              </button>
+            ))
+          ) : (
+            <div className="px-3 py-2 text-sm font-bold text-slate-500">No matches</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ServiceRequestForm({ title, request, services, categories, departments, teams, locations, assets, onSubmit, saving, mode = "panel" }: { title: string; request?: any; services: any[]; categories: any[]; departments: any[]; teams: any[]; locations: any[]; assets: any[]; onSubmit: (formData: FormData) => void; saving: boolean; mode?: "panel" | "modal" }) {
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -2603,7 +2705,6 @@ function ServiceRequestForm({ title, request, services, categories, departments,
   );
   const initialLocationCode = useMemo(() => resolveLocationCode(activeLocations, request?.location ?? ""), [activeLocations, request?.location]);
   const initialLocation = activeLocations.find((location) => location.code === initialLocationCode);
-  const locationListId = useId();
   const formClass = mode === "modal" ? "" : "rounded-lg border border-white/80 bg-white p-5 shadow-lift";
   const [priority, setPriority] = useState(request?.priority ?? "MEDIUM");
   const [departmentCode, setDepartmentCode] = useState(request?.departmentCode ?? "");
@@ -2629,15 +2730,19 @@ function ServiceRequestForm({ title, request, services, categories, departments,
   const selectedService = services.find((service) => service.code === serviceCode);
   const selectedTeamCode = selectedService?.team?.code || selectedService?.teamCode || teams.find((team) => team.code === departmentCode)?.code || "";
   const siteOptions = useMemo(() => sortedUnique(activeLocations.map((location) => location.site)), [activeLocations]);
+  const siteDropdownOptions = useMemo(() => siteOptions.map((site) => ({ value: site, label: site })), [siteOptions]);
   const parentLocationOptions = useMemo(() => sortedUnique(activeLocations.filter((location) => !siteValue || location.site === siteValue).map((location) => location.parentLocation || location.zone || location.code)), [activeLocations, siteValue]);
+  const parentLocationDropdownOptions = useMemo(() => parentLocationOptions.map((parentLocation) => ({ value: parentLocation, label: parentLocation })), [parentLocationOptions]);
   const buildingOptions = useMemo(
     () => sortedUnique(activeLocations.filter((location) => (!siteValue || location.site === siteValue) && (!parentLocationValue || location.parentLocation === parentLocationValue || location.zone === parentLocationValue || location.code === parentLocationValue)).map((location) => location.building)),
     [activeLocations, siteValue, parentLocationValue],
   );
+  const buildingDropdownOptions = useMemo(() => buildingOptions.map((building) => ({ value: building, label: building })), [buildingOptions]);
   const floorOptions = useMemo(
     () => sortedUnique(activeLocations.filter((location) => (!siteValue || location.site === siteValue) && (!parentLocationValue || location.parentLocation === parentLocationValue || location.zone === parentLocationValue || location.code === parentLocationValue) && (!buildingValue || location.building === buildingValue)).map((location) => location.floor)),
     [activeLocations, siteValue, parentLocationValue, buildingValue],
   );
+  const floorDropdownOptions = useMemo(() => floorOptions.map((floor) => ({ value: floor, label: floor })), [floorOptions]);
   const finalLocationOptions = useMemo(
     () => activeLocations
       .filter((location) =>
@@ -2649,6 +2754,7 @@ function ServiceRequestForm({ title, request, services, categories, departments,
       .sort((first, second) => serviceRequestLocationLabel(first).localeCompare(serviceRequestLocationLabel(second), undefined, { numeric: true, sensitivity: "base" })),
     [activeLocations, siteValue, parentLocationValue, buildingValue, floorValue],
   );
+  const finalLocationDropdownOptions = useMemo(() => finalLocationOptions.map((location) => ({ value: location.code, label: locationSelectLabel(location) })), [finalLocationOptions]);
   const selectedLocation = activeLocations.find((location) => location.code === locationCodeValue);
   const locationValue = selectedLocation ? serviceRequestLocationLabel(selectedLocation) : "";
   const filteredAssets = useMemo(() => scopedAssetOptions(assets, departmentCode, selectedTeamCode, locationValue), [assets, departmentCode, selectedTeamCode, locationValue]);
@@ -2730,87 +2836,97 @@ function ServiceRequestForm({ title, request, services, categories, departments,
         <input type="hidden" name="priority" value={priority} />
         <input type="hidden" name="location" value={locationValue} />
         <div className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 md:grid-cols-2">
-          <input
+          <SearchableDropdownField
             value={siteValue}
-            list={`${locationListId}-sites`}
             placeholder="1. Site"
-            onChange={(event) => {
-              setSiteValue(event.target.value);
+            options={siteDropdownOptions}
+            onInput={(nextValue) => {
+              setSiteValue(nextValue);
               setParentLocationValue("");
               setBuildingValue("");
               setFloorValue("");
               setLocationCodeValue("");
               setLocationSearchValue("");
             }}
-            className="h-11 rounded-lg border border-slate-200 bg-white px-3 outline-none focus:border-lagoon"
-          />
-          <datalist id={`${locationListId}-sites`}>
-            {siteOptions.map((site) => <option key={site} value={site} />)}
-          </datalist>
-          <input
-            value={parentLocationValue}
-            list={`${locationListId}-parents`}
-            placeholder="2. Parent Location"
-            onChange={(event) => {
-              setParentLocationValue(event.target.value);
+            onSelect={(option) => {
+              setSiteValue(option.value);
+              setParentLocationValue("");
               setBuildingValue("");
               setFloorValue("");
               setLocationCodeValue("");
               setLocationSearchValue("");
             }}
-            disabled={!siteValue}
-            className="h-11 rounded-lg border border-slate-200 bg-white px-3 outline-none focus:border-lagoon disabled:bg-slate-100"
           />
-          <datalist id={`${locationListId}-parents`}>
-            {parentLocationOptions.map((parentLocation) => <option key={parentLocation} value={parentLocation} />)}
-          </datalist>
-          <input
-            value={buildingValue}
-            list={`${locationListId}-buildings`}
-            placeholder="3. Building / Area"
-            onChange={(event) => {
-              setBuildingValue(event.target.value);
+          <SearchableDropdownField
+            value={parentLocationValue}
+            placeholder="2. Parent Location"
+            options={parentLocationDropdownOptions}
+            disabled={!siteValue}
+            onInput={(nextValue) => {
+              setParentLocationValue(nextValue);
+              setBuildingValue("");
               setFloorValue("");
               setLocationCodeValue("");
               setLocationSearchValue("");
             }}
-            disabled={!parentLocationValue}
-            className="h-11 rounded-lg border border-slate-200 bg-white px-3 outline-none focus:border-lagoon disabled:bg-slate-100"
-          />
-          <datalist id={`${locationListId}-buildings`}>
-            {buildingOptions.map((building) => <option key={building} value={building} />)}
-          </datalist>
-          <input
-            value={floorValue}
-            list={`${locationListId}-floors`}
-            placeholder="4. Floor / Level"
-            onChange={(event) => {
-              setFloorValue(event.target.value);
+            onSelect={(option) => {
+              setParentLocationValue(option.value);
+              setBuildingValue("");
+              setFloorValue("");
               setLocationCodeValue("");
               setLocationSearchValue("");
             }}
-            disabled={!buildingValue}
-            className="h-11 rounded-lg border border-slate-200 bg-white px-3 outline-none focus:border-lagoon disabled:bg-slate-100"
           />
-          <datalist id={`${locationListId}-floors`}>
-            {floorOptions.map((floor) => <option key={floor} value={floor} />)}
-          </datalist>
-          <input
+          <SearchableDropdownField
+            value={buildingValue}
+            placeholder="3. Building / Area"
+            options={buildingDropdownOptions}
+            disabled={!parentLocationValue}
+            onInput={(nextValue) => {
+              setBuildingValue(nextValue);
+              setFloorValue("");
+              setLocationCodeValue("");
+              setLocationSearchValue("");
+            }}
+            onSelect={(option) => {
+              setBuildingValue(option.value);
+              setFloorValue("");
+              setLocationCodeValue("");
+              setLocationSearchValue("");
+            }}
+          />
+          <SearchableDropdownField
+            value={floorValue}
+            placeholder="4. Floor / Level"
+            options={floorDropdownOptions}
+            disabled={!buildingValue}
+            onInput={(nextValue) => {
+              setFloorValue(nextValue);
+              setLocationCodeValue("");
+              setLocationSearchValue("");
+            }}
+            onSelect={(option) => {
+              setFloorValue(option.value);
+              setLocationCodeValue("");
+              setLocationSearchValue("");
+            }}
+          />
+          <SearchableDropdownField
             value={locationSearchValue}
-            list={`${locationListId}-final-locations`}
             placeholder="5. Final Location / Space"
-            onChange={(event) => {
-              const nextValue = event.target.value;
+            options={finalLocationDropdownOptions}
+            disabled={!floorValue}
+            className="md:col-span-2"
+            onInput={(nextValue) => {
               const selected = findLocationBySearch(finalLocationOptions, nextValue);
               setLocationSearchValue(nextValue);
               setLocationCodeValue(selected?.code ?? "");
             }}
-            disabled={!floorValue}
-            className="h-11 rounded-lg border border-slate-200 bg-white px-3 outline-none focus:border-lagoon disabled:bg-slate-100 md:col-span-2"
+            onSelect={(option) => {
+              setLocationSearchValue(option.label);
+              setLocationCodeValue(option.value);
+            }}
           />
-          <datalist id={`${locationListId}-final-locations`}>
-            {finalLocationOptions.map((location) => <option key={location.code} value={locationSelectLabel(location)} />)}
-          </datalist>
         </div>
         <div className="grid gap-3 md:grid-cols-2">
           <div className="grid gap-2">
