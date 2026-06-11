@@ -34,6 +34,18 @@ export async function requirePermission(code: string) {
   return { user, error: null };
 }
 
+export async function requireAnyPermission(codes: string[]) {
+  const { user, error } = await requireUser();
+  if (error) return { user: null, error };
+  if (accessRole(user) === "admin") return { user, error: null };
+  const allowed = await prisma.rolePermission.findFirst({
+    where: { role: user.role || "", permission: { code: { in: codes } } },
+    select: { id: true },
+  });
+  if (!allowed) return { user: null, error: authError("Access denied.", 403) };
+  return { user, error: null };
+}
+
 export async function requireAdmin() {
   const { user, error } = await requireUser();
   if (error) return { user: null, error };

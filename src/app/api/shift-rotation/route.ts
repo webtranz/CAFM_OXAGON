@@ -2,9 +2,14 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { addDays, format, parseISO } from "date-fns";
 import { apiError } from "@/lib/api-response";
-import { requirePermission } from "@/lib/api-auth";
+import { requireAnyPermission } from "@/lib/api-auth";
 import { auditAction } from "@/lib/audit";
 import { prisma } from "@/lib/prisma";
+
+const formBoolean = z.preprocess((value) => {
+  if (typeof value === "string") return value.toLowerCase() === "true";
+  return value;
+}, z.boolean());
 
 const shiftSchema = z.object({
   name: z.string().min(1),
@@ -12,7 +17,7 @@ const shiftSchema = z.object({
   startTime: z.string().min(1),
   endTime: z.string().min(1),
   breakDuration: z.coerce.number().min(0).default(0),
-  active: z.coerce.boolean().default(true),
+  active: formBoolean.default(true),
 });
 
 const rotationSchema = z.object({
@@ -23,7 +28,7 @@ const rotationSchema = z.object({
   startDate: z.string().min(1),
   endDate: z.string().optional(),
   repeatCycle: z.string().min(1),
-  active: z.coerce.boolean().default(true),
+  active: formBoolean.default(true),
 });
 
 const rosterSchema = z.object({
@@ -72,6 +77,18 @@ function hoursBetween(startTime: string, endTime: string, breakMinutes = 0) {
   let end = minutesFromTime(endTime);
   if (end <= start) end += 24 * 60;
   return Math.max(0, Number(((end - start - breakMinutes) / 60).toFixed(2)));
+}
+
+function normalized(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function dayName(date: Date) {
+  return format(date, "EEEE").toLowerCase();
+}
+
+function rosterInclude() {
+  return { employee: true, team: true, shift: true };
 }
 
 function csv(rows: Record<string, unknown>[]) {
@@ -180,7 +197,7 @@ async function rosterRows() {
 }
 
 export async function GET(request: Request) {
-  const { error } = await requirePermission("users.manage");
+  const { error } = await requireAnyPermission(["users.manage", "requests.manage", "reports.view"]);
   if (error) return error;
   const url = new URL(request.url);
   const report = url.searchParams.get("report") || "roster";
@@ -215,7 +232,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const { error, user } = await requirePermission("users.manage");
+    const { error, user } = await requireAnyPermission(["users.manage", "requests.manage"]);
     if (error) return error;
     const body = await request.json();
     const module = String(body.module || "");
@@ -243,7 +260,7 @@ export async function POST(request: Request) {
       await validateRoster(input);
       const shift = await prisma.shiftMaster.findUniqueOrThrow({ where: { id: input.shiftId } });
       const plannedWorkingHours = hoursBetween(shift.startTime, shift.endTime, shift.breakDuration);
-      const record = await prisma.rosterEntry.create({ data: { ...input, date: dayStart(input.date), plannedWorkingHours, employeeId: input.assignmentType === "Employee" ? input.employeeId : null, teamId: input.assignmentType === "Service Team" ? input.teamId : null } });
+      const record = await prisma.rosterEntry.create({ data: { ...input, date: dayStart(input.date), plannedWorkingHours, employeeId: input.assignmentType === "Employee" ? input.employeeId : null, teamId: input.assignmentType === "Service Team" ? input.teamId : null }, include: rosterInclude() });
       await auditAction({ user, action: "ROSTER_SAVE", entity: "roster_entry", entityId: record.id, details: { input } });
       return NextResponse.json(record, { status: 201 });
     }
@@ -275,7 +292,7 @@ export async function POST(request: Request) {
           markedBy: user.name || user.email,
           markedAt: new Date(),
         },
-        include: { employee: true, team: true, shift: true },
+        include: rosterInclude(),
       });
       await auditAction({ user, action: "ROSTER_ATTENDANCE_MARK", entity: "roster_entry", entityId: record.id, details: { input, workedHours, overtimeHours } });
       return NextResponse.json(record);
@@ -289,25 +306,33 @@ export async function POST(request: Request) {
         if (!row.shiftId || !row.locationZone || !row.supervisor) throw new Error("Cannot finalize roster with missing required fields.");
       }
       await prisma.rosterEntry.updateMany({ where: { id: { in: ids }, status: "Draft" }, data: { status: "Finalized" } });
-      return NextResponse.json({ ok: true, finalized: ids.length });
+      const finalized = await prisma.rosterEntry.findMany({ where: { id: { in: ids } }, include: rosterInclude() });
+      return NextResponse.json({ ok: true, finalized: finalized.length, roster: finalized });
     }
 
     if (module === "generate") {
       const rotation = await prisma.rotationSetup.findUnique({ where: { id: String(body.rotationId || "") } });
       if (!rotation || !rotation.active) throw new Error("Active rotation setup is required.");
       const shiftNames = rotation.shiftSequence.split(",").map((item) => item.trim()).filter(Boolean);
-      const shifts = await prisma.shiftMaster.findMany({ where: { name: { in: shiftNames }, active: true } });
+      const allActiveShifts = await prisma.shiftMaster.findMany({ where: { active: true }, orderBy: { name: "asc" } });
+      const shifts = shiftNames
+        .map((item) => allActiveShifts.find((shift) => [shift.id, shift.name, shift.shiftType].map(normalized).includes(normalized(item))))
+        .filter((shift): shift is NonNullable<typeof shift> => Boolean(shift));
       if (!shifts.length) throw new Error("Rotation has no active shifts.");
+      const offDays = new Set(rotation.offDays.split(",").map(normalized).filter(Boolean));
       const start = dayStart(rotation.startDate);
       const days = Math.max(1, Math.min(Number(body.days || 7), 31));
       const created = [];
+      let shiftIndex = 0;
       for (let index = 0; index < days; index += 1) {
-        const shift = shifts[index % shifts.length];
         const date = addDays(start, index);
+        if (offDays.has(dayName(date))) continue;
+        const shift = shifts[shiftIndex % shifts.length];
+        shiftIndex += 1;
         const rosterInput = rosterSchema.parse({ ...body, shiftId: shift.id, date: format(date, "yyyy-MM-dd"), status: "Draft", source: `Rotation: ${rotation.name}` });
         await validateRoster(rosterInput);
         const plannedWorkingHours = hoursBetween(shift.startTime, shift.endTime, shift.breakDuration);
-        created.push(await prisma.rosterEntry.create({ data: { ...rosterInput, date, plannedWorkingHours, employeeId: rosterInput.assignmentType === "Employee" ? rosterInput.employeeId : null, teamId: rosterInput.assignmentType === "Service Team" ? rosterInput.teamId : null } }));
+        created.push(await prisma.rosterEntry.create({ data: { ...rosterInput, date, plannedWorkingHours, employeeId: rosterInput.assignmentType === "Employee" ? rosterInput.employeeId : null, teamId: rosterInput.assignmentType === "Service Team" ? rosterInput.teamId : null }, include: rosterInclude() }));
       }
       return NextResponse.json({ ok: true, created });
     }

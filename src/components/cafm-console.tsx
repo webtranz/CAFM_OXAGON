@@ -320,7 +320,7 @@ const modulePermissions: Record<string, string> = {
   iot: "reports.view",
   documents: "reports.view",
   incidents: "requests.view",
-  resource: "users.manage",
+  resource: "requests.manage",
   audit: "reports.view",
   housing: "housing.view",
   compliance: "compliance.view",
@@ -6543,6 +6543,7 @@ function ShiftRotationModule({
   const [attendanceStartTime, setAttendanceStartTime] = useState("");
   const [attendanceEndTime, setAttendanceEndTime] = useState("");
   const [attendanceWorkingHours, setAttendanceWorkingHours] = useState("8");
+  const [shiftMessage, setShiftMessage] = useState("");
   useEffect(() => {
     setLocalShiftRotation(shiftRotation);
   }, [shiftRotation]);
@@ -6600,24 +6601,36 @@ function ShiftRotationModule({
     setAttendanceWorkingHours(String(selectedDefaultWorkingHours));
   }, [selectedAttendanceRoster?.id, selectedDefaultWorkingHours]);
 
+  function mergeRosterRows(rows: any[]) {
+    setLocalShiftRotation((current) => ({
+      ...current,
+      roster: [
+        ...rows,
+        ...current.roster.filter((row) => !rows.some((updated) => updated.id === row.id)),
+      ].sort((first, second) => new Date(first.date).getTime() - new Date(second.date).getTime()),
+    }));
+  }
+
   async function handleFinalize() {
+    setShiftMessage("");
     const response = await fetch("/api/shift-rotation", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ module: "finalize", ids: draftRoster.map((row) => row.id) }),
     });
-    await response.json().catch(() => ({}));
+    const result = await response.json().catch(() => ({}));
     if (response.ok) {
-      setLocalShiftRotation((current) => ({
-        ...current,
-        roster: current.roster.map((row) => draftRoster.some((draft) => draft.id === row.id) ? { ...row, status: "Finalized" } : row),
-      }));
+      mergeRosterRows(result.roster ?? draftRoster.map((row) => ({ ...row, status: "Finalized" })));
+      setShiftMessage("Roster finalized.");
       void refreshData();
+    } else {
+      setShiftMessage(cleanMessage(result.message ?? "Unable to finalize roster."));
     }
   }
 
   async function handleAttendance(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setShiftMessage("");
     const formData = new FormData(event.currentTarget);
     const response = await fetch("/api/shift-rotation", {
       method: "POST",
@@ -6626,23 +6639,54 @@ function ShiftRotationModule({
     });
     const result = await response.json().catch(() => ({}));
     if (response.ok && result?.id) {
-      setLocalShiftRotation((current) => ({
-        ...current,
-        roster: current.roster.map((row) => row.id === result.id ? result : row),
-      }));
+      mergeRosterRows([result]);
+      setShiftMessage("Attendance saved.");
       void refreshData();
+    } else {
+      setShiftMessage(cleanMessage(result.message ?? "Unable to save attendance."));
     }
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
-    await submitShiftRotation(new FormData(form));
+    const payload = Object.fromEntries(new FormData(form).entries());
+    const response = await fetch("/api/shift-rotation", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setShiftMessage(cleanMessage(result.message ?? "Unable to save shift and rotation data."));
+      return;
+    }
+    if (payload.module === "shift" && result?.id) {
+      setLocalShiftRotation((current) => ({
+        ...current,
+        shifts: [result, ...current.shifts.filter((shift) => shift.id !== result.id && shift.name !== result.name)].sort((first, second) => String(first.name).localeCompare(String(second.name))),
+      }));
+    }
+    if (payload.module === "rotation" && result?.id) {
+      setLocalShiftRotation((current) => ({
+        ...current,
+        rotations: [result, ...current.rotations.filter((rotation) => rotation.id !== result.id && rotation.name !== result.name)].sort((first, second) => String(first.name).localeCompare(String(second.name))),
+      }));
+    }
+    if (payload.module === "roster" && result?.id) {
+      mergeRosterRows([result]);
+    }
+    if (payload.module === "generate" && Array.isArray(result?.created)) {
+      mergeRosterRows(result.created);
+    }
+    setShiftMessage("Shift / rotation saved.");
     form.reset();
+    void refreshData();
   }
 
   return (
     <div className="grid gap-5">
+      {shiftMessage && <div className="rounded-lg border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm font-black text-emerald-700">{shiftMessage}</div>}
       <div className="grid gap-3 md:grid-cols-3">
         <a href="/api/shift-rotation?report=daily&format=excel" className="rounded-lg bg-white px-3 py-2 text-center text-xs font-black text-lagoon shadow-sm">Daily roster Excel</a>
         <a href="/api/shift-rotation?report=weekly&format=pdf" className="rounded-lg bg-white px-3 py-2 text-center text-xs font-black text-lagoon shadow-sm">Weekly roster PDF</a>
