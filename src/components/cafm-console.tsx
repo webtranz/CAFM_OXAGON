@@ -1264,7 +1264,7 @@ function Assets({
     ...assetRows
       .map((asset) => {
         const value = asset.locationCode || [asset.buildingCode, asset.floor, asset.room].filter(Boolean).join(" / ");
-        if (!value) return null;
+        if (!value || value === "Unassigned") return null;
         return [
           String(value),
           {
