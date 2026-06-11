@@ -85,7 +85,7 @@ export const fallbackData = {
     { id: "d1", code: "MEP", name: "MEP Department", siteLocation: "Tower A", description: "Mechanical electrical plumbing" },
   ],
   employees: [
-    { id: "e1", name: "Adeel Khan", email: "adeel@brightworks.local", companyId: "EMP-001", nationalityType: "Resident", departmentCode: "MEP", siteLocation: "Tower A" },
+    { id: "e1", name: "Adeel Khan", email: "adeel@brightworks.local", companyId: "EMP-001", nationalityType: "Resident", departmentCode: "MEP", siteLocation: "Tower A", shiftEligibility: "Day & Night", defaultShift: "General", serviceTeamCode: "MEP", supervisor: "Adeel Khan", workLocationZone: "Tower A", maxHoursPerDay: 8, maxConsecutiveDays: 6, minRestHours: 12, active: true },
   ],
   rolePermissions: [],
   roles: [
@@ -94,6 +94,11 @@ export const fallbackData = {
     { id: "role-technician", name: "Technician", description: "Execute and update assigned work", standard: true },
   ],
   locations: [],
+  shiftRotation: {
+    shifts: [{ id: "shift-day", name: "Day Shift", shiftType: "Day", startTime: "07:00", endTime: "15:00", breakDuration: 60, active: true }],
+    rotations: [{ id: "rot-demo", name: "MEP Weekly Rotation", appliesTo: "Service Team", shiftSequence: "Day Shift", offDays: "Friday", startDate: new Date(), endDate: null, repeatCycle: "Weekly", active: true }],
+    roster: [],
+  },
   jobPlans: [
     { id: "jp1", code: "JP-HVAC-FILTER", name: "AHU Filter Replacement", assetType: "HVAC", departmentCode: "MEP", serviceCode: "HVAC-REQ", estimatedHours: 2, priority: "MEDIUM", active: true },
   ],

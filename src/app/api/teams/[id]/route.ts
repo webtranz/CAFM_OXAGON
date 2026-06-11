@@ -15,6 +15,10 @@ const schema = z.object({
   service: z.string().optional(),
   phone: z.string().optional(),
   email: z.string().email().optional().or(z.literal("")),
+  shiftEligibility: z.string().optional(),
+  maxHoursPerDay: z.coerce.number().optional(),
+  maxConsecutiveDays: z.coerce.number().optional(),
+  minRestHours: z.coerce.number().optional(),
 });
 
 function teamData(input: z.infer<typeof schema>) {
@@ -29,6 +33,10 @@ function teamData(input: z.infer<typeof schema>) {
     email: input.email || "",
     shift: "General",
     coverage: input.departmentCode || "General",
+    shiftEligibility: input.shiftEligibility || "Day & Night",
+    maxHoursPerDay: input.maxHoursPerDay || 8,
+    maxConsecutiveDays: input.maxConsecutiveDays || 6,
+    minRestHours: input.minRestHours || 12,
   };
 }
 

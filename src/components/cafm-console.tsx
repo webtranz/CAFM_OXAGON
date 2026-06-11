@@ -72,6 +72,11 @@ type ConsoleData = {
   auditLogs: any[];
   complianceCertificates: any[];
   documentUploads: any[];
+  shiftRotation?: {
+    shifts: any[];
+    rotations: any[];
+    roster: any[];
+  };
   housing: {
     properties: any[];
     blocks: any[];
@@ -214,7 +219,7 @@ const moduleGroups: ModuleGroup[] = [
     icon: Users,
     items: [
       { id: "resource", label: "Employees", icon: Users, view: "resource-employees" },
-      { id: "resource", label: "Shifts & Rotations", icon: CalendarCheck, view: "resource-shifts" },
+      { id: "resource", label: "Shift & Rotation", icon: CalendarCheck, view: "resource-shift-rotation" },
       { id: "resource", label: "Time Sheets", icon: ClipboardCheck, view: "resource-timesheets" },
     ],
   },
@@ -293,6 +298,9 @@ const assetRegisterColumns: [string, string][] = [
   ["additionalNote", "ADDITIONAL_NOTE"],
 ];
 const assetTemplateHeader = assetRegisterColumns.map(([, label]) => label).join(",");
+const SHIFT_ELIGIBILITY_OPTIONS = ["Day only", "Night only", "Day & Night", "Not eligible"];
+const SHIFT_TYPE_OPTIONS = ["Day", "Night", "General", "Custom"];
+const ROSTER_STATUS_OPTIONS = ["Draft", "Finalized"];
 const modulePermissions: Record<string, string> = {
   assets: "assets.manage",
   assetSetup: "assets.manage",
@@ -1039,10 +1047,15 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { id?: st
               teams={records.teams}
               requests={records.requests}
               workOrders={records.workOrders}
+              shiftRotation={records.shiftRotation ?? { shifts: [], rotations: [], roster: [] }}
+              users={records.users}
+              locations={records.locations}
               view={activeView}
               saving={saving}
               navigate={navigate}
               submitEmployee={(formData) => postRecord("/api/employees", formData, "Employee")}
+              submitShiftRotation={(formData) => postRecord("/api/shift-rotation", formData, "Shift / rotation")}
+              refreshData={refreshData}
             />
           )}
           {canViewActive && active === "housing" && (
@@ -5309,14 +5322,14 @@ function TeamsServices({
         {showTeamCode && (
           <Panel title="Team Codes" icon={Users}>
             <ReportButtons type="teams" label="Team codes report" />
-            <DataTable rows={teamRows} columns={[["code", "Team Code"], ["name", "Team Name"], ["departmentName", "Department"], ["departmentCode", "Dept Code"], ["service", "Service"]]} />
+            <DataTable rows={teamRows} columns={[["code", "Team Code"], ["name", "Team Name"], ["departmentName", "Department"], ["departmentCode", "Dept Code"], ["service", "Service"], ["shiftEligibility", "Shift Eligibility"], ["maxHoursPerDay", "Max hrs/day"]]} />
             <SetupActions rows={teamRows} labelKey="code" onEdit={setEditingTeam} onDelete={deleteTeam} saving={saving} isAdmin={isAdmin} />
           </Panel>
         )}
         {showServiceTeams && (
           <Panel title="Service Teams" icon={Users}>
             <ReportButtons type="teams" label="Service teams report" />
-            <DataTable rows={teamRows} columns={[["code", "Code"], ["name", "Team"], ["companyIdNumber", "Company ID"], ["departmentCode", "Dept"], ["service", "Service"], ["email", "Email"], ["phone", "Phone"]]} />
+            <DataTable rows={teamRows} columns={[["code", "Code"], ["name", "Team"], ["companyIdNumber", "Company ID"], ["departmentCode", "Dept"], ["service", "Service"], ["shiftEligibility", "Shift Eligibility"], ["maxHoursPerDay", "Max hrs/day"], ["maxConsecutiveDays", "Max days"], ["minRestHours", "Rest hrs"], ["email", "Email"], ["phone", "Phone"]]} />
             <SetupActions rows={teamRows} labelKey="code" onEdit={setEditingTeam} onDelete={deleteTeam} saving={saving} isAdmin={isAdmin} />
           </Panel>
         )}
@@ -5608,6 +5621,20 @@ function TeamForm({ team, departments, onSubmit, saving }: { team?: any; departm
           ))}
         </select>
         <input name="service" defaultValue={team?.service ?? team?.type ?? ""} placeholder="Service" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
+        <RequiredLabel label="Shift Eligibility">
+          <select name="shiftEligibility" defaultValue={team?.shiftEligibility ?? "Day & Night"} required className={HOUSING_FIELD_CLASS}>
+            {SHIFT_ELIGIBILITY_OPTIONS.map((option) => <option key={option}>{option}</option>)}
+          </select>
+        </RequiredLabel>
+        <RequiredLabel label="Maximum working hours per day">
+          <input name="maxHoursPerDay" type="number" min="1" max="24" required defaultValue={team?.maxHoursPerDay ?? 8} className={HOUSING_FIELD_CLASS} />
+        </RequiredLabel>
+        <RequiredLabel label="Maximum consecutive working days">
+          <input name="maxConsecutiveDays" type="number" min="1" max="31" required defaultValue={team?.maxConsecutiveDays ?? 6} className={HOUSING_FIELD_CLASS} />
+        </RequiredLabel>
+        <RequiredLabel label="Minimum rest hours between shifts">
+          <input name="minRestHours" type="number" min="0" max="48" required defaultValue={team?.minRestHours ?? 12} className={HOUSING_FIELD_CLASS} />
+        </RequiredLabel>
         <input name="email" type="email" defaultValue={team?.email ?? ""} placeholder="Email" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
         <input name="phone" defaultValue={team?.phone ?? ""} placeholder="Phone number" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
         <button disabled={saving} className="h-11 rounded-lg bg-ink font-black text-white disabled:bg-slate-400">{saving ? "Saving..." : "Submit"}</button>
@@ -6205,8 +6232,13 @@ function ResourceManagement({
   teams,
   requests,
   workOrders,
+  shiftRotation,
+  users,
+  locations,
   view,
   submitEmployee,
+  submitShiftRotation,
+  refreshData,
   saving,
   navigate,
 }: {
@@ -6215,8 +6247,13 @@ function ResourceManagement({
   teams: any[];
   requests: any[];
   workOrders: any[];
+  shiftRotation: { shifts: any[]; rotations: any[]; roster: any[] };
+  users: any[];
+  locations: any[];
   view: string;
   submitEmployee: (formData: FormData) => void;
+  submitShiftRotation: (formData: FormData) => void;
+  refreshData: () => Promise<void>;
   saving: boolean;
   navigate: (moduleId: string, menuKey: string, view?: string) => void;
 }) {
@@ -6291,7 +6328,7 @@ function ResourceManagement({
   });
   const tabs = [
     ["resource-employees", "Employees", filtered.length],
-    ["resource-shifts", "Shifts & Rotations", shiftRows.length],
+    ["resource-shift-rotation", "Shift & Rotation", shiftRotation.roster.length],
     ["resource-timesheets", "Time Sheets", timeSheetRows.length],
   ] as const;
 
@@ -6321,11 +6358,11 @@ function ResourceManagement({
                 {nationalities.map((item) => <option key={item}>{item}</option>)}
               </select>
             </div>
-            <DataTable rows={filtered} columns={[["name", "Name"], ["email", "Email"], ["companyId", "Company ID"], ["nationalityType", "Nationality"], ["departmentCode", "Dept"], ["siteLocation", "Site"]]} />
+            <DataTable rows={filtered} columns={[["name", "Name"], ["email", "Email"], ["companyId", "Company ID"], ["nationalityType", "Nationality"], ["departmentCode", "Dept"], ["siteLocation", "Site"], ["shiftEligibility", "Shift Eligibility"], ["defaultShift", "Default Shift"], ["serviceTeamCode", "Service Team"], ["supervisor", "Supervisor"], ["workLocationZone", "Work Location / Zone"]]} />
           </>
         )}
-        {tab === "resource-shifts" && (
-          <ResourceShiftsTable rows={shiftRows} />
+        {tab === "resource-shift-rotation" && (
+          <ShiftRotationModule shiftRotation={shiftRotation} employees={employees} teams={teams} users={users} locations={locations} saving={saving} submitShiftRotation={submitShiftRotation} refreshData={refreshData} />
         )}
         {tab === "resource-timesheets" && (
           <ResourceTimeSheetsTable rows={timeSheetRows} navigate={navigate} />
@@ -6343,6 +6380,45 @@ function ResourceManagement({
             {departments.map((department) => <option key={department.id} value={department.code}>{department.code} - {department.name}</option>)}
           </select>
           <input name="siteLocation" placeholder="Site location" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
+          <RequiredLabel label="Shift Eligibility">
+            <select name="shiftEligibility" required className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon">
+              {SHIFT_ELIGIBILITY_OPTIONS.map((option) => <option key={option}>{option}</option>)}
+            </select>
+          </RequiredLabel>
+          <RequiredLabel label="Default Shift">
+            <select name="defaultShift" required className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon">
+              <option value="">Select default shift</option>
+              <option>General</option>
+              {shiftRotation.shifts.map((shift) => <option key={shift.id} value={shift.name}>{shift.name}</option>)}
+            </select>
+          </RequiredLabel>
+          <RequiredLabel label="Service Team">
+            <select name="serviceTeamCode" required className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon">
+              <option value="">Select team</option>
+              {teams.map((team) => <option key={team.id} value={team.code}>{team.code} - {team.name}</option>)}
+            </select>
+          </RequiredLabel>
+          <RequiredLabel label="Supervisor">
+            <select name="supervisor" required className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon">
+              <option value="">Select supervisor</option>
+              {[...users.map((item) => item.name || item.email), ...teams.map((team) => team.supervisor)].filter(Boolean).map((name) => <option key={name} value={name}>{name}</option>)}
+            </select>
+          </RequiredLabel>
+          <RequiredLabel label="Work Location / Zone">
+            <select name="workLocationZone" required className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon">
+              <option value="">Select location / zone</option>
+              {locations.map((location) => <option key={location.id} value={location.code}>{location.code} - {location.description || location.site}</option>)}
+            </select>
+          </RequiredLabel>
+          <RequiredLabel label="Maximum working hours per day">
+            <input name="maxHoursPerDay" type="number" min="1" defaultValue={8} required className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
+          </RequiredLabel>
+          <RequiredLabel label="Maximum consecutive working days">
+            <input name="maxConsecutiveDays" type="number" min="1" defaultValue={6} required className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
+          </RequiredLabel>
+          <RequiredLabel label="Minimum rest hours between shifts">
+            <input name="minRestHours" type="number" min="1" defaultValue={12} required className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
+          </RequiredLabel>
           <button disabled={saving} className="h-11 rounded-lg bg-ink font-black text-white disabled:bg-slate-400">{saving ? "Saving..." : "Save Employee"}</button>
         </div>
       </form>
@@ -6384,6 +6460,156 @@ function ResourceTimeSheetsTable({ rows, navigate }: { rows: any[]; navigate: (m
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+function RequiredLabel({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <label className="grid gap-1 text-sm font-bold text-slate-600">
+      <span>{label} <span className="text-coral">*</span></span>
+      {children}
+    </label>
+  );
+}
+
+function ShiftRotationModule({
+  shiftRotation,
+  employees,
+  teams,
+  users,
+  locations,
+  saving,
+  submitShiftRotation,
+  refreshData,
+}: {
+  shiftRotation: { shifts: any[]; rotations: any[]; roster: any[] };
+  employees: any[];
+  teams: any[];
+  users: any[];
+  locations: any[];
+  saving: boolean;
+  submitShiftRotation: (formData: FormData) => void;
+  refreshData: () => Promise<void>;
+}) {
+  const [assignmentType, setAssignmentType] = useState("Employee");
+  const [generateAssignmentType, setGenerateAssignmentType] = useState("Employee");
+  const draftRoster = shiftRotation.roster.filter((row) => row.status !== "Finalized");
+  const finalizedRoster = shiftRotation.roster.filter((row) => row.status === "Finalized");
+  const supervisorOptions = [...users.map((item) => item.name || item.email), ...teams.map((team) => team.supervisor)].filter(Boolean);
+  const locationOptions = locations.map((location) => ({ value: location.code, label: `${location.code} - ${location.description || location.site || location.building}` }));
+  const rosterRows = shiftRotation.roster.map((row) => ({
+    id: row.id,
+    date: formatDateCell(row.date),
+    assignment: row.assignmentType,
+    assignee: row.employee?.name || row.team?.name || "-",
+    shift: row.shift?.name || "-",
+    type: row.shift?.shiftType || "-",
+    locationZone: row.locationZone,
+    supervisor: row.supervisor,
+    status: row.status,
+    source: row.source,
+  }));
+
+  async function handleFinalize() {
+    const response = await fetch("/api/shift-rotation", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ module: "finalize", ids: draftRoster.map((row) => row.id) }),
+    });
+    await response.json().catch(() => ({}));
+    await refreshData();
+  }
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    await submitShiftRotation(new FormData(form));
+    form.reset();
+  }
+
+  return (
+    <div className="grid gap-5">
+      <div className="grid gap-3 md:grid-cols-3">
+        <a href="/api/shift-rotation?report=daily&format=excel" className="rounded-lg bg-white px-3 py-2 text-center text-xs font-black text-lagoon shadow-sm">Daily roster Excel</a>
+        <a href="/api/shift-rotation?report=weekly&format=pdf" className="rounded-lg bg-white px-3 py-2 text-center text-xs font-black text-lagoon shadow-sm">Weekly roster PDF</a>
+        <a href="/api/shift-rotation?report=employee-history&format=excel" className="rounded-lg bg-white px-3 py-2 text-center text-xs font-black text-lagoon shadow-sm">Employee shift history</a>
+        <a href="/api/shift-rotation?report=team-history&format=excel" className="rounded-lg bg-white px-3 py-2 text-center text-xs font-black text-lagoon shadow-sm">Service team shift history</a>
+        <a href="/api/shift-rotation?report=coverage&format=excel" className="rounded-lg bg-white px-3 py-2 text-center text-xs font-black text-lagoon shadow-sm">Day/night coverage</a>
+        <a href="/api/shift-rotation?report=monthly&format=pdf" className="rounded-lg bg-white px-3 py-2 text-center text-xs font-black text-lagoon shadow-sm">Monthly roster PDF</a>
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-2">
+        <form onSubmit={handleSubmit} className="grid gap-3 rounded-lg border border-slate-200 bg-white p-4">
+          <input type="hidden" name="module" value="shift" />
+          <h3 className="text-lg font-black">Shift Master</h3>
+          <RequiredLabel label="Shift name"><input name="name" required className={HOUSING_FIELD_CLASS} /></RequiredLabel>
+          <RequiredLabel label="Shift type"><select name="shiftType" required className={HOUSING_FIELD_CLASS}>{SHIFT_TYPE_OPTIONS.map((option) => <option key={option}>{option}</option>)}</select></RequiredLabel>
+          <RequiredLabel label="Start time"><input name="startTime" type="time" required className={HOUSING_FIELD_CLASS} /></RequiredLabel>
+          <RequiredLabel label="End time"><input name="endTime" type="time" required className={HOUSING_FIELD_CLASS} /></RequiredLabel>
+          <input name="breakDuration" type="number" min="0" placeholder="Break duration minutes" className={HOUSING_FIELD_CLASS} />
+          <RequiredLabel label="Active status"><select name="active" required className={HOUSING_FIELD_CLASS}><option value="true">Active</option><option value="false">Inactive</option></select></RequiredLabel>
+          <button disabled={saving} className="h-10 rounded-lg bg-ink text-sm font-black text-white disabled:bg-slate-400">Save Shift</button>
+        </form>
+
+        <form onSubmit={handleSubmit} className="grid gap-3 rounded-lg border border-slate-200 bg-white p-4">
+          <input type="hidden" name="module" value="rotation" />
+          <h3 className="text-lg font-black">Rotation Setup</h3>
+          <RequiredLabel label="Rotation name"><input name="name" required className={HOUSING_FIELD_CLASS} /></RequiredLabel>
+          <RequiredLabel label="Applies to"><select name="appliesTo" required className={HOUSING_FIELD_CLASS}><option>Employee</option><option>Service Team</option></select></RequiredLabel>
+          <RequiredLabel label="Shift sequence"><input name="shiftSequence" required placeholder="Day Shift, Night Shift" className={HOUSING_FIELD_CLASS} /></RequiredLabel>
+          <RequiredLabel label="Off days"><input name="offDays" required placeholder="Friday, Saturday" className={HOUSING_FIELD_CLASS} /></RequiredLabel>
+          <RequiredLabel label="Start date"><input name="startDate" type="date" required className={HOUSING_FIELD_CLASS} /></RequiredLabel>
+          <input name="endDate" type="date" className={HOUSING_FIELD_CLASS} />
+          <RequiredLabel label="Repeat cycle"><input name="repeatCycle" required placeholder="Weekly / 14 days / Monthly" className={HOUSING_FIELD_CLASS} /></RequiredLabel>
+          <button disabled={saving} className="h-10 rounded-lg bg-ink text-sm font-black text-white disabled:bg-slate-400">Save Rotation</button>
+        </form>
+      </div>
+
+      <form onSubmit={handleSubmit} className="grid gap-3 rounded-lg border border-slate-200 bg-white p-4">
+        <input type="hidden" name="module" value="roster" />
+        <input type="hidden" name="assignmentType" value={assignmentType} />
+        <h3 className="text-lg font-black">Roster</h3>
+        <div className="grid gap-3 md:grid-cols-3">
+          <RequiredLabel label="Assign employee or service team">
+            <select value={assignmentType} onChange={(event) => setAssignmentType(event.target.value)} className={HOUSING_FIELD_CLASS}>
+              <option>Employee</option><option>Service Team</option>
+            </select>
+          </RequiredLabel>
+          {assignmentType === "Employee" ? (
+            <RequiredLabel label="Employee"><select name="employeeId" required className={HOUSING_FIELD_CLASS}>{employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.companyId} - {employee.name}</option>)}</select></RequiredLabel>
+          ) : (
+            <RequiredLabel label="Service Team"><select name="teamId" required className={HOUSING_FIELD_CLASS}>{teams.map((team) => <option key={team.id} value={team.id}>{team.code} - {team.name}</option>)}</select></RequiredLabel>
+          )}
+          <RequiredLabel label="Date"><input name="date" type="date" required className={HOUSING_FIELD_CLASS} /></RequiredLabel>
+          <RequiredLabel label="Shift"><select name="shiftId" required className={HOUSING_FIELD_CLASS}>{shiftRotation.shifts.filter((shift) => shift.active).map((shift) => <option key={shift.id} value={shift.id}>{shift.name} - {shift.shiftType}</option>)}</select></RequiredLabel>
+          <RequiredLabel label="Location / Zone"><select name="locationZone" required className={HOUSING_FIELD_CLASS}>{locationOptions.map((location) => <option key={location.value} value={location.value}>{location.label}</option>)}</select></RequiredLabel>
+          <RequiredLabel label="Supervisor"><select name="supervisor" required className={HOUSING_FIELD_CLASS}>{supervisorOptions.map((item) => <option key={item} value={item}>{item}</option>)}</select></RequiredLabel>
+          <select name="status" className={HOUSING_FIELD_CLASS}>{ROSTER_STATUS_OPTIONS.map((option) => <option key={option}>{option}</option>)}</select>
+        </div>
+        <button disabled={saving} className="h-10 rounded-lg bg-lagoon text-sm font-black text-white disabled:bg-slate-400">Manually Add Roster Entry</button>
+      </form>
+
+      <form onSubmit={handleSubmit} className="grid gap-3 rounded-lg border border-slate-200 bg-white p-4">
+        <input type="hidden" name="module" value="generate" />
+        <input type="hidden" name="assignmentType" value={generateAssignmentType} />
+        <h3 className="text-lg font-black">Generate Roster From Rotation</h3>
+        <div className="grid gap-3 md:grid-cols-4">
+          <select name="rotationId" required className={HOUSING_FIELD_CLASS}>{shiftRotation.rotations.map((rotation) => <option key={rotation.id} value={rotation.id}>{rotation.name}</option>)}</select>
+          <select value={generateAssignmentType} onChange={(event) => setGenerateAssignmentType(event.target.value)} className={HOUSING_FIELD_CLASS}><option>Employee</option><option>Service Team</option></select>
+          {generateAssignmentType === "Employee" ? <select name="employeeId" required className={HOUSING_FIELD_CLASS}>{employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select> : <select name="teamId" required className={HOUSING_FIELD_CLASS}>{teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}</select>}
+          <input name="days" type="number" min="1" max="31" defaultValue={7} className={HOUSING_FIELD_CLASS} />
+          <select name="locationZone" required className={HOUSING_FIELD_CLASS}>{locationOptions.map((location) => <option key={location.value} value={location.value}>{location.label}</option>)}</select>
+          <select name="supervisor" required className={HOUSING_FIELD_CLASS}>{supervisorOptions.map((item) => <option key={item} value={item}>{item}</option>)}</select>
+        </div>
+        <button disabled={saving} className="h-10 rounded-lg bg-leaf text-sm font-black text-white disabled:bg-slate-400">Generate Roster From Rotation</button>
+      </form>
+
+      <div className="flex flex-wrap gap-2">
+        <button type="button" disabled={saving || !draftRoster.length} onClick={handleFinalize} className="rounded-lg bg-ink px-4 py-2 text-sm font-black text-white disabled:bg-slate-300">Finalize Draft Roster</button>
+        <span className="rounded-lg bg-slate-50 px-3 py-2 text-sm font-black text-slate-600">Draft {draftRoster.length} / Finalized {finalizedRoster.length}</span>
+      </div>
+      <DataTable rows={rosterRows} columns={[["date", "Date"], ["assignment", "Assignment"], ["assignee", "Employee / Team"], ["shift", "Shift"], ["type", "Type"], ["locationZone", "Location / Zone"], ["supervisor", "Supervisor"], ["status", "Status"], ["source", "Source"]]} />
     </div>
   );
 }

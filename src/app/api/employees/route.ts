@@ -12,6 +12,14 @@ const schema = z.object({
   nationalityType: z.string().optional(),
   departmentCode: z.string().optional(),
   siteLocation: z.string().optional(),
+  shiftEligibility: z.string().optional(),
+  defaultShift: z.string().optional(),
+  serviceTeamCode: z.string().optional(),
+  supervisor: z.string().optional(),
+  workLocationZone: z.string().optional(),
+  maxHoursPerDay: z.coerce.number().optional(),
+  maxConsecutiveDays: z.coerce.number().optional(),
+  minRestHours: z.coerce.number().optional(),
 });
 
 export async function GET() {
@@ -34,6 +42,14 @@ export async function POST(request: Request) {
       nationalityType: input.nationalityType || "Not specified",
       departmentCode: input.departmentCode || "General",
       siteLocation: input.siteLocation || "Main Site",
+      shiftEligibility: input.shiftEligibility || "Day & Night",
+      defaultShift: input.defaultShift || "General",
+      serviceTeamCode: input.serviceTeamCode || "",
+      supervisor: input.supervisor || "",
+      workLocationZone: input.workLocationZone || input.siteLocation || "Main Site",
+      maxHoursPerDay: input.maxHoursPerDay || 8,
+      maxConsecutiveDays: input.maxConsecutiveDays || 6,
+      minRestHours: input.minRestHours || 12,
     };
     const employee = await prisma.employee.upsert({
       where: { companyId },

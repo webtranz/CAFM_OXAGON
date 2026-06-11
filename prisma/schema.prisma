@@ -135,6 +135,16 @@ model Employee {
   nationalityType String
   departmentCode  String
   siteLocation    String
+  shiftEligibility String  @default("Day & Night")
+  defaultShift     String  @default("General")
+  serviceTeamCode  String  @default("")
+  supervisor       String  @default("")
+  workLocationZone String  @default("")
+  maxHoursPerDay   Int     @default(8)
+  maxConsecutiveDays Int   @default(6)
+  minRestHours     Int     @default(12)
+  active           Boolean @default(true)
+  rosterEntries    RosterEntry[] @relation("EmployeeRoster")
   createdAt       DateTime @default(now())
 }
 
@@ -157,9 +167,62 @@ model Team {
   email       String
   shift       String
   coverage    String
+  shiftEligibility String @default("Day & Night")
+  maxHoursPerDay   Int    @default(8)
+  maxConsecutiveDays Int  @default(6)
+  minRestHours     Int    @default(12)
+  active       Boolean    @default(true)
   users       User[]
   services    ServiceCatalog[]
+  rosterEntries RosterEntry[] @relation("TeamRoster")
   createdAt   DateTime @default(now())
+}
+
+model ShiftMaster {
+  id            String   @id @default(cuid())
+  name          String   @unique
+  shiftType     String
+  startTime     String
+  endTime       String
+  breakDuration Int      @default(0)
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  rosterEntries RosterEntry[]
+}
+
+model RotationSetup {
+  id            String   @id @default(cuid())
+  name          String   @unique
+  appliesTo     String
+  shiftSequence String
+  offDays       String
+  startDate     DateTime
+  endDate       DateTime?
+  repeatCycle   String
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+}
+
+model RosterEntry {
+  id             String   @id @default(cuid())
+  assignmentType String
+  employeeId     String?
+  teamId         String?
+  date           DateTime
+  shiftId        String
+  locationZone   String
+  supervisor     String
+  status         String   @default("Draft")
+  source         String   @default("Manual")
+  employee       Employee? @relation("EmployeeRoster", fields: [employeeId], references: [id])
+  team           Team?     @relation("TeamRoster", fields: [teamId], references: [id])
+  shift          ShiftMaster @relation(fields: [shiftId], references: [id])
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([date])
+  @@index([employeeId, date])
+  @@index([teamId, date])
 }
 
 model ServiceCatalog {
