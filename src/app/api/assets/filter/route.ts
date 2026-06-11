@@ -119,7 +119,8 @@ export async function GET(request: Request) {
     ...(role === "supervisor" || role === "technician" ? { departmentCode: user?.department || "__none__" } : {}),
   };
   const andFilters: any[] = [];
-  if (locationCode === "__undefined__") {
+  const wantsUndefinedLocation = locationCode === "__undefined__" || locationQuery.toLowerCase() === "undefined";
+  if (wantsUndefinedLocation) {
     andFilters.push({
       AND: [
         { OR: [{ locationCode: null }, { locationCode: "" }] },

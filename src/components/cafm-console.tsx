@@ -1238,7 +1238,7 @@ function Assets({
     commissionDate: formatDateCell(asset.installDate),
     endOfUsefulLife: formatDateCell(asset.replacementDate),
     outOfServiceDisplay: asset.outOfService ? "YES" : "NO",
-    locationCode: asset.locationCode ?? asset.room,
+    locationCode: asset.locationCode || asset.room || "undefined",
     locationDesc: asset.locationDesc ?? asset.location?.description ?? "",
     equipmentValue: asset.equipmentValue ?? asset.purchaseCost,
     primarySystem: asset.primarySystem ?? asset.system,
@@ -1437,7 +1437,7 @@ function Assets({
         <div className="mb-4 grid gap-3 rounded-lg bg-slate-50 p-3 md:grid-cols-5">
           <select value={locationFilter} onChange={(event) => setLocationFilter(event.target.value)} className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold">
             <option value="">LOCATION</option>
-            <option value="__undefined__">Undefined location</option>
+            <option value="__undefined__">undefined</option>
             {locationOptions.map((location) => <option key={location.value} value={location.value}>{location.label}</option>)}
           </select>
           <input value={locationSearch} onChange={(event) => setLocationSearch(event.target.value)} placeholder="Search location code / description" className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold outline-none focus:border-lagoon" />
