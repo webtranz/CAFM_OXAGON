@@ -2807,7 +2807,7 @@ function ServiceRequestForm({ title, request, services, categories, departments,
       .sort((first, second) => serviceRequestLocationLabel(first).localeCompare(serviceRequestLocationLabel(second), undefined, { numeric: true, sensitivity: "base" })),
     [activeLocations, siteValue, parentLocationValue, buildingValue, floorValue],
   );
-  const finalLocationDropdownOptions = useMemo(() => finalLocationOptions.map((location) => ({ value: location.code, label: locationSelectLabel(location) })), [finalLocationOptions]);
+  const allLocationDropdownOptions = useMemo(() => activeLocations.map((location) => ({ value: location.code, label: locationSelectLabel(location) })), [activeLocations]);
   const selectedLocation = activeLocations.find((location) => location.code === locationCodeValue);
   const locationValue = selectedLocation ? serviceRequestLocationLabel(selectedLocation) : "";
   const filteredAssets = useMemo(() => scopedAssetOptions(assets, departmentCode, selectedTeamCode, locationValue), [assets, departmentCode, selectedTeamCode, locationValue]);
@@ -2841,6 +2841,16 @@ function ServiceRequestForm({ title, request, services, categories, departments,
     const inferred = inferServiceFromCategory(value, services, departments);
     if (inferred.departmentCode) setDepartmentCode(inferred.departmentCode);
     if (inferred.serviceCode) setServiceCode(inferred.serviceCode);
+  }
+
+  function applyLocationSelection(location: any) {
+    if (!location) return;
+    setLocationCodeValue(location.code);
+    setLocationSearchValue(locationSelectLabel(location));
+    setSiteValue(location.site || "");
+    setParentLocationValue(location.parentLocation || location.zone || location.code || "");
+    setBuildingValue(location.building || "");
+    setFloorValue(location.floor || "");
   }
 
   async function createCategory() {
@@ -2897,94 +2907,67 @@ function ServiceRequestForm({ title, request, services, categories, departments,
         <input type="hidden" name="location" value={locationValue} />
         <div className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 md:grid-cols-2">
           <SearchableDropdownField
-            value={siteValue}
-            placeholder="1. Site"
-            options={siteDropdownOptions}
+            value={locationSearchValue}
+            placeholder="1. Location"
+            options={allLocationDropdownOptions}
+            className="md:col-span-2"
             onInput={(nextValue) => {
-              setSiteValue(nextValue);
-              setParentLocationValue("");
-              setBuildingValue("");
-              setFloorValue("");
+              const selected = findLocationBySearch(activeLocations, nextValue);
+              setLocationSearchValue(nextValue);
               setLocationCodeValue("");
-              setLocationSearchValue("");
+              if (selected) applyLocationSelection(selected);
             }}
             onSelect={(option) => {
-              setSiteValue(option.value);
-              setParentLocationValue("");
-              setBuildingValue("");
-              setFloorValue("");
-              setLocationCodeValue("");
-              setLocationSearchValue("");
+              const selected = activeLocations.find((location) => location.code === option.value);
+              if (selected) applyLocationSelection(selected);
             }}
           />
           <SearchableDropdownField
             value={parentLocationValue}
             placeholder="2. Parent Location"
             options={parentLocationDropdownOptions}
-            disabled={!siteValue}
+            disabled={!locationCodeValue}
             onInput={(nextValue) => {
               setParentLocationValue(nextValue);
-              setBuildingValue("");
-              setFloorValue("");
-              setLocationCodeValue("");
-              setLocationSearchValue("");
             }}
             onSelect={(option) => {
               setParentLocationValue(option.value);
-              setBuildingValue("");
-              setFloorValue("");
-              setLocationCodeValue("");
-              setLocationSearchValue("");
+            }}
+          />
+          <SearchableDropdownField
+            value={siteValue}
+            placeholder="3. Site"
+            options={siteDropdownOptions}
+            disabled={!locationCodeValue}
+            onInput={(nextValue) => {
+              setSiteValue(nextValue);
+            }}
+            onSelect={(option) => {
+              setSiteValue(option.value);
             }}
           />
           <SearchableDropdownField
             value={buildingValue}
-            placeholder="3. Building / Area"
+            placeholder="4. Building / Area"
             options={buildingDropdownOptions}
-            disabled={!parentLocationValue}
+            disabled={!locationCodeValue}
             onInput={(nextValue) => {
               setBuildingValue(nextValue);
-              setFloorValue("");
-              setLocationCodeValue("");
-              setLocationSearchValue("");
             }}
             onSelect={(option) => {
               setBuildingValue(option.value);
-              setFloorValue("");
-              setLocationCodeValue("");
-              setLocationSearchValue("");
             }}
           />
           <SearchableDropdownField
             value={floorValue}
-            placeholder="4. Floor / Level"
+            placeholder="5. Floor / Level"
             options={floorDropdownOptions}
-            disabled={!buildingValue}
+            disabled={!locationCodeValue}
             onInput={(nextValue) => {
               setFloorValue(nextValue);
-              setLocationCodeValue("");
-              setLocationSearchValue("");
             }}
             onSelect={(option) => {
               setFloorValue(option.value);
-              setLocationCodeValue("");
-              setLocationSearchValue("");
-            }}
-          />
-          <SearchableDropdownField
-            value={locationSearchValue}
-            placeholder="5. Final Location / Space"
-            options={finalLocationDropdownOptions}
-            disabled={!floorValue}
-            className="md:col-span-2"
-            onInput={(nextValue) => {
-              const selected = findLocationBySearch(finalLocationOptions, nextValue);
-              setLocationSearchValue(nextValue);
-              setLocationCodeValue(selected?.code ?? "");
-            }}
-            onSelect={(option) => {
-              setLocationSearchValue(option.label);
-              setLocationCodeValue(option.value);
             }}
           />
         </div>
