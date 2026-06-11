@@ -6502,6 +6502,20 @@ function RequiredLabel({ label, children }: { label: string; children: ReactNode
   );
 }
 
+function minutesFromClock(value: string) {
+  const [hours, minutes] = value.split(":").map((part) => Number(part));
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return 0;
+  return hours * 60 + minutes;
+}
+
+function workedHoursBetween(startTime: string, endTime: string) {
+  if (!startTime || !endTime) return 0;
+  const start = minutesFromClock(startTime);
+  let end = minutesFromClock(endTime);
+  if (end <= start) end += 24 * 60;
+  return Math.max(0, Number(((end - start) / 60).toFixed(2)));
+}
+
 function ShiftRotationModule({
   shiftRotation,
   employees,
@@ -6524,12 +6538,24 @@ function ShiftRotationModule({
   const [assignmentType, setAssignmentType] = useState("Employee");
   const [generateAssignmentType, setGenerateAssignmentType] = useState("Employee");
   const [attendanceRosterId, setAttendanceRosterId] = useState("");
-  const draftRoster = shiftRotation.roster.filter((row) => row.status !== "Finalized");
-  const finalizedRoster = shiftRotation.roster.filter((row) => row.status === "Finalized");
+  const [localShiftRotation, setLocalShiftRotation] = useState(shiftRotation);
+  const [attendanceStatus, setAttendanceStatus] = useState("Present");
+  const [attendanceStartTime, setAttendanceStartTime] = useState("");
+  const [attendanceEndTime, setAttendanceEndTime] = useState("");
+  const [attendanceWorkingHours, setAttendanceWorkingHours] = useState("8");
+  useEffect(() => {
+    setLocalShiftRotation(shiftRotation);
+  }, [shiftRotation]);
+  const activeShiftRotation = localShiftRotation;
+  const draftRoster = activeShiftRotation.roster.filter((row) => row.status !== "Finalized");
+  const finalizedRoster = activeShiftRotation.roster.filter((row) => row.status === "Finalized");
   const supervisorOptions = [...users.map((item) => item.name || item.email), ...teams.map((team) => team.supervisor)].filter(Boolean);
   const locationOptions = locations.map((location) => ({ value: location.code, label: `${location.code} - ${location.description || location.site || location.building}` }));
-  const selectedAttendanceRoster = shiftRotation.roster.find((row) => row.id === attendanceRosterId) || shiftRotation.roster[0];
-  const rosterRows = shiftRotation.roster.map((row) => ({
+  const selectedAttendanceRoster = activeShiftRotation.roster.find((row) => row.id === attendanceRosterId) || activeShiftRotation.roster[0];
+  const selectedDefaultWorkingHours = selectedAttendanceRoster?.plannedWorkingHours || selectedAttendanceRoster?.employee?.maxHoursPerDay || selectedAttendanceRoster?.team?.maxHoursPerDay || 8;
+  const previewWorkedHours = attendanceStatus === "Present" ? workedHoursBetween(attendanceStartTime, attendanceEndTime) : 0;
+  const previewOvertimeHours = attendanceStatus === "Present" ? Math.max(0, Number((previewWorkedHours - Number(attendanceWorkingHours || selectedDefaultWorkingHours)).toFixed(2))) : 0;
+  const rosterRows = activeShiftRotation.roster.map((row) => ({
     id: row.id,
     date: formatDateCell(row.date),
     assignment: row.assignmentType,
@@ -6545,7 +6571,7 @@ function ShiftRotationModule({
     overtimeHours: row.overtimeHours || "",
     source: row.source,
   }));
-  const attendanceRows = shiftRotation.roster
+  const attendanceRows = activeShiftRotation.roster
     .filter((row) => row.attendanceStatus && row.attendanceStatus !== "Not marked")
     .map((row) => ({
       id: row.id,
@@ -6566,6 +6592,14 @@ function ShiftRotationModule({
   const totalWorkedHours = attendanceRows.reduce((sum, row) => sum + Number(row.workedHours || 0), 0);
   const totalOvertimeHours = attendanceRows.reduce((sum, row) => sum + Number(row.overtimeHours || 0), 0);
 
+  useEffect(() => {
+    if (!selectedAttendanceRoster) return;
+    setAttendanceStatus(selectedAttendanceRoster.attendanceStatus && selectedAttendanceRoster.attendanceStatus !== "Not marked" ? selectedAttendanceRoster.attendanceStatus : "Present");
+    setAttendanceStartTime(selectedAttendanceRoster.actualStartTime || selectedAttendanceRoster.shift?.startTime || "");
+    setAttendanceEndTime(selectedAttendanceRoster.actualEndTime || selectedAttendanceRoster.shift?.endTime || "");
+    setAttendanceWorkingHours(String(selectedDefaultWorkingHours));
+  }, [selectedAttendanceRoster?.id, selectedDefaultWorkingHours]);
+
   async function handleFinalize() {
     const response = await fetch("/api/shift-rotation", {
       method: "POST",
@@ -6573,7 +6607,13 @@ function ShiftRotationModule({
       body: JSON.stringify({ module: "finalize", ids: draftRoster.map((row) => row.id) }),
     });
     await response.json().catch(() => ({}));
-    await refreshData();
+    if (response.ok) {
+      setLocalShiftRotation((current) => ({
+        ...current,
+        roster: current.roster.map((row) => draftRoster.some((draft) => draft.id === row.id) ? { ...row, status: "Finalized" } : row),
+      }));
+      void refreshData();
+    }
   }
 
   async function handleAttendance(event: FormEvent<HTMLFormElement>) {
@@ -6584,8 +6624,14 @@ function ShiftRotationModule({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(Object.fromEntries(formData.entries())),
     });
-    await response.json().catch(() => ({}));
-    await refreshData();
+    const result = await response.json().catch(() => ({}));
+    if (response.ok && result?.id) {
+      setLocalShiftRotation((current) => ({
+        ...current,
+        roster: current.roster.map((row) => row.id === result.id ? result : row),
+      }));
+      void refreshData();
+    }
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -6651,7 +6697,7 @@ function ShiftRotationModule({
             <RequiredLabel label="Service Team"><select name="teamId" required className={HOUSING_FIELD_CLASS}>{teams.map((team) => <option key={team.id} value={team.id}>{team.code} - {team.name}</option>)}</select></RequiredLabel>
           )}
           <RequiredLabel label="Date"><input name="date" type="date" required className={HOUSING_FIELD_CLASS} /></RequiredLabel>
-          <RequiredLabel label="Shift"><select name="shiftId" required className={HOUSING_FIELD_CLASS}>{shiftRotation.shifts.filter((shift) => shift.active).map((shift) => <option key={shift.id} value={shift.id}>{shift.name} - {shift.shiftType}</option>)}</select></RequiredLabel>
+          <RequiredLabel label="Shift"><select name="shiftId" required className={HOUSING_FIELD_CLASS}>{activeShiftRotation.shifts.filter((shift) => shift.active).map((shift) => <option key={shift.id} value={shift.id}>{shift.name} - {shift.shiftType}</option>)}</select></RequiredLabel>
           <RequiredLabel label="Location / Zone"><select name="locationZone" required className={HOUSING_FIELD_CLASS}>{locationOptions.map((location) => <option key={location.value} value={location.value}>{location.label}</option>)}</select></RequiredLabel>
           <RequiredLabel label="Supervisor"><select name="supervisor" required className={HOUSING_FIELD_CLASS}>{supervisorOptions.map((item) => <option key={item} value={item}>{item}</option>)}</select></RequiredLabel>
           <select name="status" className={HOUSING_FIELD_CLASS}>{ROSTER_STATUS_OPTIONS.map((option) => <option key={option}>{option}</option>)}</select>
@@ -6664,7 +6710,7 @@ function ShiftRotationModule({
         <input type="hidden" name="assignmentType" value={generateAssignmentType} />
         <h3 className="text-lg font-black">Generate Roster From Rotation</h3>
         <div className="grid gap-3 md:grid-cols-4">
-          <select name="rotationId" required className={HOUSING_FIELD_CLASS}>{shiftRotation.rotations.map((rotation) => <option key={rotation.id} value={rotation.id}>{rotation.name}</option>)}</select>
+          <select name="rotationId" required className={HOUSING_FIELD_CLASS}>{activeShiftRotation.rotations.map((rotation) => <option key={rotation.id} value={rotation.id}>{rotation.name}</option>)}</select>
           <select value={generateAssignmentType} onChange={(event) => setGenerateAssignmentType(event.target.value)} className={HOUSING_FIELD_CLASS}><option>Employee</option><option>Service Team</option></select>
           {generateAssignmentType === "Employee" ? <select name="employeeId" required className={HOUSING_FIELD_CLASS}>{employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select> : <select name="teamId" required className={HOUSING_FIELD_CLASS}>{teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}</select>}
           <input name="days" type="number" min="1" max="31" defaultValue={7} className={HOUSING_FIELD_CLASS} />
@@ -6686,18 +6732,34 @@ function ShiftRotationModule({
         <div className="grid gap-3 md:grid-cols-3">
           <RequiredLabel label="Employee / service team roster">
             <select name="rosterId" required value={selectedAttendanceRoster?.id ?? ""} onChange={(event) => setAttendanceRosterId(event.target.value)} className={HOUSING_FIELD_CLASS}>
-              {shiftRotation.roster.map((row) => (
+              {activeShiftRotation.roster.map((row) => (
                 <option key={row.id} value={row.id}>{formatDateCell(row.date)} - {row.employee?.name || row.team?.name || "-"} - {row.shift?.shiftType || row.shift?.name}</option>
               ))}
             </select>
           </RequiredLabel>
-          <RequiredLabel label="Attendance status"><select name="attendanceStatus" required className={HOUSING_FIELD_CLASS}><option>Present</option><option>Absent</option></select></RequiredLabel>
-          <RequiredLabel label="Working hours"><input name="plannedWorkingHours" type="number" min="0" max="24" step="0.25" defaultValue={selectedAttendanceRoster?.plannedWorkingHours || selectedAttendanceRoster?.employee?.maxHoursPerDay || selectedAttendanceRoster?.team?.maxHoursPerDay || 8} className={HOUSING_FIELD_CLASS} /></RequiredLabel>
-          <RequiredLabel label="Actual start time"><input name="actualStartTime" type="time" defaultValue={selectedAttendanceRoster?.shift?.startTime || ""} className={HOUSING_FIELD_CLASS} /></RequiredLabel>
-          <RequiredLabel label="Actual end time"><input name="actualEndTime" type="time" defaultValue={selectedAttendanceRoster?.shift?.endTime || ""} className={HOUSING_FIELD_CLASS} /></RequiredLabel>
+          <RequiredLabel label="Attendance status">
+            <select name="attendanceStatus" required value={attendanceStatus} onChange={(event) => setAttendanceStatus(event.target.value)} className={HOUSING_FIELD_CLASS}>
+              <option>Present</option>
+              <option>Absent</option>
+            </select>
+          </RequiredLabel>
+          <RequiredLabel label="Working hours">
+            <input name="plannedWorkingHours" type="number" min="0" max="24" step="0.25" value={attendanceWorkingHours} onChange={(event) => setAttendanceWorkingHours(event.target.value)} className={HOUSING_FIELD_CLASS} />
+          </RequiredLabel>
+          <RequiredLabel label="Actual start time">
+            <input name="actualStartTime" type="time" value={attendanceStartTime} onChange={(event) => setAttendanceStartTime(event.target.value)} disabled={attendanceStatus === "Absent"} className={HOUSING_FIELD_CLASS} />
+          </RequiredLabel>
+          <RequiredLabel label="Actual end time">
+            <input name="actualEndTime" type="time" value={attendanceEndTime} onChange={(event) => setAttendanceEndTime(event.target.value)} disabled={attendanceStatus === "Absent"} className={HOUSING_FIELD_CLASS} />
+          </RequiredLabel>
           <input name="attendanceNotes" placeholder="Attendance notes" className={HOUSING_FIELD_CLASS} />
         </div>
-        <button disabled={saving || !shiftRotation.roster.length} className="h-10 rounded-lg bg-lagoon text-sm font-black text-white disabled:bg-slate-400">Mark Present / Save Attendance</button>
+        <div className="grid gap-2 rounded-lg bg-slate-50 p-3 text-sm font-black text-slate-600 md:grid-cols-3">
+          <span>Live worked hours: {previewWorkedHours.toFixed(2)}</span>
+          <span>Live overtime: {previewOvertimeHours.toFixed(2)}</span>
+          <span>Status preview: {attendanceStatus}</span>
+        </div>
+        <button disabled={saving || !activeShiftRotation.roster.length} className="h-10 rounded-lg bg-lagoon text-sm font-black text-white disabled:bg-slate-400">Mark Present / Save Attendance</button>
       </form>
 
       <DataTable
