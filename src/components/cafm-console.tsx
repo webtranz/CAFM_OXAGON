@@ -715,7 +715,7 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { id?: st
   }
 
   return (
-    <main className="h-screen overflow-hidden bg-slate-50 text-ink">
+    <main className="cafm-shell h-screen overflow-hidden bg-slate-50 text-ink">
       <header className="fixed left-0 right-0 top-0 z-40 flex h-16 items-center justify-between border-b border-slate-100 bg-white px-4 lg:hidden">
         <div className="flex items-center gap-2">
           <div className="grid h-9 w-9 place-items-center overflow-hidden rounded-lg border border-amber-200 bg-white p-1 shadow-sm">
@@ -839,7 +839,7 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { id?: st
           </div>
         </aside>
 
-        <section className="min-h-0 min-w-0 space-y-5 overflow-auto px-3 pb-6 pt-20 scrollbar-thin sm:px-5 lg:h-screen lg:p-6">
+        <section className="cafm-content min-h-0 min-w-0 space-y-5 overflow-auto px-3 pb-6 pt-20 scrollbar-thin sm:px-5 lg:h-screen lg:p-6">
           <header className="min-w-0 rounded-lg border border-slate-200 bg-white p-4 text-slate-900 shadow-sm sm:p-5">
             <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
               <div className="min-w-0">
@@ -1455,8 +1455,8 @@ function Assets({
           <span>Showing {visibleAssets.length.toLocaleString()} of {assetTotal.toLocaleString()} assets / Selected {selectedAssetIds.size.toLocaleString()} / Column filters {activeColumnFilterCount}</span>
           {assetLoading && <span className="text-lagoon">Loading assets...</span>}
         </div>
-        <div ref={assetScrollRef} onScroll={handleAssetScroll} className="max-h-[70vh] max-w-full overflow-auto rounded-lg border border-slate-200 scrollbar-thin">
-          <table className="min-w-[3600px] border-collapse bg-white text-sm">
+        <div ref={assetScrollRef} onScroll={handleAssetScroll} className="cafm-scroll-x max-h-[70vh] overflow-auto rounded-lg border border-slate-200 scrollbar-thin">
+          <table className="cafm-data-table cafm-asset-table min-w-[3600px] border-collapse bg-white text-sm">
             <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
               <tr>
                 <th className="px-3 py-3">
@@ -2064,8 +2064,8 @@ function WorkOrders({
         </div>
         {view === "list" ? (
           <>
-            <div className="overflow-auto rounded-lg border border-slate-200 scrollbar-thin">
-              <table className="min-w-[1840px] border-collapse bg-white text-sm">
+            <div className="cafm-scroll-x overflow-auto rounded-lg border border-slate-200 scrollbar-thin">
+              <table className="cafm-data-table min-w-[1840px] border-collapse bg-white text-sm">
                 <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
                   <tr>
                     <th className="px-3 py-3 font-black">#</th>
@@ -2469,8 +2469,8 @@ function Helpdesk({
           </div>
         </div>
 
-        <div className="overflow-auto rounded-lg border border-slate-200 scrollbar-thin">
-          <table className="min-w-[1640px] border-collapse bg-white text-sm">
+        <div className="cafm-scroll-x overflow-auto rounded-lg border border-slate-200 scrollbar-thin">
+          <table className="cafm-data-table min-w-[1640px] border-collapse bg-white text-sm">
             <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
               <tr>
                 <th className="px-3 py-3 font-black">#</th>
@@ -4186,8 +4186,8 @@ function Ppm({
           </select>
         </div>
         {view === "list" ? (
-          <div className="max-w-full overflow-auto rounded-lg border border-slate-200 scrollbar-thin">
-            <table className="min-w-[1100px] border-collapse bg-white text-sm">
+          <div className="cafm-scroll-x overflow-auto rounded-lg border border-slate-200 scrollbar-thin">
+            <table className="cafm-data-table min-w-[1100px] border-collapse bg-white text-sm">
               <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
                 <tr>
                   <th className="px-3 py-3">#</th><th className="px-3 py-3">Title</th><th className="px-3 py-3">Status</th><th className="px-3 py-3">Frequency</th><th className="px-3 py-3">Next Due</th><th className="px-3 py-3">Category</th><th className="px-3 py-3">Asset</th><th className="px-3 py-3">Actions</th>
@@ -4833,8 +4833,8 @@ function ComplianceCertification({
 function LinkedTicketsTable({ rows, navigate }: { rows: any[]; navigate: (moduleId: string, menuKey: string, view?: string) => void }) {
   if (!rows.length) return <p className="rounded-lg bg-slate-50 p-3 text-sm font-bold text-slate-500">No linked tickets or work orders found.</p>;
   return (
-    <div className="max-w-full overflow-auto rounded-lg border border-slate-200 scrollbar-thin">
-      <table className="min-w-[980px] border-collapse bg-white text-sm">
+    <div className="cafm-scroll-x overflow-auto rounded-lg border border-slate-200 scrollbar-thin">
+      <table className="cafm-data-table min-w-[980px] border-collapse bg-white text-sm">
         <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
           <tr>
             {["Ticket Type", "Reference", "Ticket / Work Order", "Linked Non-Compliance", "Priority", "Status", "Owner", "Action"].map((label) => (
@@ -4922,8 +4922,8 @@ function IncidentCaseManagement({ requests, workOrders, navigate }: { requests: 
             {criticalRows.length} high priority incident/case record{criticalRows.length === 1 ? "" : "s"} require active follow-up.
           </div>
         )}
-        <div className="max-w-full overflow-auto rounded-lg border border-slate-200 scrollbar-thin">
-          <table className="min-w-[1120px] border-collapse bg-white text-sm">
+        <div className="cafm-scroll-x overflow-auto rounded-lg border border-slate-200 scrollbar-thin">
+          <table className="cafm-data-table min-w-[1120px] border-collapse bg-white text-sm">
             <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
               <tr>
                 {["Type", "Reference", "Incident / Case", "Linked Record", "Priority", "Status", "Owner", "Location", "Updated", "Action"].map((label) => (
@@ -5820,8 +5820,8 @@ function Locations({ locations, submitLocation, deleteLocation, isAdmin, saving 
           <span>Showing {locationRows.length.toLocaleString()} of {locationTotal.toLocaleString()} locations</span>
           {locationLoading && <span className="text-lagoon">Loading locations...</span>}
         </div>
-        <div ref={locationScrollRef} onScroll={handleLocationScroll} className="max-h-[70vh] max-w-full overflow-auto rounded-lg border border-slate-200 scrollbar-thin">
-          <table className="min-w-[980px] border-collapse bg-white text-sm">
+        <div ref={locationScrollRef} onScroll={handleLocationScroll} className="cafm-scroll-x max-h-[70vh] overflow-auto rounded-lg border border-slate-200 scrollbar-thin">
+          <table className="cafm-data-table min-w-[980px] border-collapse bg-white text-sm">
             <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
               <tr>
                 {["Location", "Description", "Class", "Parent Location", "Out of Service", "Residential", ...(isAdmin ? ["Actions"] : [])].map((label) => <th key={label} className="px-3 py-3">{label}</th>)}
@@ -6458,8 +6458,8 @@ function ResourceManagement({
 function ResourceTimeSheetsTable({ rows, navigate }: { rows: any[]; navigate: (moduleId: string, menuKey: string, view?: string) => void }) {
   if (!rows.length) return <p className="rounded-lg bg-slate-50 p-3 text-sm font-bold text-slate-500">No timesheet rows found.</p>;
   return (
-    <div className="max-w-full overflow-auto rounded-lg border border-slate-200 scrollbar-thin">
-      <table className="min-w-[1200px] border-collapse bg-white text-sm">
+    <div className="cafm-scroll-x overflow-auto rounded-lg border border-slate-200 scrollbar-thin">
+      <table className="cafm-data-table min-w-[1200px] border-collapse bg-white text-sm">
         <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
           <tr>
             {["Source", "Ticket / WO", "Work", "Technician / Team Member", "Team", "Priority", "Status", "Estimated / SLA", "Actual Time", "Linked Service Request", "Action"].map((label) => (
@@ -6822,8 +6822,8 @@ function ShiftRotationModule({
 function ResourceShiftsTable({ rows }: { rows: any[] }) {
   if (!rows.length) return <p className="rounded-lg bg-slate-50 p-3 text-sm font-bold text-slate-500">No shifts or rotations found.</p>;
   return (
-    <div className="max-w-full overflow-auto rounded-lg border border-slate-200 scrollbar-thin">
-      <table className="min-w-[1280px] table-fixed border-collapse bg-white text-sm">
+    <div className="cafm-scroll-x overflow-auto rounded-lg border border-slate-200 scrollbar-thin">
+      <table className="cafm-data-table min-w-[1280px] table-fixed border-collapse bg-white text-sm">
         <colgroup>
           <col className="w-12" />
           <col className="w-24" />
@@ -7359,8 +7359,8 @@ function HousingTable({ title, rows, columns, onSelect, actions, reportType }: {
   return (
     <Panel title={title} icon={Building2}>
       <ReportButtons type={reportType} label={`${title} report`} />
-      <div className="mt-4 max-w-full overflow-auto rounded-lg border border-slate-200 scrollbar-thin">
-        <table className="min-w-[900px] bg-white text-sm">
+      <div className="cafm-scroll-x mt-4 overflow-auto rounded-lg border border-slate-200 scrollbar-thin">
+        <table className="cafm-data-table min-w-[900px] bg-white text-sm">
           <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
             <tr>
               <th className="px-3 py-3">#</th>
@@ -8386,8 +8386,8 @@ function DataTable({
 
   return (
     <div className="grid gap-3">
-      <div className="max-w-full overflow-auto rounded-lg border border-slate-200 scrollbar-thin">
-        <table className="min-w-max border-collapse bg-white text-sm">
+      <div className="cafm-scroll-x overflow-auto rounded-lg border border-slate-200 scrollbar-thin">
+        <table className="cafm-data-table min-w-max border-collapse bg-white text-sm">
           <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
             <tr>
               <th className="whitespace-nowrap px-3 py-3 font-black">#</th>
