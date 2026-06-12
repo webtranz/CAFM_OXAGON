@@ -265,6 +265,7 @@ const moduleGroups: ModuleGroup[] = [
 const healthColors = ["#35a852", "#0f8b8d", "#ffd166", "#f45d48"];
 const PAGE_SIZE = 100;
 const HOUSING_FIELD_CLASS = "h-11 rounded-lg border border-slate-200 bg-white px-3 outline-none focus:border-lagoon";
+const FACILITY_FIELD_CLASS = "h-11 w-full min-w-0 rounded-lg border border-slate-200 bg-white px-3 outline-none focus:border-lagoon";
 const RESOURCE_EMPLOYEE_FIELD_CLASS = "h-11 w-full min-w-0 rounded-lg border border-slate-200 bg-white px-3 outline-none focus:border-lagoon";
 const assetRegisterColumns: [string, string][] = [
   ["equipmentNo", "EQUIPMENTNO"],
@@ -1593,7 +1594,7 @@ function AssetCreateForm({ teams, users, locations, onSubmit, saving }: { teams:
   }
 
   return (
-    <form onSubmit={handleSubmit} className="rounded-lg border border-white/80 bg-white p-5 shadow-lift">
+    <form onSubmit={handleSubmit} className="min-w-0 rounded-lg border border-white/80 bg-white p-5 shadow-lift">
       <div className="mb-4 flex items-start gap-3">
         <div className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-sun/50 text-amber-700">
           <PackagePlus size={20} />
@@ -5517,12 +5518,12 @@ function SiteForm({ onSubmit, saving }: { onSubmit: (formData: FormData) => void
   return (
     <form onSubmit={handleSubmit} className="rounded-lg border border-white/80 bg-white p-5 shadow-lift">
       <h3 className="text-xl font-black">Add Site</h3>
-      <div className="mt-4 grid gap-3">
-        <input name="name" placeholder="Site name" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
-        <input name="city" placeholder="City" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
-        <input name="country" defaultValue="Saudi Arabia" placeholder="Country" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
-        <input name="type" placeholder="Site type" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
-        <input name="areaSqm" type="number" min="0" placeholder="Area sqm" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
+      <div className="mt-4 grid min-w-0 gap-3">
+        <input name="name" placeholder="Site name" className={FACILITY_FIELD_CLASS} />
+        <input name="city" placeholder="City" className={FACILITY_FIELD_CLASS} />
+        <input name="country" defaultValue="Saudi Arabia" placeholder="Country" className={FACILITY_FIELD_CLASS} />
+        <input name="type" placeholder="Site type" className={FACILITY_FIELD_CLASS} />
+        <input name="areaSqm" type="number" min="0" placeholder="Area sqm" className={FACILITY_FIELD_CLASS} />
         <button disabled={saving} className="h-11 rounded-lg bg-ink font-black text-white disabled:bg-slate-400">{saving ? "Saving..." : "Save Site"}</button>
       </div>
     </form>
@@ -5538,18 +5539,18 @@ function BuildingForm({ sites, onSubmit, saving }: { sites: any[]; onSubmit: (fo
   }
 
   return (
-    <form onSubmit={handleSubmit} className="rounded-lg border border-white/80 bg-white p-5 shadow-lift">
+    <form onSubmit={handleSubmit} className="min-w-0 rounded-lg border border-white/80 bg-white p-5 shadow-lift">
       <h3 className="text-xl font-black">Add Building</h3>
-      <div className="mt-4 grid gap-3">
-        <input name="code" placeholder="Building code" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
-        <input name="name" placeholder="Building name" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
-        <select name="siteId" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon">
+      <div className="mt-4 grid min-w-0 gap-3">
+        <input name="code" placeholder="Building code" className={FACILITY_FIELD_CLASS} />
+        <input name="name" placeholder="Building name" className={FACILITY_FIELD_CLASS} />
+        <select name="siteId" className={FACILITY_FIELD_CLASS}>
           <option value="">Select site</option>
           {sites.map((site) => <option key={site.id} value={site.id}>{site.name}</option>)}
         </select>
-        <input name="site" placeholder="Or new site name" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
-        <input name="floors" type="number" min="0" placeholder="Floors" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
-        <input name="areaSqm" type="number" min="0" placeholder="Area sqm" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
+        <input name="site" placeholder="Or new site name" className={FACILITY_FIELD_CLASS} />
+        <input name="floors" type="number" min="0" placeholder="Floors" className={FACILITY_FIELD_CLASS} />
+        <input name="areaSqm" type="number" min="0" placeholder="Area sqm" className={FACILITY_FIELD_CLASS} />
         <button disabled={saving} className="h-11 rounded-lg bg-ink font-black text-white disabled:bg-slate-400">{saving ? "Saving..." : "Save Building"}</button>
       </div>
     </form>
@@ -5565,20 +5566,20 @@ function SpaceForm({ buildings, onSubmit, saving }: { buildings: any[]; onSubmit
   }
 
   return (
-    <form onSubmit={handleSubmit} className="rounded-lg border border-white/80 bg-white p-5 shadow-lift">
+    <form onSubmit={handleSubmit} className="min-w-0 rounded-lg border border-white/80 bg-white p-5 shadow-lift">
       <h3 className="text-xl font-black">Add Space</h3>
-      <div className="mt-4 grid gap-3">
-        <input name="name" placeholder="Space / room name" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
-        <select name="buildingId" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon">
+      <div className="mt-4 grid min-w-0 gap-3">
+        <input name="name" placeholder="Space / room name" className={FACILITY_FIELD_CLASS} />
+        <select name="buildingId" className={FACILITY_FIELD_CLASS}>
           <option value="">Select building</option>
           {buildings.map((building) => <option key={building.id} value={building.id}>{building.code} - {building.name}</option>)}
         </select>
-        <input name="buildingCode" placeholder="Or building code" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
-        <input name="floor" placeholder="Floor" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
-        <input name="type" placeholder="Space type" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
-        <input name="capacity" type="number" min="0" placeholder="Capacity" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
-        <input name="areaSqm" type="number" min="0" placeholder="Area sqm" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
-        <input name="occupancy" type="number" min="0" placeholder="Occupancy" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
+        <input name="buildingCode" placeholder="Or building code" className={FACILITY_FIELD_CLASS} />
+        <input name="floor" placeholder="Floor" className={FACILITY_FIELD_CLASS} />
+        <input name="type" placeholder="Space type" className={FACILITY_FIELD_CLASS} />
+        <input name="capacity" type="number" min="0" placeholder="Capacity" className={FACILITY_FIELD_CLASS} />
+        <input name="areaSqm" type="number" min="0" placeholder="Area sqm" className={FACILITY_FIELD_CLASS} />
+        <input name="occupancy" type="number" min="0" placeholder="Occupancy" className={FACILITY_FIELD_CLASS} />
         <button disabled={saving} className="h-11 rounded-lg bg-ink font-black text-white disabled:bg-slate-400">{saving ? "Saving..." : "Save Space"}</button>
       </div>
     </form>
