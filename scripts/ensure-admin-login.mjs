@@ -5,14 +5,9 @@ const prisma = new PrismaClient();
 
 const defaultAdmins = [
   {
-    name: "Sandbox Administrator",
-    email: "sandbox@cafm.local",
-    password: "Sandbox@12345",
-  },
-  {
-    name: "Admin User",
-    email: "admin@admin.com",
-    password: "123456",
+    name: "System Administrator",
+    email: "admin@cafm.local",
+    password: "Admin@12345",
   },
 ];
 

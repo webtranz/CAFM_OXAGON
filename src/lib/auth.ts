@@ -4,14 +4,14 @@ import { prisma } from "@/lib/prisma";
 
 export const sessionCookieName = "cafm_session";
 export const sandboxAdmin = {
-  id: "sandbox-admin",
-  name: "Sandbox Administrator",
-  email: "sandbox@cafm.local",
+  id: "admin-local",
+  name: "System Administrator",
+  email: "admin@cafm.local",
   role: "Admin",
   department: "Administration",
   team: null,
 };
-export const sandboxAdminPassword = "Sandbox@12345";
+export const sandboxAdminPassword = "Admin@12345";
 const sessionMaxAgeSeconds = 60 * 60 * 12;
 
 function sessionSecret() {

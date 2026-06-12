@@ -17,11 +17,6 @@ const builtInAdmins = [
     email: sandboxAdmin.email,
     password: sandboxAdminPassword,
   },
-  {
-    name: "Admin User",
-    email: "admin@admin.com",
-    password: "123456",
-  },
 ];
 
 async function ensureBuiltInAdmin(email: string, password: string) {
