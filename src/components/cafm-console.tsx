@@ -1979,11 +1979,9 @@ function WorkOrders({
     });
   }, [data.workOrders, search, statusFilter, priorityFilter, categoryFilter, departmentFilter, typeFilter, assignedFilter, overdueOnly, showTimeMetrics, showOnlyDelayed]);
   const selectedWork = filteredWorks.find((work) => work.id === selectedWorkId) ?? filteredWorks[0] ?? data.workOrders[0];
-  const [page, setPage] = useState(1);
-  const totalPages = Math.max(1, Math.ceil(filteredWorks.length / PAGE_SIZE));
-  const currentPage = Math.min(page, totalPages);
-  const startIndex = (currentPage - 1) * PAGE_SIZE;
-  const visibleWorks = filteredWorks.slice(startIndex, startIndex + PAGE_SIZE);
+  const [visibleWorkCount, setVisibleWorkCount] = useState(PAGE_SIZE);
+  const visibleWorks = filteredWorks.slice(0, visibleWorkCount);
+  const hasMoreWorks = visibleWorkCount < filteredWorks.length;
 
   useEffect(() => {
     if (filteredWorks.length && !filteredWorks.some((work) => work.id === selectedWorkId)) {
@@ -1992,8 +1990,16 @@ function WorkOrders({
   }, [filteredWorks, selectedWorkId]);
 
   useEffect(() => {
-    setPage(1);
+    setVisibleWorkCount(PAGE_SIZE);
   }, [search, statusFilter, priorityFilter, categoryFilter, departmentFilter, typeFilter, assignedFilter, overdueOnly, showTimeMetrics, showOnlyDelayed, filteredWorks.length]);
+
+  function handleWorkScroll(event: UIEvent<HTMLDivElement>) {
+    const element = event.currentTarget;
+    const nearBottom = element.scrollTop + element.clientHeight >= element.scrollHeight - 240;
+    if (nearBottom && hasMoreWorks) {
+      setVisibleWorkCount((current) => Math.min(current + PAGE_SIZE, filteredWorks.length));
+    }
+  }
 
   async function runWorkAction(key: string, work: any, action: () => Promise<void> | void) {
     setSelectedWorkId(work.id);
@@ -2074,7 +2080,7 @@ function WorkOrders({
         </div>
         {view === "list" ? (
           <>
-            <div className="cafm-scroll-x overflow-auto rounded-lg border border-slate-200 scrollbar-thin">
+            <div onScroll={handleWorkScroll} className="cafm-scroll-x max-h-[70vh] overflow-auto rounded-lg border border-slate-200 scrollbar-thin">
               <table className="cafm-data-table min-w-[1840px] border-collapse bg-white text-sm">
                 <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
                   <tr>
@@ -2100,7 +2106,7 @@ function WorkOrders({
                 <tbody>
                   {visibleWorks.map((work, index) => (
                     <tr key={work.id} onClick={() => { setSelectedWorkId(work.id); setPreviewWork(work); }} className={`cursor-pointer border-t border-slate-100 align-top ${selectedWork?.id === work.id ? "bg-lagoon/5" : "hover:bg-slate-50"}`}>
-                      <td className="whitespace-nowrap px-3 py-3 font-black text-slate-500">{startIndex + index + 1}</td>
+                      <td className="whitespace-nowrap px-3 py-3 font-black text-slate-500">{index + 1}</td>
                       <td className="max-w-[280px] px-3 py-3"><div className="font-black">{work.title}</div><div className="mt-1 text-xs font-bold text-slate-500">{work.woNo}</div></td>
                       <td className="whitespace-nowrap px-3 py-3"><WorkOrderStatusBadge status={work.status} /></td>
                       <td className="whitespace-nowrap px-3 py-3"><RequestPriorityBadge priority={work.priority} /></td>
@@ -2142,8 +2148,9 @@ function WorkOrders({
                 </tbody>
               </table>
             </div>
-            <div className="mt-3">
-              <PaginationControls page={currentPage} totalPages={totalPages} onPageChange={setPage} totalItems={filteredWorks.length} />
+            <div className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-center text-sm font-black text-slate-500">
+              Showing {visibleWorks.length.toLocaleString()} of {filteredWorks.length.toLocaleString()} work orders
+              {hasMoreWorks ? " / scroll down to load more" : " / all matching work orders loaded"}
             </div>
           </>
         ) : (
