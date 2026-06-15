@@ -193,7 +193,7 @@ export async function POST(request: Request) {
   } catch (error) {
     return NextResponse.json(
       {
-        message: error instanceof Error ? error.message : "Unable to create work order",
+        message: "Unable to create work order",
       },
       { status: 500 },
     );

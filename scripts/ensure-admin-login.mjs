@@ -9,11 +9,6 @@ const defaultAdmins = [
     email: "admin@cafm.local",
     password: "Admin@12345",
   },
-  {
-    name: "Admin User",
-    email: "admin@admin.com",
-    password: "12345",
-  },
 ];
 
 async function ensureAdmin({ name, email, password }) {

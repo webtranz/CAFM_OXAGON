@@ -13,19 +13,10 @@ export const sandboxAdmin = {
 };
 export const sandboxAdmins = [
   sandboxAdmin,
-  {
-    id: "admin-admin-com",
-    name: "Admin User",
-    email: "admin@admin.com",
-    role: "Admin",
-    department: "Administration",
-    team: null,
-  },
 ];
 export const sandboxAdminPassword = "Admin@12345";
 export const sandboxAdminPasswords: Record<string, string> = {
   "admin@cafm.local": sandboxAdminPassword,
-  "admin@admin.com": "12345",
 };
 const sessionMaxAgeSeconds = 60 * 60 * 12;
 

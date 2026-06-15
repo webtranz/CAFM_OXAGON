@@ -4005,7 +4005,8 @@ function attachmentList(value: unknown) {
 }
 
 function isImageUrl(value: string) {
-  return /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(value) || value.startsWith("/uploads/");
+  const pathOnly = value.split("?")[0];
+  return /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(pathOnly) || value.startsWith("/uploads/") || value.startsWith("/api/files/");
 }
 
 function checklistItems(value: unknown) {
@@ -8979,7 +8980,7 @@ function PaginationControls({ page, totalPages, totalItems, onPageChange }: { pa
 function CellValue({ value, field = "" }: { value: any; field?: string }) {
   if (value === null || value === undefined) return <span className="text-slate-400">-</span>;
   if (isCurrencyField(field)) return <CurrencyAmount value={value} />;
-  if (typeof value === "string" && (value.startsWith("/uploads/") || value.startsWith("http://") || value.startsWith("https://"))) {
+  if (typeof value === "string" && (value.startsWith("/uploads/") || value.startsWith("/api/files/") || value.startsWith("http://") || value.startsWith("https://"))) {
     return <a href={value} target="_blank" rel="noreferrer" className="font-black text-lagoon underline-offset-2 hover:underline">{value.split("/").pop() || "Open file"}</a>;
   }
   if (typeof value === "string" && ["CRITICAL", "HIGH", "EXTREME"].includes(value)) return <span className="rounded-lg bg-coral/10 px-2 py-1 font-black text-coral">{value}</span>;

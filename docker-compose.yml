@@ -6,6 +6,8 @@ services:
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-cafm}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-cafm}?schema=public
       NEXT_PUBLIC_APP_NAME: BrightWorks CAFM
+    volumes:
+      - cafm_uploads:/app/storage
     depends_on:
       db:
         condition: service_healthy
@@ -26,3 +28,4 @@ services:
     restart: unless-stopped
 volumes:
   cafm_postgres:
+  cafm_uploads:

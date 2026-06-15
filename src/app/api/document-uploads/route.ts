@@ -2,10 +2,9 @@ import { createHash, randomUUID } from "crypto";
 import { mkdir, writeFile } from "fs/promises";
 import path from "path";
 import { NextResponse } from "next/server";
-import { accessRole } from "@/lib/access-control";
 import { requireAdmin } from "@/lib/api-auth";
 import { auditAction } from "@/lib/audit";
-import { getCurrentUser } from "@/lib/auth";
+import { privateFileUrl, privateUploadRoot } from "@/lib/private-files";
 import { prisma } from "@/lib/prisma";
 
 const MAX_FILE_SIZE = 20 * 1024 * 1024;
@@ -32,7 +31,7 @@ export async function DELETE(request: Request) {
     await auditAction({ user, action: "DOCUMENT_UPLOAD_DELETE", entity: "document_upload", entityId: id, details: { deletedRecord: current } });
     return NextResponse.json({ ok: true });
   } catch (error) {
-    return NextResponse.json({ message: error instanceof Error ? error.message : "Unable to delete document." }, { status: 500 });
+    return NextResponse.json({ message: "Unable to delete document." }, { status: 500 });
   }
 }
 
@@ -43,6 +42,8 @@ function hasExecutableSignature(buffer: Buffer) {
 
 export async function POST(request: Request) {
   try {
+    const { error, user } = await requireAdmin();
+    if (error) return error;
     const formData = await request.formData();
     const category = String(formData.get("category") || "");
     const assetTag = String(formData.get("assetTag") || "").trim();
@@ -57,12 +58,7 @@ export async function POST(request: Request) {
     const asset = await prisma.asset.findUnique({ where: { tag: assetTag } });
     if (!asset) return NextResponse.json({ message: "Asset Number was not found." }, { status: 404 });
 
-    const user = await getCurrentUser();
-    if (accessRole(user) !== "admin") {
-      return NextResponse.json({ message: "Only Admin can upload document files." }, { status: 403 });
-    }
-
-    const uploadDir = path.join(process.cwd(), "public", "uploads", "document-management", folder, assetFolder);
+    const uploadDir = path.join(privateUploadRoot, "document-management", folder, assetFolder);
     await mkdir(uploadDir, { recursive: true });
 
     const saved = [];
@@ -86,7 +82,7 @@ export async function POST(request: Request) {
       const fileName = `${Date.now()}-${randomUUID()}-${baseName}${ext}`;
       await writeFile(path.join(uploadDir, fileName), buffer, { mode: 0o644 });
 
-      const fileUrl = `/uploads/document-management/${folder}/${assetFolder}/${fileName}`;
+      const fileUrl = privateFileUrl(`document-management/${folder}/${assetFolder}/${fileName}`);
       const record = await prisma.documentUpload.create({
         data: {
           category,
@@ -120,6 +116,6 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ documents: saved }, { status: 201 });
   } catch (error) {
-    return NextResponse.json({ message: error instanceof Error ? error.message : "Unable to upload document." }, { status: 500 });
+    return NextResponse.json({ message: "Unable to upload document." }, { status: 500 });
   }
 }

@@ -38,8 +38,8 @@ export async function POST(request: Request) {
         const imported = await importRow(module, row);
         entries.push({ row: rowNumber, status: "SUCCESS", module, ...imported });
         created += 1;
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "Import failed";
+      } catch {
+        const message = "Import failed for this row.";
         failed.push({ row: rowNumber, message });
         entries.push({
           row: rowNumber,

@@ -2,7 +2,7 @@ import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
-const preservedUserEmails = ["admin@cafm.local", "admin@admin.com"];
+const preservedUserEmails = ["admin@cafm.local"];
 
 async function assertPreservedUsersExist() {
   const users = await prisma.user.findMany({

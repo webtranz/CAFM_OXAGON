@@ -576,7 +576,7 @@ function csv(rows: ReportRow[]) {
 
 function excel(rows: ReportRow[], title: string, kpis: Record<string, unknown> | null) {
   const headers = rows[0] ? Object.keys(rows[0]) : [];
-  return `<html><body><h1>${escapeHtml(title)}</h1>${kpiHtml(kpis)}<table border="1"><thead><tr>${headers.map((h) => `<th>${escapeHtml(h)}</th>`).join("")}</tr></thead><tbody>${rows.map((row) => `<tr>${headers.map((h) => `<td>${escapeHtml(row[h] ?? "")}</td>`).join("")}</tr>`).join("")}</tbody></table></body></html>`;
+  return `<html><body><h1>${escapeHtml(title)}</h1>${kpiHtml(kpis)}<table border="1"><thead><tr>${headers.map((h) => `<th>${escapeHtml(h)}</th>`).join("")}</tr></thead><tbody>${rows.map((row) => `<tr>${headers.map((h) => `<td>${escapeHtml(spreadsheetSafeValue(row[h] ?? ""))}</td>`).join("")}</tr>`).join("")}</tbody></table></body></html>`;
 }
 
 function htmlPreview(rows: ReportRow[], title: string, kpis: Record<string, unknown> | null, filters: ReturnType<typeof reportFilters>) {
@@ -681,7 +681,12 @@ function kpiHtml(kpis: Record<string, unknown> | null, mode: "list" | "div" = "l
 }
 
 function quote(value: unknown) {
-  return `"${String(value ?? "").replaceAll('"', '""')}"`;
+  return `"${spreadsheetSafeValue(value).replaceAll('"', '""')}"`;
+}
+
+function spreadsheetSafeValue(value: unknown) {
+  const text = String(value ?? "");
+  return /^[=+\-@\t\r]/.test(text) ? `'${text}` : text;
 }
 
 function prettyTitle(value: string) {

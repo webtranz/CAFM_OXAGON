@@ -76,7 +76,7 @@ export async function POST(request: Request) {
   } catch (error) {
     return NextResponse.json(
       {
-        message: error instanceof Error ? error.message : "Unable to create service request",
+        message: "Unable to create service request",
       },
       { status: 500 },
     );

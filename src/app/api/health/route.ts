@@ -21,7 +21,7 @@ export async function GET() {
       {
         app: "ok",
         database: "error",
-        message: error instanceof Error ? error.message : "Unknown database connection error",
+        message: "Database connection error",
       },
       { status: 503 },
     );
