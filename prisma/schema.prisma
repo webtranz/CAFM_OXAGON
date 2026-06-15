@@ -84,26 +84,26 @@ enum HousingOccupancyStatus {
 }
 
 model User {
-  id           String      @id @default(cuid())
-  name         String
-  email        String      @unique
-  phone        String?
-  role         String
-  department   String
-  supervisorEmail String?
-  notifyWorkOrder Boolean  @default(false)
-  notifyFacilityBooking Boolean @default(false)
-  active       Boolean     @default(true)
-  teamId       String?
-  passwordHash String
-  team         Team?       @relation(fields: [teamId], references: [id])
-  workOrders   WorkOrder[]
-  createdAt    DateTime    @default(now())
+  id                    String      @id @default(cuid())
+  name                  String
+  email                 String      @unique
+  phone                 String?
+  role                  String
+  department            String
+  supervisorEmail       String?
+  notifyWorkOrder       Boolean     @default(false)
+  notifyFacilityBooking Boolean     @default(false)
+  active                Boolean     @default(true)
+  teamId                String?
+  passwordHash          String
+  team                  Team?       @relation(fields: [teamId], references: [id])
+  workOrders            WorkOrder[]
+  createdAt             DateTime    @default(now())
 }
 
 model Permission {
-  id          String   @id @default(cuid())
-  code        String   @unique
+  id          String           @id @default(cuid())
+  code        String           @unique
   name        String
   module      String
   description String
@@ -119,33 +119,33 @@ model Role {
 }
 
 model Department {
-  id          String   @id @default(cuid())
-  code        String   @unique
-  name        String
+  id           String   @id @default(cuid())
+  code         String   @unique
+  name         String
   siteLocation String
-  description String
-  createdAt   DateTime @default(now())
+  description  String
+  createdAt    DateTime @default(now())
 }
 
 model Employee {
-  id              String   @id @default(cuid())
-  name            String
-  email           String   @unique
-  companyId       String   @unique
-  nationalityType String
-  departmentCode  String
-  siteLocation    String
-  shiftEligibility String  @default("Day & Night")
-  defaultShift     String  @default("General")
-  serviceTeamCode  String  @default("")
-  supervisor       String  @default("")
-  workLocationZone String  @default("")
-  maxHoursPerDay   Int     @default(8)
-  maxConsecutiveDays Int   @default(6)
-  minRestHours     Int     @default(12)
-  active           Boolean @default(true)
-  rosterEntries    RosterEntry[] @relation("EmployeeRoster")
-  createdAt       DateTime @default(now())
+  id                 String        @id @default(cuid())
+  name               String
+  email              String        @unique
+  companyId          String        @unique
+  nationalityType    String
+  departmentCode     String
+  siteLocation       String
+  shiftEligibility   String        @default("Day & Night")
+  defaultShift       String        @default("General")
+  serviceTeamCode    String        @default("")
+  supervisor         String        @default("")
+  workLocationZone   String        @default("")
+  maxHoursPerDay     Int           @default(8)
+  maxConsecutiveDays Int           @default(6)
+  minRestHours       Int           @default(12)
+  active             Boolean       @default(true)
+  rosterEntries      RosterEntry[] @relation("EmployeeRoster")
+  createdAt          DateTime      @default(now())
 }
 
 model RolePermission {
@@ -158,76 +158,76 @@ model RolePermission {
 }
 
 model Team {
-  id          String   @id @default(cuid())
-  code        String   @unique
-  name        String
-  type        String
-  supervisor  String
-  phone       String
-  email       String
-  shift       String
-  coverage    String
-  shiftEligibility String @default("Day & Night")
-  maxHoursPerDay   Int    @default(8)
-  maxConsecutiveDays Int  @default(6)
-  minRestHours     Int    @default(12)
-  active       Boolean    @default(true)
-  users       User[]
-  services    ServiceCatalog[]
-  rosterEntries RosterEntry[] @relation("TeamRoster")
-  createdAt   DateTime @default(now())
+  id                 String           @id @default(cuid())
+  code               String           @unique
+  name               String
+  type               String
+  supervisor         String
+  phone              String
+  email              String
+  shift              String
+  coverage           String
+  shiftEligibility   String           @default("Day & Night")
+  maxHoursPerDay     Int              @default(8)
+  maxConsecutiveDays Int              @default(6)
+  minRestHours       Int              @default(12)
+  active             Boolean          @default(true)
+  users              User[]
+  services           ServiceCatalog[]
+  rosterEntries      RosterEntry[]    @relation("TeamRoster")
+  createdAt          DateTime         @default(now())
 }
 
 model ShiftMaster {
-  id            String   @id @default(cuid())
-  name          String   @unique
+  id            String        @id @default(cuid())
+  name          String        @unique
   shiftType     String
   startTime     String
   endTime       String
-  breakDuration Int      @default(0)
-  active        Boolean  @default(true)
-  createdAt     DateTime @default(now())
+  breakDuration Int           @default(0)
+  active        Boolean       @default(true)
+  createdAt     DateTime      @default(now())
   rosterEntries RosterEntry[]
 }
 
 model RotationSetup {
-  id            String   @id @default(cuid())
-  name          String   @unique
+  id            String    @id @default(cuid())
+  name          String    @unique
   appliesTo     String
   shiftSequence String
   offDays       String
   startDate     DateTime
   endDate       DateTime?
   repeatCycle   String
-  active        Boolean  @default(true)
-  createdAt     DateTime @default(now())
+  active        Boolean   @default(true)
+  createdAt     DateTime  @default(now())
 }
 
 model RosterEntry {
-  id             String   @id @default(cuid())
-  assignmentType String
-  employeeId     String?
-  teamId         String?
-  date           DateTime
-  shiftId        String
-  locationZone   String
-  supervisor     String
-  status         String   @default("Draft")
-  source         String   @default("Manual")
-  attendanceStatus String @default("Not marked")
-  actualStartTime String  @default("")
-  actualEndTime   String  @default("")
-  plannedWorkingHours Float @default(0)
-  workedHours     Float   @default(0)
-  overtimeHours   Float   @default(0)
-  attendanceNotes String  @default("")
-  markedBy        String  @default("")
-  markedAt        DateTime?
-  employee       Employee? @relation("EmployeeRoster", fields: [employeeId], references: [id])
-  team           Team?     @relation("TeamRoster", fields: [teamId], references: [id])
-  shift          ShiftMaster @relation(fields: [shiftId], references: [id])
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id                  String      @id @default(cuid())
+  assignmentType      String
+  employeeId          String?
+  teamId              String?
+  date                DateTime
+  shiftId             String
+  locationZone        String
+  supervisor          String
+  status              String      @default("Draft")
+  source              String      @default("Manual")
+  attendanceStatus    String      @default("Not marked")
+  actualStartTime     String      @default("")
+  actualEndTime       String      @default("")
+  plannedWorkingHours Float       @default(0)
+  workedHours         Float       @default(0)
+  overtimeHours       Float       @default(0)
+  attendanceNotes     String      @default("")
+  markedBy            String      @default("")
+  markedAt            DateTime?
+  employee            Employee?   @relation("EmployeeRoster", fields: [employeeId], references: [id])
+  team                Team?       @relation("TeamRoster", fields: [teamId], references: [id])
+  shift               ShiftMaster @relation(fields: [shiftId], references: [id])
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
 
   @@index([date])
   @@index([employeeId, date])
@@ -274,15 +274,15 @@ model Site {
 }
 
 model Building {
-  id        String  @id @default(cuid())
-  name      String
-  code      String  @unique
-  siteId    String
-  floors    Int
-  areaSqm   Int
-  site      Site    @relation(fields: [siteId], references: [id], onDelete: Cascade)
-  spaces    Space[]
-  assets    Asset[]
+  id      String  @id @default(cuid())
+  name    String
+  code    String  @unique
+  siteId  String
+  floors  Int
+  areaSqm Int
+  site    Site    @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  spaces  Space[]
+  assets  Asset[]
 }
 
 model Space {
@@ -300,69 +300,73 @@ model Space {
 }
 
 model Asset {
-  id              String       @id @default(cuid())
-  tag             String       @unique
-  name            String
-  category        String
-  system          String
-  eqType          String       @default("ASSET")
-  organization    String?
-  criticality     Priority
-  status          AssetStatus  @default(ACTIVE)
-  assetStatusText String       @default("INSTALLED")
-  serialNumber    String?
-  siteCode        String?
-  zone            String?
-  buildingCode    String?
-  assetGroup      String?
-  assetDescription String?
-  additionalDescription String?
-  departmentDesc  String?
-  classCode       String?
-  classDesc       String?
-  categoryDesc    String?
-  gsrc            String?
-  attribute       String?
-  environment     String?
-  pressureBar     String?
-  flowLps         String?
-  supplyVoltageVolt String?
-  outOfService    Boolean      @default(false)
-  serviceLife     String?
-  locationCode    String?
-  locationDesc    String?
-  position        String?
-  classOrganization String?
-  primarySystem   String?
-  additionalNote  String?
-  parentAsset     String?
-  departmentCode  String?
-  assignedTeamCode String?
+  id                      String         @id @default(cuid())
+  tag                     String         @unique
+  name                    String
+  category                String
+  system                  String
+  eqType                  String         @default("ASSET")
+  organization            String?
+  criticality             Priority
+  status                  AssetStatus    @default(ACTIVE)
+  assetStatusText         String         @default("INSTALLED")
+  serialNumber            String?
+  siteCode                String?
+  zone                    String?
+  buildingCode            String?
+  assetGroup              String?
+  assetDescription        String?
+  additionalDescription   String?
+  departmentDesc          String?
+  classCode               String?
+  classDesc               String?
+  categoryDesc            String?
+  gsrc                    String?
+  attribute               String?
+  environment             String?
+  pressureBar             String?
+  flowLps                 String?
+  supplyVoltageVolt       String?
+  outOfService            Boolean        @default(false)
+  serviceLife             String?
+  locationCode            String?
+  locationDesc            String?
+  position                String?
+  classOrganization       String?
+  primarySystem           String?
+  additionalNote          String?
+  parentAsset             String?
+  departmentCode          String?
+  assignedTeamCode        String?
   assignedSupervisorEmail String?
-  remarks         String?
-  manufacturer    String
-  model           String
-  installDate     DateTime
-  replacementDate DateTime
-  warrantyExpiry  DateTime?
-  contractRef     String?
-  documentationUrl String?
-  purchaseCost    Decimal      @db.Decimal(12, 2)
-  salvageValue    Decimal      @default(0) @db.Decimal(12, 2)
-  depreciationRate Decimal     @default(10) @db.Decimal(5, 2)
-  conditionScore  Int
-  floor           String?
-  room            String?
-  qrCode          String?
-  siteId          String
-  buildingId      String?
-  site            Site         @relation(fields: [siteId], references: [id], onDelete: Cascade)
-  building        Building?    @relation(fields: [buildingId], references: [id])
-  workOrders      WorkOrder[]
-  meters          Meter[]
-  history         AssetHistory[]
-  createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
+  remarks                 String?
+  manufacturer            String
+  model                   String
+  installDate             DateTime
+  replacementDate         DateTime
+  warrantyExpiry          DateTime?
+  contractRef             String?
+  documentationUrl        String?
+  purchaseCost            Decimal        @db.Decimal(12, 2)
+  salvageValue            Decimal        @default(0) @db.Decimal(12, 2)
+  depreciationRate        Decimal        @default(10) @db.Decimal(5, 2)
+  conditionScore          Int
+  floor                   String?
+  room                    String?
+  qrCode                  String?
+  siteId                  String
+  buildingId              String?
+  site                    Site           @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  building                Building?      @relation(fields: [buildingId], references: [id])
+  workOrders              WorkOrder[]
+  meters                  Meter[]
+  history                 AssetHistory[]
+  createdAt               DateTime       @default(now())
+  updatedAt               DateTime       @updatedAt
+
+  @@index([departmentCode, tag])
+  @@index([buildingCode, floor, room])
+  @@index([locationCode])
 }
 
 model AssetHistory {
@@ -377,107 +381,116 @@ model AssetHistory {
 }
 
 model DocumentUpload {
-  id          String   @id @default(cuid())
-  category    String
-  assetTag    String
-  fileName    String
-  fileUrl     String
-  fileSize    Int
-  mimeType    String
-  checksum    String
-  uploadedBy  String?
-  createdAt   DateTime @default(now())
+  id         String   @id @default(cuid())
+  category   String
+  assetTag   String
+  fileName   String
+  fileUrl    String
+  fileSize   Int
+  mimeType   String
+  checksum   String
+  uploadedBy String?
+  createdAt  DateTime @default(now())
 
   @@unique([category, assetTag, checksum])
   @@index([checksum])
 }
 
 model ServiceRequest {
-  id          String     @id @default(cuid())
-  ticketNo    String     @unique(map: "service_requests_ticket_no_unique")
-  title       String
-  category    String
-  departmentCode String?
-  serviceCode String?
-  assignedTeamCode String?
+  id                      String     @id @default(cuid())
+  ticketNo                String     @unique(map: "service_requests_ticket_no_unique")
+  title                   String
+  category                String
+  departmentCode          String?
+  serviceCode             String?
+  assignedTeamCode        String?
   assignedSupervisorEmail String?
-  requester   String
-  channel     String
-  priority    Priority
-  status      WorkStatus @default(NEW)
-  location    String
-  attachmentUrls String?
-  rejectionReason String?
-  reviewedAt  DateTime?
-  approvedAt  DateTime?
-  slaHours    Int
-  dueAt       DateTime
-  description String
-  isIncidentCase Boolean @default(false)
-  workOrder   WorkOrder?
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  requester               String
+  channel                 String
+  priority                Priority
+  status                  WorkStatus @default(NEW)
+  location                String
+  attachmentUrls          String?
+  rejectionReason         String?
+  reviewedAt              DateTime?
+  approvedAt              DateTime?
+  slaHours                Int
+  dueAt                   DateTime
+  description             String
+  isIncidentCase          Boolean    @default(false)
+  workOrder               WorkOrder?
+  createdAt               DateTime   @default(now())
+  updatedAt               DateTime   @updatedAt
+
+  @@index([departmentCode, createdAt])
+  @@index([assignedTeamCode, createdAt])
+  @@index([status, createdAt])
 }
 
 model WorkOrder {
-  id               String          @id @default(cuid())
-  woNo             String          @unique(map: "work_orders_wo_no_unique")
-  title            String
-  type             String
-  assetType        String?
-  departmentCode   String?
-  serviceCode      String?
-  assignedTeamCode String?
-  jobPlanCode      String?
-  responseAt       DateTime?
-  resolutionAt     DateTime?
-  finishedAt       DateTime?
-  photoUrls        String?
-  assetsUsed       String?
-  inventoryUsed    String?
-  supervisorRequest String?
-  workNotes        String?
-  materialRequest  String?
-  rejectionReason  String?
+  id                 String           @id @default(cuid())
+  woNo               String           @unique(map: "work_orders_wo_no_unique")
+  title              String
+  type               String
+  assetType          String?
+  departmentCode     String?
+  serviceCode        String?
+  assignedTeamCode   String?
+  jobPlanCode        String?
+  responseAt         DateTime?
+  resolutionAt       DateTime?
+  finishedAt         DateTime?
+  photoUrls          String?
+  assetsUsed         String?
+  inventoryUsed      String?
+  supervisorRequest  String?
+  workNotes          String?
+  materialRequest    String?
+  rejectionReason    String?
   supervisorDecision String?
-  verifiedAt       DateTime?
-  priority         Priority
-  status           WorkStatus      @default(NEW)
-  assetId          String?
-  requestId        String?         @unique
-  assignedToId     String?
-  plannedStart     DateTime
-  dueAt            DateTime
-  estimatedHours   Decimal         @db.Decimal(6, 2)
-  actualHours      Decimal?        @db.Decimal(6, 2)
-  cost             Decimal         @db.Decimal(12, 2)
-  jobPlan          String
-  safetyNotes      String
-  isIncidentCase   Boolean         @default(false)
-  asset            Asset?          @relation(fields: [assetId], references: [id])
-  request          ServiceRequest? @relation(fields: [requestId], references: [id])
-  assignedTo       User?           @relation(fields: [assignedToId], references: [id])
-  inventoryIssues  InventoryIssue[]
-  createdAt        DateTime        @default(now())
-  updatedAt        DateTime        @updatedAt
+  verifiedAt         DateTime?
+  priority           Priority
+  status             WorkStatus       @default(NEW)
+  assetId            String?
+  requestId          String?          @unique
+  assignedToId       String?
+  plannedStart       DateTime
+  dueAt              DateTime
+  estimatedHours     Decimal          @db.Decimal(6, 2)
+  actualHours        Decimal?         @db.Decimal(6, 2)
+  cost               Decimal          @db.Decimal(12, 2)
+  jobPlan            String
+  safetyNotes        String
+  isIncidentCase     Boolean          @default(false)
+  asset              Asset?           @relation(fields: [assetId], references: [id])
+  request            ServiceRequest?  @relation(fields: [requestId], references: [id])
+  assignedTo         User?            @relation(fields: [assignedToId], references: [id])
+  inventoryIssues    InventoryIssue[]
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  @@index([status, dueAt])
+  @@index([departmentCode, dueAt])
+  @@index([assignedTeamCode, dueAt])
+  @@index([assignedToId, dueAt])
 }
 
 model Location {
-  id           String   @id @default(cuid())
-  code         String   @unique
-  site         String
-  zone         String
-  building     String
-  floor        String
-  room         String
-  type         String
-  parentLocation String  @default("")
-  locationClass  String  @default("Facility Location")
-  outOfService   Boolean @default(false)
-  residential    Boolean @default(false)
-  description  String
-  active       Boolean  @default(true)
-  createdAt    DateTime @default(now())
+  id             String   @id @default(cuid())
+  code           String   @unique
+  site           String
+  zone           String
+  building       String
+  floor          String
+  room           String
+  type           String
+  parentLocation String   @default("")
+  locationClass  String   @default("Facility Location")
+  outOfService   Boolean  @default(false)
+  residential    Boolean  @default(false)
+  description    String
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
 
   @@index([parentLocation])
   @@index([locationClass])
@@ -485,48 +498,48 @@ model Location {
 }
 
 model JobPlan {
-  id           String   @id @default(cuid())
-  code         String   @unique(map: "job_plans_code_unique")
-  name         String
-  assetType    String
+  id             String   @id @default(cuid())
+  code           String   @unique(map: "job_plans_code_unique")
+  name           String
+  assetType      String
   departmentCode String?
-  serviceCode  String?
-  estimatedHours Decimal @db.Decimal(6, 2)
-  priority     Priority
-  steps        String
-  safetyNotes  String
-  active       Boolean  @default(true)
-  createdAt    DateTime @default(now())
+  serviceCode    String?
+  estimatedHours Decimal  @db.Decimal(6, 2)
+  priority       Priority
+  steps          String
+  safetyNotes    String
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
 
   @@unique([name, assetType, departmentCode, serviceCode], map: "job_plans_scope_unique")
 }
 
 model PreventiveMaintenance {
-  id           String   @id @default(cuid())
-  code         String   @unique(map: "ppm_plans_code_unique")
-  name         String
-  assetTag     String
-  frequency    String
-  nextDue      DateTime
-  durationHrs  Decimal  @db.Decimal(6, 2)
-  checklist    String
-  active       Boolean  @default(true)
+  id          String   @id @default(cuid())
+  code        String   @unique(map: "ppm_plans_code_unique")
+  name        String
+  assetTag    String
+  frequency   String
+  nextDue     DateTime
+  durationHrs Decimal  @db.Decimal(6, 2)
+  checklist   String
+  active      Boolean  @default(true)
 
   @@unique([assetTag, frequency, name], map: "ppm_plans_asset_frequency_name_unique")
 }
 
 model InventoryItem {
-  id             String           @id @default(cuid())
-  sku            String           @unique
-  name           String
-  category       String
-  unit           String
-  onHand         Int
-  reorderPoint   Int
-  unitCost       Decimal          @db.Decimal(10, 2)
-  vendor         String
-  location       String
-  issues         InventoryIssue[]
+  id           String           @id @default(cuid())
+  sku          String           @unique
+  name         String
+  category     String
+  unit         String
+  onHand       Int
+  reorderPoint Int
+  unitCost     Decimal          @db.Decimal(10, 2)
+  vendor       String
+  location     String
+  issues       InventoryIssue[]
 }
 
 model InventoryIssue {
@@ -540,46 +553,46 @@ model InventoryIssue {
 }
 
 model Vendor {
-  id        String   @id @default(cuid())
+  id        String     @id @default(cuid())
   name      String
   category  String
-  rating    Decimal  @db.Decimal(3, 2)
+  rating    Decimal    @db.Decimal(3, 2)
   contact   String
-  email     String   @unique
+  email     String     @unique
   phone     String
   contracts Contract[]
 }
 
 model Contract {
-  id          String   @id @default(cuid())
-  title       String
-  vendorId    String
-  type        String
-  startDate   DateTime
-  endDate     DateTime
-  value       Decimal  @db.Decimal(14, 2)
-  slaTarget   String
-  vendor      Vendor   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  id        String   @id @default(cuid())
+  title     String
+  vendorId  String
+  type      String
+  startDate DateTime
+  endDate   DateTime
+  value     Decimal  @db.Decimal(14, 2)
+  slaTarget String
+  vendor    Vendor   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
 
   @@unique([vendorId, title])
 }
 
 model Inspection {
-  id          String    @id @default(cuid())
-  code        String    @unique
-  title       String
-  area        String
-  inspector   String
-  risk        RiskLevel
-  score       Int
-  status      WorkStatus
-  dueAt       DateTime
-  findings    String
+  id        String     @id @default(cuid())
+  code      String     @unique
+  title     String
+  area      String
+  inspector String
+  risk      RiskLevel
+  score     Int
+  status    WorkStatus
+  dueAt     DateTime
+  findings  String
 }
 
 model ComplianceCertificate {
-  id              String   @id @default(cuid())
-  certificateNo   String   @unique
+  id              String    @id @default(cuid())
+  certificateNo   String    @unique
   title           String
   authority       String
   category        String
@@ -590,45 +603,45 @@ model ComplianceCertificate {
   expiryDate      DateTime
   status          String
   risk            RiskLevel @default(LOW)
-  renewalLeadDays Int      @default(30)
+  renewalLeadDays Int       @default(30)
   evidenceUrl     String?
   notes           String
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 }
 
 model HseIncident {
-  id          String    @id @default(cuid())
-  refNo       String    @unique
-  title       String
-  area        String
-  severity    RiskLevel
-  status      WorkStatus
-  reportedAt  DateTime  @default(now())
+  id               String     @id @default(cuid())
+  refNo            String     @unique
+  title            String
+  area             String
+  severity         RiskLevel
+  status           WorkStatus
+  reportedAt       DateTime   @default(now())
   correctiveAction String
 }
 
 model Meter {
-  id        String   @id @default(cuid())
-  name      String
-  type      String
-  unit      String
-  reading   Decimal  @db.Decimal(14, 2)
-  assetId   String?
-  asset     Asset?   @relation(fields: [assetId], references: [id])
-  readAt    DateTime @default(now())
+  id      String   @id @default(cuid())
+  name    String
+  type    String
+  unit    String
+  reading Decimal  @db.Decimal(14, 2)
+  assetId String?
+  asset   Asset?   @relation(fields: [assetId], references: [id])
+  readAt  DateTime @default(now())
 
   @@unique([assetId, name, type])
 }
 
 model IotAlert {
-  id          String    @id @default(cuid())
-  source      String
-  assetTag    String
-  severity    Priority
-  message     String
-  status      WorkStatus
-  detectedAt  DateTime  @default(now())
+  id         String     @id @default(cuid())
+  source     String
+  assetTag   String
+  severity   Priority
+  message    String
+  status     WorkStatus
+  detectedAt DateTime   @default(now())
 }
 
 model AuditLog {
@@ -644,55 +657,55 @@ model AuditLog {
 }
 
 model HousingProperty {
-  id          String        @id @default(cuid())
-  code        String        @unique
-  name        String
-  site        String
-  city        String
-  manager     String
-  totalRooms  Int           @default(0)
-  active      Boolean       @default(true)
-  blocks      HousingBlock[]
-  rooms       HousingRoom[]
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  id         String         @id @default(cuid())
+  code       String         @unique
+  name       String
+  site       String
+  city       String
+  manager    String
+  totalRooms Int            @default(0)
+  active     Boolean        @default(true)
+  blocks     HousingBlock[]
+  rooms      HousingRoom[]
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
 }
 
 model HousingBlock {
-  id          String          @id @default(cuid())
-  code        String          @unique
-  name        String
-  propertyId  String
-  floors      Int             @default(1)
-  property    HousingProperty @relation(fields: [propertyId], references: [id], onDelete: Cascade)
-  rooms       HousingRoom[]
-  createdAt   DateTime        @default(now())
+  id         String          @id @default(cuid())
+  code       String          @unique
+  name       String
+  propertyId String
+  floors     Int             @default(1)
+  property   HousingProperty @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  rooms      HousingRoom[]
+  createdAt  DateTime        @default(now())
 }
 
 model HousingRoom {
-  id           String                 @id @default(cuid())
-  code         String                 @unique
-  roomNumber   String
-  propertyId   String
-  blockId      String?
-  floor        String
-  roomType     String
-  genderRestriction String             @default("MIXED")
-  capacity     Int
-  occupancy    Int                    @default(0)
-  status       HousingOccupancyStatus @default(AVAILABLE)
-  qrCode       String?
-  remarks      String?
-  property     HousingProperty        @relation(fields: [propertyId], references: [id], onDelete: Cascade)
-  block        HousingBlock?          @relation(fields: [blockId], references: [id])
-  beds         HousingBed[]
-  bookings     HousingBooking[]
-  inspections  HousingInspection[]
-  assets       HousingAsset[]
-  inventories  HousingInventory[]
-  histories    HousingHistory[]
-  createdAt    DateTime               @default(now())
-  updatedAt    DateTime               @updatedAt
+  id                String                 @id @default(cuid())
+  code              String                 @unique
+  roomNumber        String
+  propertyId        String
+  blockId           String?
+  floor             String
+  roomType          String
+  genderRestriction String                 @default("MIXED")
+  capacity          Int
+  occupancy         Int                    @default(0)
+  status            HousingOccupancyStatus @default(AVAILABLE)
+  qrCode            String?
+  remarks           String?
+  property          HousingProperty        @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  block             HousingBlock?          @relation(fields: [blockId], references: [id])
+  beds              HousingBed[]
+  bookings          HousingBooking[]
+  inspections       HousingInspection[]
+  assets            HousingAsset[]
+  inventories       HousingInventory[]
+  histories         HousingHistory[]
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
 }
 
 model HousingBed {
@@ -727,161 +740,181 @@ model HousingResident {
 }
 
 model HousingBooking {
-  id             String               @id @default(cuid())
-  bookingNo      String               @unique
-  residentId     String?
-  residentName   String
-  departmentCode String?
-  employeeId     String?
-  companyName    String?
-  nationality    String?
-  contactNumber  String?
-  gender         String?
-  buildingNumber String?
-  floorNumber    String?
-  roomNumber     String?
-  bedNumber      String?
-  bookingType    String               @default("TEMPORARY")
-  allocationType String               @default("STANDARD")
-  roomId         String
-  bedId          String?
-  checkIn        DateTime
-  checkOut       DateTime?
-  status         HousingBookingStatus @default(REQUESTED)
-  priority       Priority             @default(MEDIUM)
-  requestedBy    String
-  approvedBy     String?
-  approvalLevel  String               @default("Supervisor")
-  attachmentUrls String?
-  notes          String?
-  keyHandoverBy  String?
-  keyHandoverAt  DateTime?
-  campIdNumber   String?
-  campIdIssuedAt DateTime?
+  id                 String                @id @default(cuid())
+  bookingNo          String                @unique
+  residentId         String?
+  residentName       String
+  departmentCode     String?
+  employeeId         String?
+  companyName        String?
+  nationality        String?
+  contactNumber      String?
+  gender             String?
+  buildingNumber     String?
+  floorNumber        String?
+  roomNumber         String?
+  bedNumber          String?
+  bookingType        String                @default("TEMPORARY")
+  allocationType     String                @default("STANDARD")
+  roomId             String
+  bedId              String?
+  checkIn            DateTime
+  checkOut           DateTime?
+  status             HousingBookingStatus  @default(REQUESTED)
+  priority           Priority              @default(MEDIUM)
+  requestedBy        String
+  approvedBy         String?
+  approvalLevel      String                @default("Supervisor")
+  attachmentUrls     String?
+  notes              String?
+  keyHandoverBy      String?
+  keyHandoverAt      DateTime?
+  campIdNumber       String?
+  campIdIssuedAt     DateTime?
   cancellationReason String?
-  transferReason String?
-  blacklistReason String?
-  noShowAt       DateTime?
-  resident       HousingResident?     @relation(fields: [residentId], references: [id])
-  room           HousingRoom          @relation(fields: [roomId], references: [id])
-  bed            HousingBed?          @relation(fields: [bedId], references: [id])
-  approvals      HousingApproval[]
-  histories      HousingHistory[]
-  notifications  HousingNotification[]
-  createdAt      DateTime             @default(now())
-  updatedAt      DateTime             @updatedAt
+  transferReason     String?
+  blacklistReason    String?
+  noShowAt           DateTime?
+  resident           HousingResident?      @relation(fields: [residentId], references: [id])
+  room               HousingRoom           @relation(fields: [roomId], references: [id])
+  bed                HousingBed?           @relation(fields: [bedId], references: [id])
+  approvals          HousingApproval[]
+  histories          HousingHistory[]
+  notifications      HousingNotification[]
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
 
   @@index([roomId, status])
   @@index([bedId, status])
+  @@index([createdAt])
+  @@index([status, createdAt])
+  @@index([departmentCode, createdAt])
+  @@index([checkIn])
+  @@index([checkOut])
 }
 
 model HousingInspection {
-  id             String                  @id @default(cuid())
-  inspectionNo   String                  @unique
-  roomId         String
-  bedId          String?
-  occupantId     String?
-  occupantName   String?
-  assetId        String?
-  workOrderRef   String?
-  inspector      String
-  inspectionType String
-  status         HousingInspectionStatus @default(SCHEDULED)
-  score          Int                     @default(100)
-  checklistJson  String?
-  furnitureCondition String?
-  mattressCondition String?
-  bedSheetCondition String?
-  tvCondition    String?
-  refrigeratorCondition String?
-  acCondition    String?
-  waterLeakageCheck String?
-  lightingCondition String?
-  curtainCondition String?
-  doorLockCondition String?
-  smokeDetectorCondition String?
+  id                           String                  @id @default(cuid())
+  inspectionNo                 String                  @unique
+  roomId                       String
+  bedId                        String?
+  occupantId                   String?
+  occupantName                 String?
+  assetId                      String?
+  workOrderRef                 String?
+  inspector                    String
+  inspectionType               String
+  status                       HousingInspectionStatus @default(SCHEDULED)
+  score                        Int                     @default(100)
+  checklistJson                String?
+  furnitureCondition           String?
+  mattressCondition            String?
+  bedSheetCondition            String?
+  tvCondition                  String?
+  refrigeratorCondition        String?
+  acCondition                  String?
+  waterLeakageCheck            String?
+  lightingCondition            String?
+  curtainCondition             String?
+  doorLockCondition            String?
+  smokeDetectorCondition       String?
   fireExtinguisherAvailability String?
-  bathroomCleanliness String?
-  generalRoomCleanliness String?
-  missingAssetVerification String?
-  damageFound   Boolean                 @default(false)
-  damageReport  String?
-  missingAssetFound Boolean             @default(false)
-  missingAssetReport String?
-  repairRequired Boolean                @default(false)
-  estimatedRepairCost Decimal           @default(0)
-  occupantLiability String?
-  beforePhotoUrls String?
-  afterPhotoUrls String?
-  maintenanceTicketNo String?
-  findings       String?
-  photoUrls      String?
-  dueAt          DateTime
-  completedAt    DateTime?
-  room           HousingRoom             @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  histories      HousingHistory[]
-  createdAt      DateTime                @default(now())
-  updatedAt      DateTime                @updatedAt
+  bathroomCleanliness          String?
+  generalRoomCleanliness       String?
+  missingAssetVerification     String?
+  damageFound                  Boolean                 @default(false)
+  damageReport                 String?
+  missingAssetFound            Boolean                 @default(false)
+  missingAssetReport           String?
+  repairRequired               Boolean                 @default(false)
+  estimatedRepairCost          Decimal                 @default(0)
+  occupantLiability            String?
+  beforePhotoUrls              String?
+  afterPhotoUrls               String?
+  maintenanceTicketNo          String?
+  findings                     String?
+  photoUrls                    String?
+  dueAt                        DateTime
+  completedAt                  DateTime?
+  room                         HousingRoom             @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  histories                    HousingHistory[]
+  createdAt                    DateTime                @default(now())
+  updatedAt                    DateTime                @updatedAt
+
+  @@index([roomId, status])
+  @@index([assetId, status])
+  @@index([occupantId, status])
+  @@index([status, dueAt])
+  @@index([dueAt])
+  @@index([createdAt])
 }
 
 model HousingAsset {
-  id             String   @id @default(cuid())
-  tag            String   @unique
-  name           String
-  category       String
-  description    String?
-  brand          String?
-  model          String?
-  purchaseDate   DateTime?
-  supplierName   String?
-  assetValue     Decimal  @default(0)
+  id               String           @id @default(cuid())
+  tag              String           @unique
+  name             String
+  category         String
+  description      String?
+  brand            String?
+  model            String?
+  purchaseDate     DateTime?
+  supplierName     String?
+  assetValue       Decimal          @default(0)
   buildingLocation String?
-  roomLocation   String?
-  custodianName  String?
+  roomLocation     String?
+  custodianName    String?
   custodianContact String?
-  issuedTo       String?
-  issuedAt       DateTime?
-  transferredFrom String?
-  transferredTo  String?
-  transferredAt  DateTime?
-  replacementOf  String?
-  replacedAt     DateTime?
-  pmSchedule     String?
-  nextPmDue      DateTime?
-  depreciationRate Decimal @default(0)
-  currentValue   Decimal  @default(0)
+  issuedTo         String?
+  issuedAt         DateTime?
+  transferredFrom  String?
+  transferredTo    String?
+  transferredAt    DateTime?
+  replacementOf    String?
+  replacedAt       DateTime?
+  pmSchedule       String?
+  nextPmDue        DateTime?
+  depreciationRate Decimal          @default(0)
+  currentValue     Decimal          @default(0)
   lastInspectionAt DateTime?
-  roomId         String?
-  status         String   @default("ACTIVE")
-  serialNumber   String?
-  warrantyExpiry DateTime?
-  qrCode         String?
-  photoUrls      String?
-  room           HousingRoom? @relation(fields: [roomId], references: [id])
-  histories      HousingHistory[]
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  roomId           String?
+  status           String           @default("ACTIVE")
+  serialNumber     String?
+  warrantyExpiry   DateTime?
+  qrCode           String?
+  photoUrls        String?
+  room             HousingRoom?     @relation(fields: [roomId], references: [id])
+  histories        HousingHistory[]
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  @@index([status, category])
+  @@index([roomId, status])
+  @@index([nextPmDue])
+  @@index([warrantyExpiry])
+  @@index([lastInspectionAt])
+  @@index([purchaseDate])
+  @@index([createdAt])
 }
 
 model HousingInventory {
-  id                    String       @id @default(cuid())
-  sku                   String       @unique
+  id                    String           @id @default(cuid())
+  sku                   String           @unique
   name                  String
   category              String
   description           String?
   roomId                String?
   storeLocation         String?
-  onHand                Int          @default(0)
-  minimumStock          Int          @default(0)
-  reorderPoint          Int          @default(0)
-  unit                  String       @default("Each")
-  unitCost              Decimal      @default(0)
+  onHand                Int              @default(0)
+  minimumStock          Int              @default(0)
+  reorderPoint          Int              @default(0)
+  unit                  String           @default("Each")
+  unitCost              Decimal          @default(0)
   supplierName          String?
   supplierContact       String?
   preferredSupplier     String?
   expiryDate            DateTime?
   lastMovementType      String?
-  lastMovementQty       Int          @default(0)
+  lastMovementQty       Int              @default(0)
   lastMovementAt        DateTime?
   lastMovementBy        String?
   transferFrom          String?
@@ -890,77 +923,84 @@ model HousingInventory {
   purchaseRequestNo     String?
   purchaseRequestStatus String?
   qrCode                String?
-  room                  HousingRoom? @relation(fields: [roomId], references: [id])
+  room                  HousingRoom?     @relation(fields: [roomId], references: [id])
   histories             HousingHistory[]
-  createdAt             DateTime     @default(now())
-  updatedAt             DateTime     @updatedAt
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
 
   @@index([category])
   @@index([expiryDate])
   @@index([roomId, category])
+  @@index([purchaseRequestStatus, createdAt])
+  @@index([lastMovementAt])
+  @@index([createdAt])
 }
 
 model HousingApproval {
-  id          String                @id @default(cuid())
-  entity      String
-  entityId    String
-  bookingId   String?
-  level       String
-  step        Int                   @default(1)
-  approver    String
-  status      HousingApprovalStatus @default(PENDING)
-  action      String?
+  id           String                @id @default(cuid())
+  entity       String
+  entityId     String
+  bookingId    String?
+  level        String
+  step         Int                   @default(1)
+  approver     String
+  status       HousingApprovalStatus @default(PENDING)
+  action       String?
   approverName String?
-  remarks     String?
-  actedAt     DateTime?
-  booking     HousingBooking?       @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  createdAt   DateTime              @default(now())
-  updatedAt   DateTime              @updatedAt
+  remarks      String?
+  actedAt      DateTime?
+  booking      HousingBooking?       @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  createdAt    DateTime              @default(now())
+  updatedAt    DateTime              @updatedAt
 
+  @@unique([bookingId, level, step])
   @@index([bookingId, step])
   @@index([status, level])
-  @@unique([bookingId, level, step])
+  @@index([status, createdAt])
+  @@index([createdAt])
 }
 
 model HousingNotification {
-  id        String          @id @default(cuid())
-  alertType String?
-  channel   String          @default("SYSTEM")
-  role      String?
-  title     String
-  message   String
-  severity  Priority        @default(MEDIUM)
-  recipient String
-  status    String          @default("QUEUED")
-  read      Boolean         @default(false)
-  entity    String?
-  entityId  String?
-  queuedAt  DateTime        @default(now())
-  sentAt    DateTime?
+  id          String          @id @default(cuid())
+  alertType   String?
+  channel     String          @default("SYSTEM")
+  role        String?
+  title       String
+  message     String
+  severity    Priority        @default(MEDIUM)
+  recipient   String
+  status      String          @default("QUEUED")
+  read        Boolean         @default(false)
+  entity      String?
+  entityId    String?
+  queuedAt    DateTime        @default(now())
+  sentAt      DateTime?
   deliveryRef String?
-  bookingId String?
-  booking   HousingBooking? @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  createdAt DateTime        @default(now())
+  bookingId   String?
+  booking     HousingBooking? @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  createdAt   DateTime        @default(now())
 
   @@index([alertType, createdAt])
   @@index([status, channel])
   @@index([entity, entityId])
+  @@index([createdAt])
+  @@index([read, createdAt])
 }
 
 model HousingNotificationSetting {
-  id          String   @id @default(cuid())
-  alertType   String   @unique
-  label       String
-  enabled     Boolean  @default(true)
-  roles       String   @default("Admin,Housing Supervisor")
-  channels    String   @default("SYSTEM")
-  leadDays    Int      @default(3)
-  thresholdDays Int    @default(0)
-  severity    Priority @default(MEDIUM)
-  description String?
-  updatedBy   String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id            String   @id @default(cuid())
+  alertType     String   @unique
+  label         String
+  enabled       Boolean  @default(true)
+  roles         String   @default("Admin,Housing Supervisor")
+  channels      String   @default("SYSTEM")
+  leadDays      Int      @default(3)
+  thresholdDays Int      @default(0)
+  severity      Priority @default(MEDIUM)
+  description   String?
+  updatedBy     String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }
 
 model HousingHistory {
@@ -981,4 +1021,9 @@ model HousingHistory {
   asset        HousingAsset?      @relation(fields: [assetId], references: [id], onDelete: Cascade)
   inventory    HousingInventory?  @relation(fields: [inventoryId], references: [id], onDelete: Cascade)
   createdAt    DateTime           @default(now())
+
+  @@index([createdAt])
+  @@index([entity, createdAt])
+  @@index([roomId, createdAt])
+  @@index([bookingId, createdAt])
 }
