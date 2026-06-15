@@ -701,6 +701,22 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { id?: st
     setSaving(false);
   }
 
+  async function deleteWorkOrders(ids: string[]) {
+    setSaving(true);
+    const results = await Promise.all(
+      ids.map(async (id) => {
+        const response = await fetch(`/api/work-orders/${id}`, { method: "DELETE" });
+        const result = await response.json().catch(() => ({}));
+        return { ok: response.ok, message: cleanMessage(result.message ?? "Delete failed.") };
+      }),
+    );
+    const deleted = results.filter((result) => result.ok).length;
+    const failed = results.length - deleted;
+    setToast(failed ? `${deleted} work orders deleted. ${failed} failed: ${results.find((result) => !result.ok)?.message}` : `${deleted} work orders deleted.`);
+    if (deleted) await refreshData();
+    setSaving(false);
+  }
+
   async function convertRequestToWorkOrder(id: string, assignment: { assignedTeamCode?: string; assignedToEmail?: string; assetTag?: string } = {}) {
     setSaving(true);
     const response = await fetch(`/api/service-requests/${id}/convert-work-order`, {
@@ -911,6 +927,7 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { id?: st
               updateWorkOrder={(id, formData) => patchRecord(`/api/work-orders/${id}`, Object.fromEntries(formData.entries()) as Record<string, string>, "Work order updated by admin.")}
               updateWorkStatus={(id, status) => patchRecord(`/api/work-orders/${id}`, { status }, `Work order marked ${status}.`)}
               deleteWorkOrder={(id) => deleteRecord(`/api/work-orders/${id}`, "Work order deleted.")}
+              deleteWorkOrders={deleteWorkOrders}
             />
           )}
           {canViewActive && active === "helpdesk" && (
@@ -1062,6 +1079,7 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { id?: st
               submitEmployee={(formData) => postRecord("/api/employees", formData, "Employee")}
               submitShiftRotation={(formData) => postRecord("/api/shift-rotation", formData, "Shift / rotation")}
               refreshData={refreshData}
+              isAdmin={isAdmin}
             />
           )}
           {canViewActive && active === "housing" && (
@@ -1396,7 +1414,7 @@ function Assets({
                 onClick={bulkDeleteSelectedAssets}
                 className="rounded-lg bg-coral px-4 py-3 text-sm font-black text-white disabled:bg-slate-300"
               >
-                Delete Selected ({selectedAssetIds.size})
+                Delete All
               </button>
             )}
           </div>
@@ -1925,6 +1943,7 @@ function WorkOrders({
   updateWorkOrder,
   updateWorkStatus,
   deleteWorkOrder,
+  deleteWorkOrders,
 }: {
   data: ConsoleData;
   submitWorkOrder: (formData: FormData) => void;
@@ -1934,12 +1953,14 @@ function WorkOrders({
   updateWorkOrder: (id: string, formData: FormData) => Promise<void> | void;
   updateWorkStatus: (id: string, status: string) => Promise<void> | void;
   deleteWorkOrder: (id: string) => Promise<void> | void;
+  deleteWorkOrders: (ids: string[]) => Promise<void>;
 }) {
   const [editing, setEditing] = useState<any | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [previewWork, setPreviewWork] = useState<any | null>(null);
   const [reviewWork, setReviewWork] = useState<{ work: any; action: "close" | "reopen" } | null>(null);
   const [selectedWorkId, setSelectedWorkId] = useState<string | null>(data.workOrders[0]?.id ?? null);
+  const [selectedWorkIds, setSelectedWorkIds] = useState<Set<string>>(new Set());
   const [workAction, setWorkAction] = useState<string | null>(null);
   const [showTimeMetrics, setShowTimeMetrics] = useState(false);
   const [showOnlyDelayed, setShowOnlyDelayed] = useState(false);
@@ -1971,6 +1992,9 @@ function WorkOrders({
   const visibleWorks = useMemo(() => showTimeMetrics ? workMetricRows(workRowsSource, showOnlyDelayed) : workRowsSource, [workRowsSource, showTimeMetrics, showOnlyDelayed]);
   const selectedWork = visibleWorks.find((work) => work.id === selectedWorkId) ?? visibleWorks[0] ?? workRowsSource[0] ?? data.workOrders[0];
   const hasMoreWorks = workRowsSource.length < workTotal;
+  const selectedVisibleWorks = visibleWorks.filter((work) => selectedWorkIds.has(work.id));
+  const allVisibleWorksSelected = Boolean(visibleWorks.length) && selectedVisibleWorks.length === visibleWorks.length;
+  const someVisibleWorksSelected = selectedVisibleWorks.length > 0 && !allVisibleWorksSelected;
 
   useEffect(() => {
     if (visibleWorks.length && !visibleWorks.some((work) => work.id === selectedWorkId)) {
@@ -1987,6 +2011,10 @@ function WorkOrders({
     setWorkRowsSource(data.workOrders);
     setWorkTotal((current) => Math.max(current, data.workOrdersTotal ?? data.workOrders.length));
   }, [data.workOrders, data.workOrdersTotal]);
+
+  useEffect(() => {
+    setSelectedWorkIds((current) => new Set(Array.from(current).filter((id) => workRowsSource.some((work) => work.id === id))));
+  }, [workRowsSource]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -2057,6 +2085,33 @@ function WorkOrders({
     await quickPatchWork(work, { isIncidentCase: checked ? "true" : "false" });
   }
 
+  function toggleWorkSelection(id: string, checked: boolean) {
+    setSelectedWorkIds((current) => {
+      const next = new Set(current);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }
+
+  function toggleVisibleWorks(checked: boolean) {
+    setSelectedWorkIds((current) => {
+      const next = new Set(current);
+      visibleWorks.forEach((work) => {
+        if (checked) next.add(work.id);
+        else next.delete(work.id);
+      });
+      return next;
+    });
+  }
+
+  async function bulkDeleteSelectedWorks() {
+    const ids = Array.from(selectedWorkIds);
+    if (!ids.length) return;
+    await deleteWorkOrders(ids);
+    setSelectedWorkIds(new Set());
+  }
+
   return (
     <section className="space-y-5">
       <Panel title="Work Orders" icon={Wrench}>
@@ -2065,6 +2120,16 @@ function WorkOrders({
           <div className="flex gap-2">
             <button type="button" onClick={() => setView("list")} className={`h-10 rounded-lg px-4 text-sm font-black ${view === "list" ? "bg-lagoon text-white" : "bg-slate-50 text-slate-600"}`}>List</button>
             <button type="button" onClick={() => setView("calendar")} className={`h-10 rounded-lg px-4 text-sm font-black ${view === "calendar" ? "bg-lagoon text-white" : "bg-slate-50 text-slate-600"}`}>Calendar</button>
+            {isAdmin && view === "list" && (
+              <button
+                type="button"
+                disabled={saving || !selectedWorkIds.size}
+                onClick={bulkDeleteSelectedWorks}
+                className="h-10 rounded-lg bg-coral px-4 text-sm font-black text-white disabled:bg-slate-300"
+              >
+                Delete All
+              </button>
+            )}
           </div>
           <div className="flex min-w-[280px] flex-1 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 lg:max-w-md">
             <Search size={16} className="text-slate-400" />
@@ -2115,13 +2180,23 @@ function WorkOrders({
         {view === "list" ? (
           <>
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-sm font-black text-slate-600">
-              <span>Showing {visibleWorks.length.toLocaleString()} of {workTotal.toLocaleString()} work orders</span>
+              <span>Showing {visibleWorks.length.toLocaleString()} of {workTotal.toLocaleString()} work orders / Selected {selectedWorkIds.size.toLocaleString()}</span>
               {workLoading && <span className="text-lagoon">Loading work orders...</span>}
             </div>
             <div ref={workScrollRef} onScroll={handleWorkScroll} className="cafm-scroll-x max-h-[70vh] overflow-auto rounded-lg border border-slate-200 scrollbar-thin">
-              <table className="cafm-data-table min-w-[1840px] border-collapse bg-white text-sm">
+              <table className="cafm-data-table min-w-[1880px] border-collapse bg-white text-sm">
                 <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
                   <tr>
+                    <th className="px-3 py-3">
+                      <input
+                        type="checkbox"
+                        checked={allVisibleWorksSelected}
+                        ref={(input) => {
+                          if (input) input.indeterminate = someVisibleWorksSelected;
+                        }}
+                        onChange={(event) => toggleVisibleWorks(event.target.checked)}
+                      />
+                    </th>
                     <th className="px-3 py-3 font-black">#</th>
                     <th className="px-3 py-3 font-black">Title</th>
                     <th className="px-3 py-3 font-black">Status</th>
@@ -2144,6 +2219,14 @@ function WorkOrders({
                 <tbody>
                   {visibleWorks.map((work, index) => (
                     <tr key={work.id} onClick={() => { setSelectedWorkId(work.id); setPreviewWork(work); }} className={`cursor-pointer border-t border-slate-100 align-top ${selectedWork?.id === work.id ? "bg-lagoon/5" : "hover:bg-slate-50"}`}>
+                      <td className="px-3 py-3">
+                        <input
+                          type="checkbox"
+                          checked={selectedWorkIds.has(work.id)}
+                          onClick={(event) => event.stopPropagation()}
+                          onChange={(event) => toggleWorkSelection(work.id, event.target.checked)}
+                        />
+                      </td>
                       <td className="whitespace-nowrap px-3 py-3 font-black text-slate-500">{index + 1}</td>
                       <td className="max-w-[280px] px-3 py-3"><div className="font-black">{work.title}</div><div className="mt-1 text-xs font-bold text-slate-500">{work.woNo}</div></td>
                       <td className="whitespace-nowrap px-3 py-3"><WorkOrderStatusBadge status={work.status} /></td>
@@ -2414,6 +2497,7 @@ function Helpdesk({
   const [createOpen, setCreateOpen] = useState(false);
   const [previewRequest, setPreviewRequest] = useState<any | null>(null);
   const [selectedRequestId, setSelectedRequestId] = useState<string | null>(requests[0]?.id ?? null);
+  const [selectedRequestIds, setSelectedRequestIds] = useState<Set<string>>(new Set());
   const [requestAction, setRequestAction] = useState<string | null>(null);
   const [assignments, setAssignments] = useState<Record<string, { assignedTeamCode: string; assignedToEmail: string; assetTag: string }>>({});
   const [search, setSearch] = useState("");
@@ -2441,6 +2525,9 @@ function Helpdesk({
   const currentPage = Math.min(page, totalPages);
   const startIndex = (currentPage - 1) * PAGE_SIZE;
   const visibleRequests = filteredRequests.slice(startIndex, startIndex + PAGE_SIZE);
+  const selectedVisibleRequests = visibleRequests.filter((request) => selectedRequestIds.has(request.id));
+  const allVisibleRequestsSelected = isAdmin && Boolean(visibleRequests.length) && selectedVisibleRequests.length === visibleRequests.length;
+  const someVisibleRequestsSelected = isAdmin && selectedVisibleRequests.length > 0 && !allVisibleRequestsSelected;
 
   useEffect(() => {
     if (filteredRequests.length && !filteredRequests.some((request) => request.id === selectedRequestId)) {
@@ -2451,6 +2538,37 @@ function Helpdesk({
   useEffect(() => {
     setPage(1);
   }, [search, statusFilter, priorityFilter, categoryFilter, overdueOnly, filteredRequests.length]);
+
+  useEffect(() => {
+    setSelectedRequestIds((current) => new Set(Array.from(current).filter((id) => requests.some((request) => request.id === id))));
+  }, [requests]);
+
+  function toggleRequestSelection(id: string, checked: boolean) {
+    setSelectedRequestIds((current) => {
+      const next = new Set(current);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }
+
+  function toggleVisibleRequests(checked: boolean) {
+    setSelectedRequestIds((current) => {
+      const next = new Set(current);
+      visibleRequests.forEach((request) => {
+        if (checked) next.add(request.id);
+        else next.delete(request.id);
+      });
+      return next;
+    });
+  }
+
+  async function bulkDeleteSelectedRequests() {
+    const ids = Array.from(selectedRequestIds);
+    if (!ids.length) return;
+    await Promise.all(ids.map((id) => deleteRequest(id)));
+    setSelectedRequestIds(new Set());
+  }
 
   async function runRequestAction(key: string, request: any, action: () => Promise<void> | void) {
     setSelectedRequestId(request.id);
@@ -2525,10 +2643,32 @@ function Helpdesk({
           </div>
         </div>
 
+        {isAdmin && (
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm font-black text-slate-600">
+            <span>Selected {selectedRequestIds.size.toLocaleString()} service requests</span>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={() => toggleVisibleRequests(true)} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-black text-lagoon">Select Visible</button>
+              <button type="button" disabled={!selectedRequestIds.size} onClick={bulkDeleteSelectedRequests} className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white disabled:bg-slate-300">Delete All</button>
+              <button type="button" disabled={!selectedRequestIds.size} onClick={() => setSelectedRequestIds(new Set())} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-600 disabled:opacity-50">Clear Selection</button>
+            </div>
+          </div>
+        )}
         <div className="cafm-scroll-x overflow-auto rounded-lg border border-slate-200 scrollbar-thin">
-          <table className="cafm-data-table min-w-[1640px] border-collapse bg-white text-sm">
+          <table className="cafm-data-table min-w-[1680px] border-collapse bg-white text-sm">
             <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
               <tr>
+                {isAdmin && (
+                  <th className="px-3 py-3 font-black">
+                    <input
+                      type="checkbox"
+                      checked={allVisibleRequestsSelected}
+                      ref={(input) => {
+                        if (input) input.indeterminate = someVisibleRequestsSelected;
+                      }}
+                      onChange={(event) => toggleVisibleRequests(event.target.checked)}
+                    />
+                  </th>
+                )}
                 <th className="px-3 py-3 font-black">#</th>
                 <th className="px-3 py-3 font-black">Title</th>
                 <th className="px-3 py-3 font-black">Status</th>
@@ -2555,6 +2695,16 @@ function Helpdesk({
                     onClick={() => setSelectedRequestId(request.id)}
                     className={`cursor-pointer border-t border-slate-100 align-top ${selectedRequest?.id === request.id ? "bg-lagoon/5" : "hover:bg-slate-50"}`}
                   >
+                    {isAdmin && (
+                      <td className="px-3 py-3">
+                        <input
+                          type="checkbox"
+                          checked={selectedRequestIds.has(request.id)}
+                          onClick={(event) => event.stopPropagation()}
+                          onChange={(event) => toggleRequestSelection(request.id, event.target.checked)}
+                        />
+                      </td>
+                    )}
                     <td className="whitespace-nowrap px-3 py-3 font-black text-slate-500">{startIndex + index + 1}</td>
                     <td className="max-w-[280px] px-3 py-3">
                       <div className="font-black text-slate-800">{request.title}</div>
@@ -4209,6 +4359,7 @@ function Ppm({
   const [view, setView] = useState<"list" | "calendar">("list");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
+  const [selectedPpmIds, setSelectedPpmIds] = useState<Set<string>>(new Set());
   const filtered = ppms.filter((ppm) => {
     const asset = assets.find((item) => item.tag === ppm.assetTag);
     const haystack = `${ppm.code} ${ppm.name} ${ppm.assetTag} ${ppm.frequency} ${ppm.checklist} ${asset?.assetGroup || ""}`.toLowerCase();
@@ -4221,6 +4372,40 @@ function Ppm({
     acc[key] = [...(acc[key] ?? []), ppm];
     return acc;
   }, {});
+  const selectedVisiblePpms = filtered.filter((ppm) => selectedPpmIds.has(ppm.id));
+  const allVisiblePpmsSelected = isAdmin && Boolean(filtered.length) && selectedVisiblePpms.length === filtered.length;
+  const someVisiblePpmsSelected = isAdmin && selectedVisiblePpms.length > 0 && !allVisiblePpmsSelected;
+
+  useEffect(() => {
+    setSelectedPpmIds((current) => new Set(Array.from(current).filter((id) => ppms.some((ppm) => ppm.id === id))));
+  }, [ppms]);
+
+  function togglePpmSelection(id: string, checked: boolean) {
+    setSelectedPpmIds((current) => {
+      const next = new Set(current);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }
+
+  function toggleVisiblePpms(checked: boolean) {
+    setSelectedPpmIds((current) => {
+      const next = new Set(current);
+      filtered.forEach((ppm) => {
+        if (checked) next.add(ppm.id);
+        else next.delete(ppm.id);
+      });
+      return next;
+    });
+  }
+
+  async function bulkDeleteSelectedPpms() {
+    const ids = Array.from(selectedPpmIds);
+    if (!ids.length) return;
+    await Promise.all(ids.map((id) => deletePpm(id)));
+    setSelectedPpmIds(new Set());
+  }
 
   return (
     <section className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,380px)]">
@@ -4242,11 +4427,34 @@ function Ppm({
           </select>
         </div>
         {view === "list" ? (
-          <div className="cafm-scroll-x overflow-auto rounded-lg border border-slate-200 scrollbar-thin">
-            <table className="cafm-data-table min-w-[1100px] border-collapse bg-white text-sm">
-              <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
-                <tr>
-                  <th className="px-3 py-3">#</th><th className="px-3 py-3">Title</th><th className="px-3 py-3">Status</th><th className="px-3 py-3">Frequency</th><th className="px-3 py-3">Next Due</th><th className="px-3 py-3">Category</th><th className="px-3 py-3">Asset</th><th className="px-3 py-3">Actions</th>
+          <>
+            {isAdmin && (
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm font-black text-slate-600">
+                <span>Selected {selectedPpmIds.size.toLocaleString()} PPM plans</span>
+                <div className="flex flex-wrap gap-2">
+                  <button type="button" onClick={() => toggleVisiblePpms(true)} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-black text-lagoon">Select Visible</button>
+                  <button type="button" disabled={!selectedPpmIds.size} onClick={bulkDeleteSelectedPpms} className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white disabled:bg-slate-300">Delete All</button>
+                  <button type="button" disabled={!selectedPpmIds.size} onClick={() => setSelectedPpmIds(new Set())} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-600 disabled:opacity-50">Clear Selection</button>
+                </div>
+              </div>
+            )}
+            <div className="cafm-scroll-x overflow-auto rounded-lg border border-slate-200 scrollbar-thin">
+              <table className="cafm-data-table min-w-[1140px] border-collapse bg-white text-sm">
+                <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
+                  <tr>
+                    {isAdmin && (
+                      <th className="px-3 py-3">
+                        <input
+                          type="checkbox"
+                          checked={allVisiblePpmsSelected}
+                          ref={(input) => {
+                            if (input) input.indeterminate = someVisiblePpmsSelected;
+                          }}
+                          onChange={(event) => toggleVisiblePpms(event.target.checked)}
+                        />
+                      </th>
+                    )}
+                    <th className="px-3 py-3">#</th><th className="px-3 py-3">Title</th><th className="px-3 py-3">Status</th><th className="px-3 py-3">Frequency</th><th className="px-3 py-3">Next Due</th><th className="px-3 py-3">Category</th><th className="px-3 py-3">Asset</th><th className="px-3 py-3">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -4254,6 +4462,16 @@ function Ppm({
                   const asset = assets.find((item) => item.tag === ppm.assetTag);
                   return (
                     <tr key={ppm.id} onClick={() => setPreviewPpm(ppm)} className="cursor-pointer border-t border-slate-100 hover:bg-slate-50">
+                      {isAdmin && (
+                        <td className="px-3 py-3">
+                          <input
+                            type="checkbox"
+                            checked={selectedPpmIds.has(ppm.id)}
+                            onClick={(event) => event.stopPropagation()}
+                            onChange={(event) => togglePpmSelection(ppm.id, event.target.checked)}
+                          />
+                        </td>
+                      )}
                       <td className="px-3 py-3 font-black text-slate-500">{index + 1}</td>
                       <td className="px-3 py-3"><p className="font-black">{ppm.name}</p><p className="text-xs font-bold text-slate-500">{ppm.code}</p></td>
                       <td className="px-3 py-3"><span className={`rounded-full border px-2 py-1 text-xs font-black ${ppm.active ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-amber-200 bg-amber-50 text-amber-700"}`}>{ppm.active ? "Planned" : "Paused"}</span></td>
@@ -4273,7 +4491,8 @@ function Ppm({
                 })}
               </tbody>
             </table>
-          </div>
+            </div>
+          </>
         ) : (
           <div className="grid gap-3 md:grid-cols-3">
             {Object.entries(grouped).map(([date, items]) => (
@@ -4518,6 +4737,9 @@ function Inventory({ inventory, submitInventory, deleteInventory, isAdmin, savin
               ["vendor", "Vendor"],
             ]}
             actions={isAdmin ? (row) => <DeleteRowButton saving={saving} onDelete={() => deleteInventory(row.id)} /> : undefined}
+            bulkSelectable={isAdmin}
+            bulkLabel="inventory items"
+            onBulkDelete={async (rows) => { await Promise.all(rows.map((row) => deleteInventory(row.id))); }}
           />
           <div className="h-72 rounded-lg bg-slate-50 p-3">
             <ResponsiveContainer>
@@ -4555,6 +4777,9 @@ function Hse({ inspections, submitInspection, deleteInspection, isAdmin, saving 
             ["status", "Status"],
           ]}
           actions={isAdmin ? (row) => <DeleteRowButton saving={saving} onDelete={() => deleteInspection(row.id)} /> : undefined}
+          bulkSelectable={isAdmin}
+          bulkLabel="inspections"
+          onBulkDelete={async (rows) => { await Promise.all(rows.map((row) => deleteInspection(row.id))); }}
         />
         <div className="rounded-lg bg-coral/10 p-4">
           <AlertTriangle className="text-coral" />
@@ -4760,7 +4985,7 @@ function ComplianceCertification({
             </div>
           )}
 
-          {tab === "certification-register" && <DataTable rows={rows} columns={[["certificateNo", "Certificate No"], ["title", "Title"], ["category", "Category"], ["authority", "Authority"], ["assetTag", "Asset"], ["location", "Location"], ["owner", "Owner"], ["status", "Status"], ["expiryDate", "Expiry"], ["days", "Days"]]} actions={isAdmin ? (row) => <DeleteRowButton saving={saving} onDelete={() => deleteCertificate(row.id)} /> : undefined} />}
+          {tab === "certification-register" && <DataTable rows={rows} columns={[["certificateNo", "Certificate No"], ["title", "Title"], ["category", "Category"], ["authority", "Authority"], ["assetTag", "Asset"], ["location", "Location"], ["owner", "Owner"], ["status", "Status"], ["expiryDate", "Expiry"], ["days", "Days"]]} actions={isAdmin ? (row) => <DeleteRowButton saving={saving} onDelete={() => deleteCertificate(row.id)} /> : undefined} bulkSelectable={isAdmin} bulkLabel="certificates" onBulkDelete={async (selectedRows) => { await Promise.all(selectedRows.map((row) => deleteCertificate(row.id))); }} />}
           {tab === "compliance-non-compliance" && (
             <div className="grid gap-4">
               <div className="grid gap-3 md:grid-cols-4">
@@ -4802,6 +5027,8 @@ function ComplianceCertification({
                     ["linkedTickets", "Linked Tickets"],
                     ["correctiveAction", "Corrective Action"],
                   ]}
+                  bulkSelectable={isAdmin}
+                  bulkLabel="non-compliance items"
                 />
               </div>
               <div className="grid gap-2">
@@ -4820,8 +5047,8 @@ function ComplianceCertification({
               </div>
             </div>
           )}
-          {tab === "compliance-audits" && <DataTable rows={auditRows} columns={[["certificateNo", "Certificate"], ["title", "Audit Item"], ["authority", "Authority"], ["risk", "Risk"], ["owner", "Owner"], ["expiryDate", "Due / Expiry"], ["notes", "Action Notes"]]} />}
-          {tab === "compliance-alerts" && <DataTable rows={rows.filter((record) => record.status !== "ACTIVE")} columns={[["certificateNo", "Certificate"], ["title", "Alert"], ["status", "Status"], ["risk", "Risk"], ["days", "Expiry"], ["owner", "Owner"], ["notes", "Required Action"]]} />}
+          {tab === "compliance-audits" && <DataTable rows={auditRows} columns={[["certificateNo", "Certificate"], ["title", "Audit Item"], ["authority", "Authority"], ["risk", "Risk"], ["owner", "Owner"], ["expiryDate", "Due / Expiry"], ["notes", "Action Notes"]]} bulkSelectable={isAdmin} bulkLabel="audit rows" />}
+          {tab === "compliance-alerts" && <DataTable rows={rows.filter((record) => record.status !== "ACTIVE")} columns={[["certificateNo", "Certificate"], ["title", "Alert"], ["status", "Status"], ["risk", "Risk"], ["days", "Expiry"], ["owner", "Owner"], ["notes", "Required Action"]]} bulkSelectable={isAdmin} bulkLabel="alerts" />}
         </Panel>
       </div>
       <form onSubmit={handleSubmit} className="rounded-lg border border-white/80 bg-white p-5 shadow-lift">
@@ -5192,6 +5419,9 @@ function DocumentManagement({
                 ["size", "Size"],
               ]}
               actions={isAdmin ? (row) => row.canDelete ? <DeleteRowButton saving={false} onDelete={() => deleteDocument(row.id)} /> : null : undefined}
+              bulkSelectable={isAdmin}
+              bulkLabel="documents"
+              onBulkDelete={async (rows) => { await Promise.all(rows.filter((row) => row.canDelete).map((row) => deleteDocument(row.id))); }}
             />
           )}
           {tab === "documents-warranties" && (
@@ -5210,6 +5440,9 @@ function DocumentManagement({
                 ["size", "Size"],
               ]}
               actions={isAdmin ? (row) => row.canDelete ? <DeleteRowButton saving={false} onDelete={() => deleteDocument(row.id)} /> : null : undefined}
+              bulkSelectable={isAdmin}
+              bulkLabel="documents"
+              onBulkDelete={async (rows) => { await Promise.all(rows.filter((row) => row.canDelete).map((row) => deleteDocument(row.id))); }}
             />
           )}
           {tab === "documents-contracts-slas" && (
@@ -5228,6 +5461,9 @@ function DocumentManagement({
                 ["size", "Size"],
               ]}
               actions={isAdmin ? (row) => row.canDelete ? <DeleteRowButton saving={false} onDelete={() => deleteDocument(row.id)} /> : null : undefined}
+              bulkSelectable={isAdmin}
+              bulkLabel="documents"
+              onBulkDelete={async (rows) => { await Promise.all(rows.filter((row) => row.canDelete).map((row) => deleteDocument(row.id))); }}
             />
           )}
         </div>
@@ -5400,35 +5636,35 @@ function TeamsServices({
         {showDepartments && (
           <Panel title="Department Codes" icon={MapPinned}>
             <ReportButtons type="departments" label="Departments report" />
-            <DataTable rows={departments} columns={[["code", "Code"], ["name", "Department"], ["siteLocation", "Site"], ["description", "Description"]]} />
+            <DataTable rows={departments} columns={[["code", "Code"], ["name", "Department"], ["siteLocation", "Site"], ["description", "Description"]]} bulkSelectable={isAdmin} bulkLabel="departments" onBulkDelete={async (rows) => { await Promise.all(rows.map((row) => deleteDepartment(row.id))); }} />
             <SetupActions rows={departments} labelKey="code" onEdit={setEditingDepartment} onDelete={deleteDepartment} saving={saving} isAdmin={isAdmin} />
           </Panel>
         )}
         {showTeamCode && (
           <Panel title="Team Codes" icon={Users}>
             <ReportButtons type="teams" label="Team codes report" />
-            <DataTable rows={teamRows} columns={[["code", "Team Code"], ["name", "Team Name"], ["departmentName", "Department"], ["departmentCode", "Dept Code"], ["service", "Service"], ["shiftEligibility", "Shift Eligibility"], ["maxHoursPerDay", "Max hrs/day"]]} />
+            <DataTable rows={teamRows} columns={[["code", "Team Code"], ["name", "Team Name"], ["departmentName", "Department"], ["departmentCode", "Dept Code"], ["service", "Service"], ["shiftEligibility", "Shift Eligibility"], ["maxHoursPerDay", "Max hrs/day"]]} bulkSelectable={isAdmin} bulkLabel="teams" onBulkDelete={async (rows) => { await Promise.all(rows.map((row) => deleteTeam(row.id))); }} />
             <SetupActions rows={teamRows} labelKey="code" onEdit={setEditingTeam} onDelete={deleteTeam} saving={saving} isAdmin={isAdmin} />
           </Panel>
         )}
         {showServiceTeams && (
           <Panel title="Service Teams" icon={Users}>
             <ReportButtons type="teams" label="Service teams report" />
-            <DataTable rows={teamRows} columns={[["code", "Code"], ["name", "Team"], ["companyIdNumber", "Company ID"], ["departmentCode", "Dept"], ["service", "Service"], ["shiftEligibility", "Shift Eligibility"], ["maxHoursPerDay", "Max hrs/day"], ["maxConsecutiveDays", "Max days"], ["minRestHours", "Rest hrs"], ["email", "Email"], ["phone", "Phone"]]} />
+            <DataTable rows={teamRows} columns={[["code", "Code"], ["name", "Team"], ["companyIdNumber", "Company ID"], ["departmentCode", "Dept"], ["service", "Service"], ["shiftEligibility", "Shift Eligibility"], ["maxHoursPerDay", "Max hrs/day"], ["maxConsecutiveDays", "Max days"], ["minRestHours", "Rest hrs"], ["email", "Email"], ["phone", "Phone"]]} bulkSelectable={isAdmin} bulkLabel="teams" onBulkDelete={async (rows) => { await Promise.all(rows.map((row) => deleteTeam(row.id))); }} />
             <SetupActions rows={teamRows} labelKey="code" onEdit={setEditingTeam} onDelete={deleteTeam} saving={saving} isAdmin={isAdmin} />
           </Panel>
         )}
         {showServices && (
           <Panel title="Services Catalog" icon={ClipboardCheck}>
             <ReportButtons type="services" label="Services report" />
-            <DataTable rows={serviceRows} columns={[["code", "Code"], ["name", "Service"], ["departmentName", "Department"], ["departmentCode", "Dept"], ["teamCode", "Team Code"], ["slaHours", "SLA hrs"]]} />
+            <DataTable rows={serviceRows} columns={[["code", "Code"], ["name", "Service"], ["departmentName", "Department"], ["departmentCode", "Dept"], ["teamCode", "Team Code"], ["slaHours", "SLA hrs"]]} bulkSelectable={isAdmin} bulkLabel="services" onBulkDelete={async (rows) => { await Promise.all(rows.map((row) => deleteService(row.id))); }} />
             <SetupActions rows={serviceRows} labelKey="code" onEdit={setEditingService} onDelete={deleteService} saving={saving} isAdmin={isAdmin} />
           </Panel>
         )}
         {showAll && (
           <Panel title="Asset Categories" icon={Boxes}>
             <ReportButtons type="asset-categories" label="Categories report" />
-            <DataTable rows={categories} columns={[["code", "Code"], ["name", "Category"], ["type", "Type"], ["defaultLifeYrs", "Life yrs"], ["statutory", "Statutory"]]} actions={isAdmin ? (row) => <DeleteRowButton saving={saving} onDelete={() => deleteCategory(row.id)} /> : undefined} />
+            <DataTable rows={categories} columns={[["code", "Code"], ["name", "Category"], ["type", "Type"], ["defaultLifeYrs", "Life yrs"], ["statutory", "Statutory"]]} actions={isAdmin ? (row) => <DeleteRowButton saving={saving} onDelete={() => deleteCategory(row.id)} /> : undefined} bulkSelectable={isAdmin} bulkLabel="categories" onBulkDelete={async (rows) => { await Promise.all(rows.map((row) => deleteCategory(row.id))); }} />
           </Panel>
         )}
       </div>
@@ -5769,6 +6005,7 @@ function Locations({ locations, submitLocation, deleteLocation, isAdmin, saving 
   const [locationRowsSource, setLocationRowsSource] = useState<any[]>(locations);
   const [locationTotal, setLocationTotal] = useState(locations.length);
   const [locationLoading, setLocationLoading] = useState(false);
+  const [selectedLocationIds, setSelectedLocationIds] = useState<Set<string>>(new Set());
   const locationScrollRef = useRef<HTMLDivElement | null>(null);
   const locationRows = locationRowsSource.map((location) => ({
     ...location,
@@ -5781,6 +6018,9 @@ function Locations({ locations, submitLocation, deleteLocation, isAdmin, saving 
   const parentOptions = Array.from(new Set(locationRows.map((location) => location.parentLocationDisplay).filter(Boolean)));
   const classOptions = Array.from(new Set(locationRows.map((location) => location.classDisplay).filter(Boolean)));
   const hasMoreLocations = locationRowsSource.length < locationTotal;
+  const selectedVisibleLocations = locationRows.filter((location) => selectedLocationIds.has(location.id));
+  const allVisibleLocationsSelected = isAdmin && Boolean(locationRows.length) && selectedVisibleLocations.length === locationRows.length;
+  const someVisibleLocationsSelected = isAdmin && selectedVisibleLocations.length > 0 && !allVisibleLocationsSelected;
   const hierarchyRows = parentOptions.map((parentLocation) => {
     const childRows = locationRows.filter((location) => location.parentLocationDisplay === parentLocation);
     return {
@@ -5802,6 +6042,10 @@ function Locations({ locations, submitLocation, deleteLocation, isAdmin, saving 
     setLocationRowsSource(locations);
     setLocationTotal((current) => Math.max(current, locations.length));
   }, [locations]);
+
+  useEffect(() => {
+    setSelectedLocationIds((current) => new Set(Array.from(current).filter((id) => locationRowsSource.some((location) => location.id === id))));
+  }, [locationRowsSource]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -5845,6 +6089,33 @@ function Locations({ locations, submitLocation, deleteLocation, isAdmin, saving 
     }
   }
 
+  function toggleLocationSelection(id: string, checked: boolean) {
+    setSelectedLocationIds((current) => {
+      const next = new Set(current);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }
+
+  function toggleVisibleLocations(checked: boolean) {
+    setSelectedLocationIds((current) => {
+      const next = new Set(current);
+      locationRows.forEach((location) => {
+        if (checked) next.add(location.id);
+        else next.delete(location.id);
+      });
+      return next;
+    });
+  }
+
+  async function bulkDeleteSelectedLocations() {
+    const ids = Array.from(selectedLocationIds);
+    if (!ids.length) return;
+    await Promise.all(ids.map((id) => deleteLocation(id)));
+    setSelectedLocationIds(new Set());
+  }
+
   return (
     <section className="grid gap-5 xl:grid-cols-[1fr_420px]">
       <Panel title="Location Register" icon={MapPinned}>
@@ -5873,19 +6144,50 @@ function Locations({ locations, submitLocation, deleteLocation, isAdmin, saving 
           <div className="rounded-lg bg-rose-50 p-3"><p className="text-xs font-black uppercase text-rose-700">Out of Service</p><p className="text-2xl font-black">{locationRows.filter((location) => location.outOfService).length}</p></div>
         </div>
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-sm font-black text-slate-600">
-          <span>Showing {locationRows.length.toLocaleString()} of {locationTotal.toLocaleString()} locations</span>
+          <span>Showing {locationRows.length.toLocaleString()} of {locationTotal.toLocaleString()} locations{isAdmin ? ` / Selected ${selectedLocationIds.size.toLocaleString()}` : ""}</span>
           {locationLoading && <span className="text-lagoon">Loading locations...</span>}
         </div>
+        {isAdmin && (
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm font-black text-slate-600">
+            <span>Selected {selectedLocationIds.size.toLocaleString()} locations</span>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={() => toggleVisibleLocations(true)} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-black text-lagoon">Select Visible</button>
+              <button type="button" disabled={!selectedLocationIds.size} onClick={bulkDeleteSelectedLocations} className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white disabled:bg-slate-300">Delete All</button>
+              <button type="button" disabled={!selectedLocationIds.size} onClick={() => setSelectedLocationIds(new Set())} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-600 disabled:opacity-50">Clear Selection</button>
+            </div>
+          </div>
+        )}
         <div ref={locationScrollRef} onScroll={handleLocationScroll} className="cafm-scroll-x max-h-[70vh] overflow-auto rounded-lg border border-slate-200 scrollbar-thin">
-          <table className="cafm-data-table min-w-[980px] border-collapse bg-white text-sm">
+          <table className="cafm-data-table min-w-[1020px] border-collapse bg-white text-sm">
             <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
               <tr>
+                {isAdmin && (
+                  <th className="px-3 py-3">
+                    <input
+                      type="checkbox"
+                      checked={allVisibleLocationsSelected}
+                      ref={(input) => {
+                        if (input) input.indeterminate = someVisibleLocationsSelected;
+                      }}
+                      onChange={(event) => toggleVisibleLocations(event.target.checked)}
+                    />
+                  </th>
+                )}
                 {["Location", "Description", "Class", "Parent Location", "Out of Service", "Residential", ...(isAdmin ? ["Actions"] : [])].map((label) => <th key={label} className="px-3 py-3">{label}</th>)}
               </tr>
             </thead>
             <tbody>
               {locationRows.map((location) => (
                 <tr key={location.id} className="border-t border-slate-100">
+                  {isAdmin && (
+                    <td className="px-3 py-3">
+                      <input
+                        type="checkbox"
+                        checked={selectedLocationIds.has(location.id)}
+                        onChange={(event) => toggleLocationSelection(location.id, event.target.checked)}
+                      />
+                    </td>
+                  )}
                   <td className="px-3 py-3 font-black text-lagoon">{location.locationCode}</td>
                   <td className="px-3 py-3">{displayValue(location.description)}</td>
                   <td className="px-3 py-3">{displayValue(location.classDisplay)}</td>
@@ -5924,7 +6226,7 @@ function JobPlans({ jobPlans, services, departments, submitJobPlan, deleteJobPla
     <section className="grid gap-5 xl:grid-cols-[1fr_420px]">
       <Panel title="Job Plans" icon={ClipboardCheck}>
         <ReportButtons type="job-plans" label="Job plans report" />
-        <DataTable rows={jobPlans} columns={[["code", "Code"], ["name", "Name"], ["assetType", "Asset Type"], ["departmentCode", "Dept"], ["serviceCode", "Service"], ["estimatedHours", "Hours"], ["priority", "Priority"], ["active", "Active"]]} actions={isAdmin ? (row) => <DeleteRowButton saving={saving} onDelete={() => deleteJobPlan(row.id)} /> : undefined} />
+        <DataTable rows={jobPlans} columns={[["code", "Code"], ["name", "Name"], ["assetType", "Asset Type"], ["departmentCode", "Dept"], ["serviceCode", "Service"], ["estimatedHours", "Hours"], ["priority", "Priority"], ["active", "Active"]]} actions={isAdmin ? (row) => <DeleteRowButton saving={saving} onDelete={() => deleteJobPlan(row.id)} /> : undefined} bulkSelectable={isAdmin} bulkLabel="job plans" onBulkDelete={async (rows) => { await Promise.all(rows.map((row) => deleteJobPlan(row.id))); }} />
       </Panel>
       <form onSubmit={handleSubmit} className="min-w-0 rounded-lg border border-white/80 bg-white p-5 shadow-lift">
         <h3 className="text-xl font-black">Add Job Plan</h3>
@@ -6326,6 +6628,7 @@ function ResourceManagement({
   refreshData,
   saving,
   navigate,
+  isAdmin,
 }: {
   employees: any[];
   departments: any[];
@@ -6341,6 +6644,7 @@ function ResourceManagement({
   refreshData: () => Promise<void>;
   saving: boolean;
   navigate: (moduleId: string, menuKey: string, view?: string) => void;
+  isAdmin: boolean;
 }) {
   const [tab, setTab] = useState(view || "resource-employees");
   const [nationality, setNationality] = useState("All");
@@ -6443,7 +6747,7 @@ function ResourceManagement({
                 {nationalities.map((item) => <option key={item}>{item}</option>)}
               </select>
             </div>
-            <DataTable rows={filtered} columns={[["name", "Name"], ["email", "Email"], ["companyId", "Company ID"], ["nationalityType", "Nationality"], ["departmentCode", "Dept"], ["siteLocation", "Site"], ["shiftEligibility", "Shift Eligibility"], ["defaultShift", "Default Shift"], ["serviceTeamCode", "Service Team"], ["supervisor", "Supervisor"], ["workLocationZone", "Work Location / Zone"]]} />
+            <DataTable rows={filtered} columns={[["name", "Name"], ["email", "Email"], ["companyId", "Company ID"], ["nationalityType", "Nationality"], ["departmentCode", "Dept"], ["siteLocation", "Site"], ["shiftEligibility", "Shift Eligibility"], ["defaultShift", "Default Shift"], ["serviceTeamCode", "Service Team"], ["supervisor", "Supervisor"], ["workLocationZone", "Work Location / Zone"]]} bulkSelectable={isAdmin} bulkLabel="employees" />
           </>
         )}
         {tab === "resource-shift-rotation" && (
@@ -7183,6 +7487,8 @@ function HousingOperations({
               columns={[["code", "Code"], ["roomNumber", "Room"], ["roomType", "Type"], ["floor", "Floor"], ["occupancy", "Occ"], ["capacity", "Cap"], ["status", "Status"], ["qrCode", "QR"]]}
               onSelect={(record) => setSelected({ type: "room", record })}
               reportType="housing-rooms"
+              bulkSelectable={isAdmin}
+              onBulkDelete={async (rows) => { await Promise.all(rows.map((row) => deleteHousing("room", row.id))); }}
             />
             <div className="grid gap-5">
               <HousingSummaryTable title="Ticket Summary" rows={ticketSummary} />
@@ -7199,6 +7505,8 @@ function HousingOperations({
               columns={[["movement", "Movement"], ["bookingNo", "Booking"], ["residentName", "Resident"], ["departmentCode", "Company / Dept"], ["status", "Status"], ["priority", "Priority"]]}
               onSelect={(record) => setSelected({ type: "booking", record })}
               reportType="housing-bookings"
+              bulkSelectable={isAdmin}
+              onBulkDelete={async (rows) => { await Promise.all(rows.map((row) => deleteHousing("booking", row.id))); }}
             />
             <HousingAlerts notifications={notifications} approvals={dashboardApprovals} onApprove={(approval, action) => approvalAction(approval, action as any)} canApprove={canApprove} />
           </div>
@@ -7222,6 +7530,8 @@ function HousingOperations({
               columns={[["bookingNo", "Booking"], ["employeeId", "Employee ID"], ["residentName", "Employee"], ["companyName", "Company"], ["gender", "Gender"], ["buildingNumber", "Building"], ["floorNumber", "Floor"], ["roomNumber", "Room"], ["bedNumber", "Bed"], ["bookingType", "Type"], ["allocationType", "Allocation"], ["status", "Status"], ["priority", "Priority"]]}
               onSelect={(record) => setSelected({ type: "booking", record })}
               reportType="housing-bookings"
+              bulkSelectable={isAdmin}
+              onBulkDelete={async (rows) => { await Promise.all(rows.map((row) => deleteHousing("booking", row.id))); }}
               actions={(record) => canApprove && (
                 <div className="flex flex-wrap gap-2">
                   {currentApprovalFor(record) && <button type="button" onClick={(event) => { event.stopPropagation(); approvalAction(currentApprovalFor(record), "APPROVED"); }} className="rounded-lg bg-leaf px-3 py-2 text-xs font-black text-white">Approve Step</button>}
@@ -7245,6 +7555,8 @@ function HousingOperations({
             columns={[["inspectionNo", "Inspection"], ["inspectionType", "Type"], ["occupantName", "Occupant"], ["assetId", "Asset"], ["damageFound", "Damage"], ["missingAssetFound", "Missing"], ["estimatedRepairCost", "Repair Cost"], ["maintenanceTicketNo", "Ticket"], ["status", "Status"], ["score", "Score"], ["dueAt", "Due"]]}
             onSelect={(record) => setSelected({ type: "inspection", record })}
             reportType="housing-inspections"
+            bulkSelectable={isAdmin}
+            onBulkDelete={async (rows) => { await Promise.all(rows.map((row) => deleteHousing("inspection", row.id))); }}
             actions={(record) => canManage && <button type="button" onClick={(event) => { event.stopPropagation(); updateHousing("inspection", record.id, { status: "CLOSED", completedAt: new Date().toISOString() }); }} className="rounded-lg bg-lagoon px-3 py-2 text-xs font-black text-white">Close</button>}
           />
           {canManage && <HousingInspectionForm rooms={rooms} beds={housing.beds ?? []} bookings={bookings} assets={assets} saving={saving} onSubmit={submitHousing} />}
@@ -7259,6 +7571,8 @@ function HousingOperations({
             columns={[["tag", "Asset Code"], ["qrCode", "QR"], ["description", "Description"], ["category", "Category"], ["brand", "Brand"], ["model", "Model"], ["serialNumber", "Serial"], ["buildingLocation", "Building"], ["roomLocation", "Room"], ["status", "Status"], ["custodianName", "Custodian"], ["warrantyExpiry", "Warranty"], ["currentValue", "Current Value"]]}
             onSelect={(record) => setSelected({ type: "asset", record })}
             reportType="housing-assets"
+            bulkSelectable={isAdmin}
+            onBulkDelete={async (rows) => { await Promise.all(rows.map((row) => deleteHousing("asset", row.id))); }}
             actions={(record) => canManage && (
               <div className="flex flex-wrap gap-2">
                 <button type="button" onClick={(event) => { event.stopPropagation(); updateHousing("asset", record.id, { status: "INSTALLED", issuedAt: new Date().toISOString(), movementAction: "Asset issuance" }); }} className="rounded-lg bg-leaf px-3 py-2 text-xs font-black text-white">Issue</button>
@@ -7280,6 +7594,8 @@ function HousingOperations({
             columns={[["sku", "SKU"], ["name", "Name"], ["category", "Category"], ["onHand", "On Hand"], ["minimumStock", "Minimum"], ["reorderPoint", "Reorder"], ["unit", "Unit"], ["supplierName", "Supplier"], ["expiryDate", "Expiry"], ["purchaseRequestStatus", "PR Status"], ["lastMovementType", "Last Move"]]}
             onSelect={(record) => setSelected({ type: "inventory", record })}
             reportType="housing-inventory"
+            bulkSelectable={isAdmin}
+            onBulkDelete={async (rows) => { await Promise.all(rows.map((row) => deleteHousing("inventory", row.id))); }}
             actions={(record) => canManage && (
               <div className="flex flex-wrap gap-2">
                 <button type="button" onClick={(event) => { event.stopPropagation(); updateHousing("inventory", record.id, { movementType: "RECEIPT", movementQty: 1 }); }} className="rounded-lg bg-leaf px-3 py-2 text-xs font-black text-white">Receipt +1</button>
@@ -7296,7 +7612,7 @@ function HousingOperations({
       {activePanel === "approvals" && (
         <section className="grid gap-5 xl:grid-cols-2">
           <HousingAlerts notifications={notifications} approvals={visibleApprovals} onApprove={(approval, action) => approvalAction(approval, action as any)} canApprove={canApprove} />
-          <HousingTable title="Housing History & Audit Trail" rows={visibleHistory} columns={[["entity", "Entity"], ["action", "Action"], ["actor", "Actor"], ["details", "Details"], ["createdAt", "Time"]]} reportType="housing-history" />
+          <HousingTable title="Housing History & Audit Trail" rows={visibleHistory} columns={[["entity", "Entity"], ["action", "Action"], ["actor", "Actor"], ["details", "Details"], ["createdAt", "Time"]]} reportType="housing-history" bulkSelectable={isAdmin} />
         </section>
       )}
 
@@ -7318,6 +7634,8 @@ function HousingOperations({
               columns={[["alertType", "Alert"], ["channel", "Channel"], ["role", "Role"], ["title", "Title"], ["recipient", "Recipient"], ["severity", "Severity"], ["status", "Status"], ["sentAt", "Sent"], ["createdAt", "Created"]]}
               onSelect={(record) => setSelected({ type: "notification", record })}
               reportType="housing-notifications"
+              bulkSelectable={isAdmin}
+              onBulkDelete={async (rows) => { await Promise.all(rows.map((row) => deleteHousing("notification", row.id))); }}
               actions={(record) => canManage && <button type="button" onClick={(event) => { event.stopPropagation(); updateHousing("notification", record.id, { read: true, status: "SENT" }); }} className="rounded-lg bg-leaf px-3 py-2 text-xs font-black text-white">Mark Sent</button>}
             />
           </div>
@@ -7402,23 +7720,80 @@ function HousingSummaryTable({ title, rows }: { title: string; rows: Array<{ met
   );
 }
 
-function HousingTable({ title, rows, columns, onSelect, actions, reportType }: { title: string; rows: any[]; columns: [string, string][]; onSelect?: (record: any) => void; actions?: (record: any) => any; reportType: string }) {
+function HousingTable({ title, rows, columns, onSelect, actions, reportType, bulkSelectable = false, onBulkDelete }: { title: string; rows: any[]; columns: [string, string][]; onSelect?: (record: any) => void; actions?: (record: any) => any; reportType: string; bulkSelectable?: boolean; onBulkDelete?: (rows: any[]) => Promise<void> | void }) {
   const [page, setPage] = useState(1);
+  const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
   const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
   const visibleRows = rows.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  const selectedVisibleRows = visibleRows.filter((row) => selectedRowIds.has(row.id));
+  const selectedRows = rows.filter((row) => selectedRowIds.has(row.id));
+  const allVisibleSelected = bulkSelectable && Boolean(visibleRows.length) && selectedVisibleRows.length === visibleRows.length;
+  const someVisibleSelected = bulkSelectable && selectedVisibleRows.length > 0 && !allVisibleSelected;
 
   useEffect(() => {
     setPage(1);
   }, [rows.length, reportType]);
 
+  useEffect(() => {
+    setSelectedRowIds((current) => new Set(Array.from(current).filter((id) => rows.some((row) => row.id === id))));
+  }, [rows]);
+
+  function toggleVisibleRows(checked: boolean) {
+    setSelectedRowIds((current) => {
+      const next = new Set(current);
+      visibleRows.forEach((row) => {
+        if (checked) next.add(row.id);
+        else next.delete(row.id);
+      });
+      return next;
+    });
+  }
+
+  function toggleRow(id: string, checked: boolean) {
+    setSelectedRowIds((current) => {
+      const next = new Set(current);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }
+
+  async function deleteSelectedRows() {
+    if (!onBulkDelete || !selectedRows.length) return;
+    await onBulkDelete(selectedRows);
+    setSelectedRowIds(new Set());
+  }
+
   return (
     <Panel title={title} icon={Building2}>
       <ReportButtons type={reportType} label={`${title} report`} />
+      {bulkSelectable && (
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm font-black text-slate-600">
+          <span>Selected {selectedRowIds.size.toLocaleString()} records</span>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={() => toggleVisibleRows(true)} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-black text-lagoon">Select Visible</button>
+            <button type="button" disabled={!selectedRowIds.size || !onBulkDelete} onClick={deleteSelectedRows} className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white disabled:bg-slate-300">Delete All</button>
+            <button type="button" disabled={!selectedRowIds.size} onClick={() => setSelectedRowIds(new Set())} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-600 disabled:opacity-50">Clear Selection</button>
+          </div>
+        </div>
+      )}
       <div className="cafm-scroll-x mt-4 overflow-auto rounded-lg border border-slate-200 scrollbar-thin">
         <table className="cafm-data-table min-w-[900px] bg-white text-sm">
           <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
             <tr>
+              {bulkSelectable && (
+                <th className="px-3 py-3">
+                  <input
+                    type="checkbox"
+                    checked={allVisibleSelected}
+                    ref={(input) => {
+                      if (input) input.indeterminate = someVisibleSelected;
+                    }}
+                    onChange={(event) => toggleVisibleRows(event.target.checked)}
+                  />
+                </th>
+              )}
               <th className="px-3 py-3">#</th>
               {columns.map(([, label]) => <th key={label} className="px-3 py-3">{label}</th>)}
               {actions && <th className="px-3 py-3">Actions</th>}
@@ -7427,12 +7802,22 @@ function HousingTable({ title, rows, columns, onSelect, actions, reportType }: {
           <tbody>
             {visibleRows.map((row, index) => (
               <tr key={row.id ?? index} onClick={() => onSelect?.(row)} className="cursor-pointer border-t border-slate-100 hover:bg-slate-50">
+                {bulkSelectable && (
+                  <td className="px-3 py-3">
+                    <input
+                      type="checkbox"
+                      checked={selectedRowIds.has(row.id)}
+                      onClick={(event) => event.stopPropagation()}
+                      onChange={(event) => toggleRow(row.id, event.target.checked)}
+                    />
+                  </td>
+                )}
                 <td className="px-3 py-3 font-black text-slate-500">{(safePage - 1) * PAGE_SIZE + index + 1}</td>
                 {columns.map(([key]) => <td key={key} className="max-w-[260px] px-3 py-3"><HousingCellValue field={key} value={key.includes("At") || key.includes("Date") || key === "dueAt" || key === "checkIn" ? formatDateCell(row[key]) : row[key]} /></td>)}
                 {actions && <td className="px-3 py-3">{actions(row)}</td>}
               </tr>
             ))}
-            {!rows.length && <tr><td colSpan={columns.length + 2} className="px-3 py-6 text-center font-bold text-slate-500">No housing records found.</td></tr>}
+            {!rows.length && <tr><td colSpan={columns.length + (actions ? 2 : 1) + (bulkSelectable ? 1 : 0)} className="px-3 py-6 text-center font-bold text-slate-500">No housing records found.</td></tr>}
           </tbody>
         </table>
       </div>
@@ -8424,28 +8809,95 @@ function DataTable({
   columns,
   actions,
   renderCell,
+  bulkSelectable = false,
+  bulkLabel = "rows",
+  onBulkDelete,
 }: {
   rows: any[];
   columns: [string, string][];
   actions?: (row: any) => ReactNode;
   renderCell?: (row: any, key: string) => ReactNode | undefined;
+  bulkSelectable?: boolean;
+  bulkLabel?: string;
+  onBulkDelete?: (rows: any[]) => Promise<void> | void;
 }) {
   const [page, setPage] = useState(1);
+  const [selectedRowKeys, setSelectedRowKeys] = useState<Set<string>>(new Set());
   const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
   const startIndex = (currentPage - 1) * PAGE_SIZE;
   const visibleRows = rows.slice(startIndex, startIndex + PAGE_SIZE);
+  const rowKey = (row: any, index: number) => String(row.id ?? row.code ?? row.name ?? row.reference ?? row.ticketNo ?? row.woNo ?? index);
+  const visibleRowKeys = visibleRows.map((row, index) => rowKey(row, startIndex + index));
+  const selectedRows = rows.filter((row, index) => selectedRowKeys.has(rowKey(row, index)));
+  const selectedVisibleKeys = visibleRowKeys.filter((key) => selectedRowKeys.has(key));
+  const allVisibleSelected = bulkSelectable && Boolean(visibleRowKeys.length) && selectedVisibleKeys.length === visibleRowKeys.length;
+  const someVisibleSelected = bulkSelectable && selectedVisibleKeys.length > 0 && !allVisibleSelected;
 
   useEffect(() => {
     setPage(1);
   }, [rows.length]);
 
+  useEffect(() => {
+    const allKeys = new Set(rows.map((row, index) => String(row.id ?? row.code ?? row.name ?? row.reference ?? row.ticketNo ?? row.woNo ?? index)));
+    setSelectedRowKeys((current) => new Set(Array.from(current).filter((key) => allKeys.has(key))));
+  }, [rows]);
+
+  function toggleVisibleRows(checked: boolean) {
+    setSelectedRowKeys((current) => {
+      const next = new Set(current);
+      visibleRows.forEach((row, index) => {
+        const key = rowKey(row, startIndex + index);
+        if (checked) next.add(key);
+        else next.delete(key);
+      });
+      return next;
+    });
+  }
+
+  function toggleRow(key: string, checked: boolean) {
+    setSelectedRowKeys((current) => {
+      const next = new Set(current);
+      if (checked) next.add(key);
+      else next.delete(key);
+      return next;
+    });
+  }
+
+  async function deleteSelectedRows() {
+    if (!onBulkDelete || !selectedRows.length) return;
+    await onBulkDelete(selectedRows);
+    setSelectedRowKeys(new Set());
+  }
+
   return (
     <div className="grid gap-3">
+      {bulkSelectable && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm font-black text-slate-600">
+          <span>Selected {selectedRowKeys.size.toLocaleString()} {bulkLabel}</span>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={() => toggleVisibleRows(true)} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-black text-lagoon">Select Visible</button>
+            <button type="button" disabled={!selectedRowKeys.size || !onBulkDelete} onClick={deleteSelectedRows} className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white disabled:bg-slate-300">Delete All</button>
+            <button type="button" disabled={!selectedRowKeys.size} onClick={() => setSelectedRowKeys(new Set())} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-600 disabled:opacity-50">Clear Selection</button>
+          </div>
+        </div>
+      )}
       <div className="cafm-scroll-x overflow-auto rounded-lg border border-slate-200 scrollbar-thin">
         <table className="cafm-data-table min-w-max border-collapse bg-white text-sm">
           <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
             <tr>
+              {bulkSelectable && (
+                <th className="whitespace-nowrap px-3 py-3 font-black">
+                  <input
+                    type="checkbox"
+                    checked={allVisibleSelected}
+                    ref={(input) => {
+                      if (input) input.indeterminate = someVisibleSelected;
+                    }}
+                    onChange={(event) => toggleVisibleRows(event.target.checked)}
+                  />
+                </th>
+              )}
               <th className="whitespace-nowrap px-3 py-3 font-black">#</th>
               {columns.map(([, label]) => (
                 <th key={label} className="whitespace-nowrap px-3 py-3 font-black">
@@ -8458,6 +8910,15 @@ function DataTable({
           <tbody>
             {visibleRows.map((row, index) => (
               <tr key={row.id ?? index} className="border-t border-slate-100">
+                {bulkSelectable && (
+                  <td className="whitespace-nowrap px-3 py-3">
+                    <input
+                      type="checkbox"
+                      checked={selectedRowKeys.has(rowKey(row, startIndex + index))}
+                      onChange={(event) => toggleRow(rowKey(row, startIndex + index), event.target.checked)}
+                    />
+                  </td>
+                )}
                 <td className="whitespace-nowrap px-3 py-3 font-black text-slate-500">{startIndex + index + 1}</td>
                 {columns.map(([key]) => (
                   <td key={key} className="max-w-[360px] whitespace-nowrap px-3 py-3">
