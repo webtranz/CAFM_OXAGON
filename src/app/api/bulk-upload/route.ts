@@ -419,27 +419,34 @@ async function importSpace(row: Row) {
 }
 
 async function importAsset(row: Row) {
-  const tag = value(row, "EQUIPMENTNO", "tag", "ASSET NUMBER", "assetNumber", "Asset Code");
+  const tag = value(row, "TAG", "EQUIPMENTNO", "tag", "ASSET NUMBER", "assetNumber", "Asset Code");
   if (!tag) throw new Error("EQUIPMENTNO is required");
-  const locationCode = value(row, "LOCATION", "Location", "Location Name", "location", "ROOM", "room");
+  const locationCode = value(row, "LOCATION", "Location", "Location Name", "location");
   const location = locationCode ? await prisma.location.findUnique({ where: { code: locationCode } }) : null;
   const hierarchy = location || value(row, "siteCode", "SITE", "buildingCode", "BLDG") ? await siteAndBuildingForAsset(location, row) : { site: await firstSite(), building: null };
-  const name = value(row, "EQUIPMENTDESC", "name", "Asset Name", "Asset Description", "Asset Description ", "assetDescription") || tag;
-  const description = value(row, "ADDITIONAL_NOTE", "Description", "Additional description", "additionalDescription");
-  const category = value(row, "CATEGORY", "category", "Asset Type", "Asset Group", "Asset Group ", "assetGroup") || "General";
+  const name = value(row, "ASSET NAME", "EQUIPMENTDESC", "name", "Asset Name") || tag;
+  const assetDescription = value(row, "ASSET DESCRIPTION", "Asset Description", "Asset Description ", "assetDescription", "EQUIPMENTDESC") || name;
+  const description = value(row, "ADDITIONAL DESCRIPTION", "ADDITIONAL_NOTE", "Description", "Additional description", "additionalDescription");
+  const category = value(row, "ASSET GROUP", "CATEGORY", "category", "Asset Type", "Asset Group", "Asset Group ", "assetGroup") || "General";
   const system = value(row, "PRIMARYSYSTEM", "system", "Entity Name", "Asset Type") || category;
   const floor = value(row, "floor", "FLOOR") || location?.floor || "Unassigned";
   const room = locationCode || value(row, "room", "ROOM", "ROOM ") || location?.code || "Unassigned";
-  const departmentCode = value(row, "DEPARTMENT", "departmentCode", "Department", "Assigned To") || "";
+  const departmentCode = value(row, "SUB DEP CODE", "departmentCode", "Department", "Assigned To") || "";
+  const departmentDesc = value(row, "DEPARTMENT", "DEPARTMENT_DESC") || null;
   const cost = number(value(row, "EQUIPMENTVALUE", "purchaseCost", "Purchase Cost"), 0);
   const replacementCost = number(value(row, "replacementCost", "Replacement Cost"), cost);
-  const lifeMonths = integer(value(row, "SERVICELIFE", "Life Expectancy (in months)", "lifeExpectancyMonths"), 96);
-  const installDate = date(value(row, "COMMISSIONDATE", "installDate", "Purchase Date"), new Date());
+  const lifeSpanYears = value(row, "LIFE SPAN(YEARS)");
+  const lifeMonths = lifeSpanYears ? integer(lifeSpanYears, 8) * 12 : integer(value(row, "SERVICELIFE", "Life Expectancy (in months)", "lifeExpectancyMonths"), 96);
+  const installDate = date(value(row, "INSTALLATION DATE", "COMMISSIONDATE", "installDate", "Purchase Date"), new Date());
+  const warrantyYears = integer(value(row, "WARRANTY PERIOD(YEARS)"), 0);
+  const warrantyExpiry = optionalDate(value(row, "warrantyExpiry", "Warranty Expiry Date")) || (warrantyYears ? addYears(installDate, warrantyYears) : addYears(new Date(), 1));
   const outOfService = yesNo(value(row, "OUTOFSERVICE", "outOfService"), false);
   const status = outOfService ? "RETIRED" : assetStatusFromImport(value(row, "ASSETSTATUS", "status"));
   const documentationUrl = [value(row, "documentationUrl", "URL 1"), value(row, "URL 2")].filter(Boolean).join("\n") || null;
   const remarks = [
     value(row, "remarks", "Remarks"),
+    value(row, "CORRECTIVE ACTION") ? `Corrective Action: ${value(row, "CORRECTIVE ACTION")}` : "",
+    value(row, "PREVENTIVE ACTION") ? `Preventive Action: ${value(row, "PREVENTIVE ACTION")}` : "",
     value(row, "Vendors") ? `Vendors: ${value(row, "Vendors")}` : "",
     value(row, "Parts") ? `Parts: ${value(row, "Parts")}` : "",
     replacementCost ? `Replacement Cost: SAR ${replacementCost}` : "",
@@ -449,7 +456,7 @@ async function importAsset(row: Row) {
     category,
     system,
     eqType: value(row, "EQTYPE") || "ASSET",
-    organization: value(row, "ORGANIZATION") || null,
+    organization: value(row, "REGION", "ORGANIZATION") || null,
     criticality: priority(row.criticality),
     status,
     assetStatusText: value(row, "ASSETSTATUS") || status,
@@ -457,10 +464,10 @@ async function importAsset(row: Row) {
     siteCode: value(row, "siteCode", "SITE") || location?.site || "",
     zone: value(row, "zone", "ZONE") || location?.parentLocation || "",
     buildingCode: value(row, "buildingCode", "BLDG") || location?.building || "",
-    assetGroup: value(row, "CLASS", "classCode") || category,
-    assetDescription: name,
+    assetGroup: value(row, "ASSET GROUP", "CLASS", "classCode") || category,
+    assetDescription,
     additionalDescription: description,
-    departmentDesc: value(row, "DEPARTMENT_DESC") || null,
+    departmentDesc,
     classCode: value(row, "CLASS") || null,
     classDesc: value(row, "CLASS_DESC") || null,
     categoryDesc: value(row, "CATEGORY_DESC") || null,
@@ -471,14 +478,14 @@ async function importAsset(row: Row) {
     flowLps: value(row, "FLOW_LPS") || null,
     supplyVoltageVolt: value(row, "SUPPLY_VOLTAGE_Volt") || null,
     outOfService,
-    serviceLife: value(row, "SERVICELIFE") || null,
+    serviceLife: String(lifeMonths),
     locationCode: locationCode || null,
-    locationDesc: value(row, "LOCATION_DESC") || location?.description || null,
+    locationDesc: value(row, "ARREA ABBRV", "LOCATION_DESC") || location?.description || null,
     position: value(row, "POSITION") || null,
     classOrganization: value(row, "CLASSORGANIZATION") || null,
     primarySystem: value(row, "PRIMARYSYSTEM") || null,
     additionalNote: value(row, "ADDITIONAL_NOTE") || null,
-    parentAsset: value(row, "parentAsset", "Parent Asset", "Parent Asset ") || "TOP LEVEL",
+    parentAsset: value(row, "PARENT ASSET", "parentAsset", "Parent Asset", "Parent Asset ") || "TOP LEVEL",
     departmentCode,
     assignedTeamCode: value(row, "assignedTeamCode", "Assigned Team", "Team Code"),
     assignedSupervisorEmail: value(row, "assignedSupervisorEmail", "Supervisor", "Supervisor Email"),
@@ -489,7 +496,7 @@ async function importAsset(row: Row) {
     room,
     installDate,
     replacementDate: date(value(row, "ENDOFUSEFULLIFE"), addDays(installDate, lifeMonths * 30)),
-    warrantyExpiry: date(value(row, "warrantyExpiry", "Warranty Expiry Date"), addYears(new Date(), 1)),
+    warrantyExpiry,
     contractRef: value(row, "contractRef", "Vendors") || "Not assigned",
     documentationUrl,
     purchaseCost: cost,
@@ -522,49 +529,53 @@ async function importAsset(row: Row) {
 }
 
 async function importHousingAsset(row: Row) {
-  const tag = value(row, "tag", "code", "Asset Code", "Housing Asset Code", "assetCode");
+  const tag = value(row, "TAG", "tag", "code", "Asset Code", "Housing Asset Code", "assetCode");
   if (!tag) throw new Error("Asset Code is required");
 
   const room = await housingRoomForAsset(row);
   const assetValue = number(value(row, "assetValue", "Asset Value", "purchaseCost", "Purchase Cost"), 0);
   const depreciationRate = number(value(row, "depreciationRate", "Depreciation Rate"), 0);
-  const purchaseDate = optionalDate(value(row, "purchaseDate", "Purchase Date"));
+  const purchaseDate = optionalDate(value(row, "INSTALLATION DATE", "purchaseDate", "Purchase Date"));
+  const warrantyYears = integer(value(row, "WARRANTY PERIOD(YEARS)"), 0);
+  const warrantyExpiry = optionalDate(value(row, "warrantyExpiry", "Warranty Expiry")) || (purchaseDate && warrantyYears ? addYears(purchaseDate, warrantyYears) : null);
   const currentValueInput = value(row, "currentValue", "Current Value");
   const years = purchaseDate ? Math.max(0, (Date.now() - purchaseDate.getTime()) / (365 * 24 * 60 * 60 * 1000)) : 0;
   const currentValue = currentValueInput
     ? number(currentValueInput, assetValue)
     : Math.max(0, Math.round((assetValue * Math.max(0, 1 - (depreciationRate / 100) * years)) * 100) / 100);
-  const roomLocation = value(row, "roomLocation", "Room Location", "roomNumber", "Room Number") || room?.roomNumber || "";
-  const buildingLocation = value(row, "buildingLocation", "Building Location", "building", "Building") || room?.block?.name || room?.property?.name || "";
+  const roomLocation = value(row, "ROOM", "LOCATION", "roomLocation", "Room Location", "roomNumber", "Room Number") || room?.roomNumber || "";
+  const buildingLocation = value(row, "BLDG", "buildingLocation", "Building Location", "building", "Building") || room?.block?.name || room?.property?.name || "";
+  const description = value(row, "ASSET DESCRIPTION", "description", "Description", "notes", "Notes") || "";
+  const additionalDescription = value(row, "ADDITIONAL DESCRIPTION");
   const payload = {
-    name: value(row, "name", "Asset Name") || value(row, "description", "Description") || tag,
-    category: value(row, "category", "Category") || "Furniture",
-    description: value(row, "description", "Description", "notes", "Notes") || "",
-    brand: value(row, "brand", "Brand") || "",
-    model: value(row, "model", "Model") || "",
+    name: value(row, "ASSET NAME", "name", "Asset Name") || description || tag,
+    category: value(row, "ASSET GROUP", "category", "Category") || "Furniture",
+    description: [description, additionalDescription].filter(Boolean).join("\n"),
+    brand: value(row, "MANUFACTURER", "brand", "Brand") || "",
+    model: value(row, "MODEL", "model", "Model") || "",
     purchaseDate: purchaseDate || undefined,
-    supplierName: value(row, "supplierName", "Supplier Name") || "",
+    supplierName: value(row, "REGION", "supplierName", "Supplier Name") || "",
     assetValue,
     buildingLocation,
     roomLocation,
-    custodianName: value(row, "custodianName", "Custodian Name") || "",
-    custodianContact: value(row, "custodianContact", "Custodian Contact") || "",
+    custodianName: value(row, "DEPARTMENT", "custodianName", "Custodian Name") || "",
+    custodianContact: value(row, "SUB DEP CODE", "custodianContact", "Custodian Contact") || "",
     issuedTo: value(row, "issuedTo", "Issued To") || "",
     issuedAt: optionalDate(value(row, "issuedAt", "Issued At")) || undefined,
     transferredFrom: value(row, "transferredFrom", "Transferred From") || "",
     transferredTo: value(row, "transferredTo", "Transferred To") || "",
     transferredAt: optionalDate(value(row, "transferredAt", "Transferred At")) || undefined,
-    replacementOf: value(row, "replacementOf", "Replacement Of") || "",
+    replacementOf: value(row, "PARENT ASSET", "replacementOf", "Replacement Of") || "",
     replacedAt: optionalDate(value(row, "replacedAt", "Replaced At")) || undefined,
-    pmSchedule: value(row, "pmSchedule", "PM Schedule") || "",
+    pmSchedule: value(row, "PREVENTIVE ACTION", "pmSchedule", "PM Schedule") || "",
     nextPmDue: optionalDate(value(row, "nextPmDue", "Next PM Due")) || undefined,
     depreciationRate,
     currentValue,
     lastInspectionAt: optionalDate(value(row, "lastInspectionAt", "Last Inspection At")) || undefined,
     roomId: room?.id,
-    status: value(row, "status", "Status") || "ACTIVE",
+    status: value(row, "status", "Status") || (value(row, "CORRECTIVE ACTION") ? "UNDER_REPAIR" : "ACTIVE"),
     serialNumber: value(row, "serialNumber", "Serial Number") || "",
-    warrantyExpiry: optionalDate(value(row, "warrantyExpiry", "Warranty Expiry")) || undefined,
+    warrantyExpiry: warrantyExpiry || undefined,
     qrCode: value(row, "qrCode", "QR Code") || `QR:${tag}`,
     photoUrls: value(row, "photoUrls", "Photo URLs", "attachmentUrls", "Attachment URLs") || "",
   };
@@ -582,7 +593,7 @@ async function importHousingAsset(row: Row) {
       roomId: asset.roomId,
       actor: "Bulk Upload",
       action: value(row, "movementAction", "Movement Action") || "Housing asset bulk imported",
-      details: value(row, "notes", "Notes", "remarks", "Remarks") || `${asset.tag} / ${asset.status}`,
+      details: value(row, "CORRECTIVE ACTION", "notes", "Notes", "remarks", "Remarks") || `${asset.tag} / ${asset.status}`,
     },
   });
   return importResult("housing_asset", "UPSERT", asset, tag, asset.name);
@@ -1115,9 +1126,9 @@ function jobPlanPayload(row: Row) {
 async function housingRoomForAsset(row: Row) {
   const roomId = value(row, "roomId", "Room Id");
   if (roomId) return prisma.housingRoom.findUnique({ where: { id: roomId }, include: { property: true, block: true } });
-  const code = value(row, "roomCode", "Room Code");
+  const code = value(row, "LOCATION", "roomCode", "Room Code");
   if (code) return prisma.housingRoom.findUnique({ where: { code }, include: { property: true, block: true } });
-  const roomNumber = value(row, "roomNumber", "Room Number", "roomLocation", "Room Location");
+  const roomNumber = value(row, "ROOM", "roomNumber", "Room Number", "roomLocation", "Room Location");
   if (!roomNumber) return null;
   return prisma.housingRoom.findFirst({ where: { roomNumber }, include: { property: true, block: true } });
 }

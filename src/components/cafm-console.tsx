@@ -302,40 +302,32 @@ const RESOURCE_EMPLOYEE_FIELD_CLASS = "h-11 w-full min-w-0 rounded-lg border bor
 const TICKET_PLAN_FIELD_CLASS = "h-11 w-full min-w-0 rounded-lg border border-slate-200 bg-white px-3 outline-none focus:border-lagoon";
 const TICKET_PLAN_TEXTAREA_CLASS = "w-full min-w-0 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon";
 const assetRegisterColumns: [string, string][] = [
-  ["equipmentNo", "EQUIPMENTNO"],
-  ["equipmentDesc", "EQUIPMENTDESC"],
-  ["assetStatusText", "ASSETSTATUS"],
-  ["eqType", "EQTYPE"],
-  ["organization", "ORGANIZATION"],
-  ["commissionDate", "COMMISSIONDATE"],
-  ["departmentCode", "DEPARTMENT"],
-  ["departmentDesc", "DEPARTMENT_DESC"],
-  ["classCode", "CLASS"],
-  ["classDesc", "CLASS_DESC"],
-  ["category", "CATEGORY"],
-  ["categoryDesc", "CATEGORY_DESC"],
-  ["serialNumber", "SERIALNUMBER"],
-  ["model", "MODEL"],
-  ["manufacturer", "MANUFACTURER"],
-  ["gsrc", "GSRC"],
-  ["endOfUsefulLife", "ENDOFUSEFULLIFE"],
-  ["attribute", "ATTRIBUTE"],
-  ["environment", "ENVIRONMENT"],
-  ["pressureBar", "PRESSURE_BAR"],
-  ["flowLps", "FLOW_LPS"],
-  ["supplyVoltageVolt", "SUPPLY_VOLTAGE_Volt"],
-  ["outOfServiceDisplay", "OUTOFSERVICE"],
-  ["serviceLife", "SERVICELIFE"],
+  ["equipmentNo", "TAG"],
+  ["siteCode", "SITE"],
+  ["zone", "ZONE"],
+  ["buildingCode", "BLDG"],
+  ["floor", "FLOOR"],
+  ["room", "ROOM"],
+  ["assetGroup", "ASSET GROUP"],
+  ["assetName", "ASSET NAME"],
+  ["equipmentDesc", "ASSET DESCRIPTION"],
+  ["additionalDescription", "ADDITIONAL DESCRIPTION"],
+  ["parentAsset", "PARENT ASSET"],
+  ["departmentDesc", "DEPARTMENT"],
+  ["departmentCode", "SUB DEP CODE"],
   ["locationCode", "LOCATION"],
-  ["locationDesc", "LOCATION_DESC"],
-  ["position", "POSITION"],
-  ["classOrganization", "CLASSORGANIZATION"],
-  ["equipmentValue", "EQUIPMENTVALUE"],
-  ["primarySystem", "PRIMARYSYSTEM"],
-  ["additionalNote", "ADDITIONAL_NOTE"],
+  ["areaAbbrv", "ARREA ABBRV"],
+  ["manufacturer", "MANUFACTURER"],
+  ["model", "MODEL"],
+  ["commissionDate", "INSTALLATION DATE"],
+  ["lifeSpanYears", "LIFE SPAN(YEARS)"],
+  ["warrantyPeriodYears", "WARRANTY PERIOD(YEARS)"],
+  ["region", "REGION"],
+  ["correctiveAction", "CORRECTIVE ACTION"],
+  ["preventiveAction", "PREVENTIVE ACTION"],
 ];
 const assetTemplateHeader = assetRegisterColumns.map(([, label]) => label).join(",");
-const housingAssetTemplateHeader = "Asset Code,Asset Name,Category,Description,Brand,Model,Serial Number,Status,Room Code,Room Number,Building Location,Room Location,Custodian Name,Custodian Contact,Issued To,Issued At,Transferred From,Transferred To,Transferred At,Replacement Of,Replaced At,PM Schedule,Next PM Due,Purchase Date,Supplier Name,Asset Value,Depreciation Rate,Current Value,Last Inspection At,Warranty Expiry,QR Code,Photo URLs,Movement Action,Notes";
+const housingAssetTemplateHeader = assetTemplateHeader;
 const SHIFT_ELIGIBILITY_OPTIONS = ["Day only", "Night only", "Day & Night", "Not eligible"];
 const SHIFT_TYPE_OPTIONS = ["Day", "Night", "General", "Custom"];
 const ROSTER_STATUS_OPTIONS = ["Draft", "Finalized"];
@@ -1801,16 +1793,22 @@ function Assets({
   const assetRows = assetRowsSource.map((asset) => ({
     ...asset,
     equipmentNo: asset.tag,
+    assetName: asset.name,
     equipmentDesc: asset.assetDescription ?? asset.name,
     assetStatusText: asset.assetStatusText ?? (asset.status === "ACTIVE" ? "INSTALLED" : asset.status),
     commissionDate: formatDateCell(asset.installDate),
     endOfUsefulLife: formatDateCell(asset.replacementDate),
     outOfServiceDisplay: asset.outOfService ? "YES" : "NO",
     locationCode: asset.locationCode || asset.room || "Unassigned",
-    locationDesc: asset.locationDesc ?? asset.location?.description ?? "",
+    areaAbbrv: asset.locationDesc ?? asset.location?.description ?? asset.zone ?? "",
     equipmentValue: asset.equipmentValue ?? asset.purchaseCost,
     primarySystem: asset.primarySystem ?? asset.system,
     additionalNote: asset.additionalNote ?? asset.remarks,
+    lifeSpanYears: serviceLifeYearsDisplay(asset.serviceLife),
+    warrantyPeriodYears: yearsBetweenDisplay(asset.installDate, asset.warrantyExpiry),
+    region: asset.organization ?? asset.siteCode ?? "",
+    correctiveAction: asset.correctiveAction ?? actionFromRemarks(asset.remarks, "Corrective Action"),
+    preventiveAction: asset.preventiveAction ?? asset.pmSchedule ?? actionFromRemarks(asset.remarks, "Preventive Action"),
   }));
   const hasMoreAssets = assetRowsSource.length < assetTotal;
   const visibleAssets = assetRows;
@@ -4598,6 +4596,25 @@ function formatDateCell(value: string | null | undefined) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return String(value);
   return date.toLocaleString("en-US", { month: "2-digit", day: "2-digit", year: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
+function yearsBetweenDisplay(startValue: string | null | undefined, endValue: string | null | undefined) {
+  if (!startValue || !endValue) return "";
+  const start = new Date(startValue);
+  const end = new Date(endValue);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) return "";
+  return String(Math.max(1, Math.round((end.getTime() - start.getTime()) / (365 * 24 * 60 * 60 * 1000))));
+}
+
+function serviceLifeYearsDisplay(value: unknown) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return "";
+  return String(numeric > 60 ? Math.round(numeric / 12) : numeric);
+}
+
+function actionFromRemarks(value: unknown, label: string) {
+  const line = String(value || "").split("\n").find((item) => item.toLowerCase().startsWith(`${label.toLowerCase()}:`));
+  return line ? line.slice(label.length + 1).trim() : "";
 }
 
 function formatFileSize(value: number | string | null | undefined) {
@@ -8502,9 +8519,33 @@ function HousingOperations({
     return (!search || haystack.includes(filterText)) && (status === "All" || inspection.status === status);
   });
   const visibleAssets = assets.filter((asset) => {
-    const haystack = `${asset.tag} ${asset.name} ${asset.category} ${asset.status} ${asset.serialNumber} ${asset.room?.roomNumber}`.toLowerCase();
+    const haystack = `${asset.tag} ${asset.name} ${asset.category} ${asset.status} ${asset.serialNumber} ${asset.room?.property?.name} ${asset.room?.block?.name} ${asset.room?.floor} ${asset.room?.roomNumber} ${asset.description} ${asset.brand} ${asset.model} ${asset.buildingLocation} ${asset.roomLocation} ${asset.custodianName}`.toLowerCase();
     return (!search || haystack.includes(filterText)) && (status === "All" || asset.status === status);
   });
+  const housingAssetRows = visibleAssets.map((asset) => ({
+    ...asset,
+    site: asset.room?.property?.name ?? "",
+    zone: asset.room?.block?.name ?? "",
+    building: asset.buildingLocation || asset.room?.block?.name || asset.room?.property?.name || "",
+    floor: asset.room?.floor ?? "",
+    roomDisplay: asset.roomLocation || asset.room?.roomNumber || "",
+    assetGroup: asset.category,
+    assetName: asset.name,
+    assetDescription: String(asset.description || "").split("\n")[0] || "",
+    additionalDescription: String(asset.description || "").split("\n").slice(1).join("\n"),
+    parentAsset: asset.replacementOf || "",
+    department: asset.custodianName || "",
+    subDepCode: asset.custodianContact || "",
+    location: asset.roomLocation || asset.room?.code || asset.room?.roomNumber || "",
+    areaAbbrv: asset.room?.block?.code || asset.room?.block?.name || "",
+    manufacturer: asset.brand,
+    installationDate: formatDateCell(asset.purchaseDate),
+    lifeSpanYears: "",
+    warrantyPeriodYears: yearsBetweenDisplay(asset.purchaseDate, asset.warrantyExpiry),
+    region: asset.room?.property?.city || asset.buildingLocation || "",
+    correctiveAction: ["UNDER_REPAIR", "DAMAGED", "MISSING"].includes(asset.status) ? asset.status : "",
+    preventiveAction: asset.pmSchedule || "",
+  }));
   const visibleInventory = inventory.filter((item) => {
     const haystack = `${item.sku} ${item.name} ${item.category} ${item.room?.roomNumber} ${item.qrCode}`.toLowerCase();
     return !search || haystack.includes(filterText);
@@ -8698,8 +8739,32 @@ function HousingOperations({
         <section className="grid gap-5 xl:grid-cols-[1fr_380px]">
           <HousingTable
             title="Housing Asset Management"
-            rows={visibleAssets}
-            columns={[["tag", "Asset Code"], ["qrCode", "QR"], ["description", "Description"], ["category", "Category"], ["brand", "Brand"], ["model", "Model"], ["serialNumber", "Serial"], ["buildingLocation", "Building"], ["roomLocation", "Room"], ["status", "Status"], ["custodianName", "Custodian"], ["warrantyExpiry", "Warranty"], ["currentValue", "Current Value"]]}
+            rows={housingAssetRows}
+            columns={[
+              ["tag", "TAG"],
+              ["site", "SITE"],
+              ["zone", "ZONE"],
+              ["building", "BLDG"],
+              ["floor", "FLOOR"],
+              ["roomDisplay", "ROOM"],
+              ["assetGroup", "ASSET GROUP"],
+              ["assetName", "ASSET NAME"],
+              ["assetDescription", "ASSET DESCRIPTION"],
+              ["additionalDescription", "ADDITIONAL DESCRIPTION"],
+              ["parentAsset", "PARENT ASSET"],
+              ["department", "DEPARTMENT"],
+              ["subDepCode", "SUB DEP CODE"],
+              ["location", "LOCATION"],
+              ["areaAbbrv", "ARREA ABBRV"],
+              ["manufacturer", "MANUFACTURER"],
+              ["model", "MODEL"],
+              ["installationDate", "INSTALLATION DATE"],
+              ["lifeSpanYears", "LIFE SPAN(YEARS)"],
+              ["warrantyPeriodYears", "WARRANTY PERIOD(YEARS)"],
+              ["region", "REGION"],
+              ["correctiveAction", "CORRECTIVE ACTION"],
+              ["preventiveAction", "PREVENTIVE ACTION"],
+            ]}
             onSelect={(record) => setSelected({ type: "asset", record })}
             reportType="housing-assets"
             bulkSelectable={isAdmin}

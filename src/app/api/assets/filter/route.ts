@@ -6,10 +6,20 @@ import { prisma } from "@/lib/prisma";
 
 const columnFilterFields: Record<string, string[]> = {
   equipmentNo: ["tag"],
+  siteCode: ["siteCode"],
+  zone: ["zone"],
+  buildingCode: ["buildingCode"],
+  floor: ["floor"],
+  room: ["room"],
+  assetGroup: ["assetGroup", "category", "classCode"],
+  assetName: ["name"],
   equipmentDesc: ["assetDescription", "name"],
+  additionalDescription: ["additionalDescription", "additionalNote", "remarks"],
+  parentAsset: ["parentAsset"],
   assetStatusText: ["assetStatusText", "status"],
   eqType: ["eqType"],
   organization: ["organization"],
+  region: ["organization", "siteCode"],
   departmentCode: ["departmentCode"],
   departmentDesc: ["departmentDesc"],
   classCode: ["classCode"],
@@ -26,12 +36,16 @@ const columnFilterFields: Record<string, string[]> = {
   flowLps: ["flowLps"],
   supplyVoltageVolt: ["supplyVoltageVolt"],
   serviceLife: ["serviceLife"],
+  lifeSpanYears: ["serviceLife"],
   locationCode: ["locationCode", "room"],
   locationDesc: ["locationDesc"],
+  areaAbbrv: ["locationDesc", "zone"],
   position: ["position"],
   classOrganization: ["classOrganization"],
   primarySystem: ["primarySystem", "system"],
   additionalNote: ["additionalNote", "remarks"],
+  correctiveAction: ["remarks"],
+  preventiveAction: ["remarks"],
 };
 
 function dateFilter(field: string, value: string) {
@@ -60,6 +74,7 @@ function booleanFilter(field: string, value: string) {
 function columnFilter(field: string, value: string) {
   if (!value.trim()) return null;
   if (field === "commissionDate") return dateFilter("installDate", value);
+  if (field === "warrantyPeriodYears") return null;
   if (field === "endOfUsefulLife") return dateFilter("replacementDate", value);
   if (field === "equipmentValue") return numberFilter("purchaseCost", value);
   if (field === "outOfServiceDisplay") return booleanFilter("outOfService", value);
