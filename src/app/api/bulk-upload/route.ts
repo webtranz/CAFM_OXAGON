@@ -1,9 +1,13 @@
+import { createHash } from "crypto";
+import { copyFile, mkdir, readFile, stat, writeFile } from "fs/promises";
+import path from "path";
 import { NextResponse } from "next/server";
 import { addDays, addHours, addYears } from "date-fns";
 import { apiError } from "@/lib/api-response";
 import { requireAnyPermission } from "@/lib/api-auth";
 import { auditAction } from "@/lib/audit";
 import { csvResponse, parseCsv } from "@/lib/csv";
+import { privateFileUrl, privateUploadRoot } from "@/lib/private-files";
 import { prisma } from "@/lib/prisma";
 
 type Row = Record<string, string>;
@@ -14,6 +18,50 @@ type ImportResult = {
   recordKey?: string;
   displayName?: string;
 };
+
+type ImportEntry = ImportResult & { row: number; status: "SUCCESS" | "FAILED"; module: string; message?: string };
+type ImportFailure = { row: number; message: string };
+type BulkUploadUser = { id?: string; name?: string; email?: string; role?: string } | null;
+type UploadedDocumentFile = { file: File; name: string; size: number };
+type ImportContext = { documentFiles?: Map<string, UploadedDocumentFile> };
+type ManualLibraryRecord = { checksum: string; fileName: string; fileSize: number; fileUrl: string; mimeType: string; originalName: string };
+
+const BACKGROUND_ROW_THRESHOLD = 5000;
+const BULK_UPLOAD_CHUNK_SIZE = 500;
+const MAX_DOCUMENT_FILE_SIZE = 60 * 1024 * 1024;
+const documentCategories: Record<string, string> = {
+  OM_MANUAL: "operation-maintenance-management",
+  WARRANTY_GUARANTEE: "equipment-warranties-and-guarantees",
+  SUPPORT_CONTRACT_SLA: "support-contracts-and-slas",
+};
+const allowedDocumentExtensions = new Set([".pdf", ".png", ".jpg", ".jpeg", ".webp", ".gif", ".txt", ".csv", ".xlsx", ".docx", ".pptx"]);
+const allowedManualRoots = [
+  path.resolve("C:\\Users\\HP\\Documents\\FADHILI DATA FINAL\\EAM\\SYSTEM O&M MANUALS"),
+  path.resolve("C:\\Users\\HP\\Documents\\FADHILI_CAFM_UPLOAD_PACK"),
+];
+const documentSourceCache = new Map<string, { checksum: string; ext: string; size: number }>();
+const copiedDocumentCache = new Set<string>();
+let manualLibraryManifestCache: Record<string, ManualLibraryRecord> | null = null;
+
+export async function GET(request: Request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const jobId = searchParams.get("jobId");
+    const { error } = await requireAnyPermission(["assets.manage", "work.manage", "requests.manage", "users.manage", "documents.upload"]);
+    if (error) return error;
+
+    const job = jobId
+      ? await prisma.bulkUploadJob.findUnique({ where: { id: jobId } })
+      : await prisma.bulkUploadJob.findFirst({
+        where: { status: { in: ["QUEUED", "PROCESSING"] } },
+        orderBy: { createdAt: "desc" },
+      });
+
+    return NextResponse.json({ job: job ? serializeBulkUploadJob(job) : null });
+  } catch (error) {
+    return apiError(error, "Bulk upload progress could not be loaded");
+  }
+}
 
 export async function POST(request: Request) {
   try {
@@ -28,33 +76,43 @@ export async function POST(request: Request) {
     }
 
     const rows = parseCsv(await file.text());
-    const failed: Array<{ row: number; message: string }> = [];
-    const entries: Array<ImportResult & { row: number; status: "SUCCESS" | "FAILED"; module: string; message?: string }> = [];
-    let created = 0;
+    const context = buildImportContext(module, formData);
 
-    for (const [index, row] of rows.entries()) {
-      const rowNumber = index + 2;
-      try {
-        const imported = await importRow(module, row);
-        entries.push({ row: rowNumber, status: "SUCCESS", module, ...imported });
-        created += 1;
-      } catch {
-        const message = "Import failed for this row.";
-        failed.push({ row: rowNumber, message });
-        entries.push({
-          row: rowNumber,
-          status: "FAILED",
+    if (rows.length > BACKGROUND_ROW_THRESHOLD) {
+      const job = await prisma.bulkUploadJob.create({
+        data: {
           module,
-          action: "SKIPPED",
-          recordType: module || "unknown",
-          recordKey: rowIdentifier(module, row),
-          displayName: rowDisplayName(row),
-          message,
-        });
-      }
+          fileName: file.name,
+          fileSize: file.size,
+          totalRows: rows.length,
+          status: "QUEUED",
+          message: "Bulk upload has been queued for background processing.",
+          actorId: user?.id || null,
+          actorName: user?.name || user?.email || "System",
+          role: user?.role || "System",
+        },
+      });
+
+      void processBulkUploadJob(job.id, module, rows, { name: file.name, size: file.size }, user, context);
+
+      return NextResponse.json({
+        jobId: job.id,
+        status: "QUEUED",
+        module,
+        fileName: file.name,
+        fileSize: file.size,
+        totalRows: rows.length,
+        processedRows: 0,
+        createdRows: 0,
+        failedRows: 0,
+        completion: 0,
+        startedAt: job.createdAt,
+        message: "Bulk upload has been queued for background processing.",
+      }, { status: 202 });
     }
 
-    const result = csvResponse(created, failed);
+    const { created, failed, entries, result } = await processRows(module, rows, context);
+
     await auditAction({
       user,
       action: "BULK_UPLOAD",
@@ -77,14 +135,173 @@ export async function POST(request: Request) {
   }
 }
 
+async function processRows(
+  module: string,
+  rows: Row[],
+  context: ImportContext = {},
+  onProgress?: (progress: { processedRows: number; createdRows: number; failedRows: number; failed: ImportFailure[]; entries: ImportEntry[] }) => Promise<void>,
+) {
+  const failed: ImportFailure[] = [];
+  const entries: ImportEntry[] = [];
+  let created = 0;
+
+  for (const [index, row] of rows.entries()) {
+    const rowNumber = index + 2;
+    try {
+      const imported = await importRow(module, row, context);
+      entries.push({ row: rowNumber, status: "SUCCESS", module, ...imported });
+      created += 1;
+    } catch (error) {
+      const message = error instanceof Error && error.message ? error.message : "Import failed for this row.";
+      failed.push({ row: rowNumber, message });
+      entries.push({
+        row: rowNumber,
+        status: "FAILED",
+        module,
+        action: "SKIPPED",
+        recordType: module || "unknown",
+        recordKey: rowIdentifier(module, row),
+        displayName: rowDisplayName(row),
+        message,
+      });
+    }
+
+    const processedRows = index + 1;
+    if (onProgress && (processedRows % BULK_UPLOAD_CHUNK_SIZE === 0 || processedRows === rows.length)) {
+      await onProgress({ processedRows, createdRows: created, failedRows: failed.length, failed, entries });
+    }
+  }
+
+  return { created, failed, entries, result: csvResponse(created, failed) };
+}
+
+async function processBulkUploadJob(jobId: string, module: string, rows: Row[], file: { name: string; size: number }, user: BulkUploadUser, context: ImportContext = {}) {
+  try {
+    await prisma.bulkUploadJob.update({
+      where: { id: jobId },
+      data: {
+        status: "PROCESSING",
+        startedAt: new Date(),
+        message: `Processing ${rows.length} rows in chunks of ${BULK_UPLOAD_CHUNK_SIZE}.`,
+      },
+    });
+
+    const { created, failed, entries, result } = await processRows(module, rows, context, async ({ processedRows, createdRows, failedRows }) => {
+      await prisma.bulkUploadJob.update({
+        where: { id: jobId },
+        data: {
+          processedRows,
+          createdRows,
+          failedRows,
+          message: `Processed ${processedRows} of ${rows.length} rows.`,
+        },
+      });
+    });
+
+    const completedStatus = failed.length ? "COMPLETED_WITH_ERRORS" : "COMPLETED";
+    await prisma.bulkUploadJob.update({
+      where: { id: jobId },
+      data: {
+        status: completedStatus,
+        processedRows: rows.length,
+        createdRows: created,
+        failedRows: failed.length,
+        failed: JSON.stringify(failed),
+        entries: JSON.stringify(entries),
+        result: JSON.stringify(result),
+        completedAt: new Date(),
+        message: result.message,
+      },
+    });
+
+    await auditAction({
+      user,
+      action: "BULK_UPLOAD",
+      entity: "bulk_upload",
+      entityId: module || "unknown",
+      details: {
+        module,
+        fileName: file.name,
+        fileSize: file.size,
+        totalRows: rows.length,
+        created,
+        failed,
+        entries,
+        result,
+        jobId,
+        background: true,
+        chunkSize: BULK_UPLOAD_CHUNK_SIZE,
+      },
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Background bulk upload failed.";
+    await prisma.bulkUploadJob.update({
+      where: { id: jobId },
+      data: {
+        status: "FAILED",
+        completedAt: new Date(),
+        message,
+      },
+    }).catch(() => undefined);
+  }
+}
+
+function serializeBulkUploadJob(job: {
+  id: string;
+  module: string;
+  fileName: string;
+  fileSize: number;
+  totalRows: number;
+  processedRows: number;
+  createdRows: number;
+  failedRows: number;
+  status: string;
+  message: string | null;
+  startedAt: Date | null;
+  completedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}) {
+  const completion = job.totalRows > 0 ? Math.min(100, Math.round((job.processedRows / job.totalRows) * 100)) : 0;
+  return {
+    id: job.id,
+    module: job.module,
+    fileName: job.fileName,
+    fileSize: job.fileSize,
+    totalRows: job.totalRows,
+    processedRows: job.processedRows,
+    createdRows: job.createdRows,
+    failedRows: job.failedRows,
+    status: job.status,
+    message: job.message,
+    completion,
+    startedAt: job.startedAt ?? job.createdAt,
+    completedAt: job.completedAt,
+    updatedAt: job.updatedAt,
+  };
+}
+
 function bulkUploadPermissions(module: string) {
+  if (module === "omManuals") return ["documents.upload"];
+  if (module === "ppm") return ["ppm.manage", "assets.manage"];
   if (module === "workOrders") return ["work.manage", "assets.manage"];
   if (module === "requests") return ["requests.manage"];
   if (["teams", "services", "departments", "employees"].includes(module)) return ["users.manage", "requests.manage"];
   return ["assets.manage"];
 }
 
-async function importRow(module: string, row: Row) {
+function buildImportContext(module: string, formData: FormData): ImportContext {
+  if (module !== "omManuals") return {};
+  const documentFiles = new Map<string, UploadedDocumentFile>();
+  formData.getAll("manualFiles").forEach((item) => {
+    if (item instanceof File && item.size > 0) {
+      documentFiles.set(item.name.trim().toLowerCase(), { file: item, name: item.name, size: item.size });
+    }
+  });
+  return { documentFiles };
+}
+
+async function importRow(module: string, row: Row, context: ImportContext = {}) {
   if (module === "sites") return importSite(row);
   if (module === "buildings") return importBuilding(row);
   if (module === "spaces") return importSpace(row);
@@ -101,6 +318,8 @@ async function importRow(module: string, row: Row) {
   if (module === "inspections") return importInspection(row);
   if (module === "locations") return importLocation(row);
   if (module === "jobPlans") return importJobPlan(row);
+  if (module === "ppm") return importPpm(row);
+  if (module === "omManuals") return importDocumentIndex(row, context);
   throw new Error(`Unsupported module: ${module}`);
 }
 
@@ -583,6 +802,203 @@ async function importJobPlan(row: Row) {
   return importResult("job_plan", "UPSERT", jobPlan, code, jobPlan.name);
 }
 
+async function importPpm(row: Row) {
+  const baseCode = required(row, "code", "PPM CODE", "ppmCode");
+  const rawAssetTag = value(row, "assetTag", "asset", "assetCode", "EQUIPMENTNO", "OBJECT (ASSET/LOCATION)");
+  const rawLocationCode = value(row, "locationCode", "location", "Location", "LOCATION", "OBJECTS LOCATIONS");
+  const assetTag = rawAssetTag && !rawAssetTag.startsWith("L-") ? rawAssetTag : "";
+  const inputLocationCode = rawLocationCode || (rawAssetTag.startsWith("L-") ? rawAssetTag : "");
+  const asset = assetTag ? await prisma.asset.findUnique({ where: { tag: assetTag } }) : null;
+  const locationCode = inputLocationCode || asset?.locationCode || "";
+  const location = locationCode ? await prisma.location.findUnique({ where: { code: locationCode } }) : null;
+
+  if (assetTag && !asset) throw new Error(`Asset not found for PPM: ${assetTag}`);
+  if (locationCode && !location && !asset?.locationCode) throw new Error(`Location not found for PPM: ${locationCode}`);
+  if (!assetTag && !locationCode) throw new Error("assetTag or locationCode is required");
+
+  const targetKey = assetTag || locationCode;
+  const code = value(row, "uniqueCode") || uniquePpmCode(baseCode, targetKey);
+  const nextDue = optionalDate(value(row, "nextDue", "DUE DATE", "dueAt")) || addDays(new Date(), 7);
+  const activeValue = value(row, "active");
+  const data = {
+    name: value(row, "name", "PPM DESCRIPTION", "description") || baseCode,
+    assetTag: assetTag || "",
+    locationCode,
+    departmentCode: value(row, "departmentCode", "DEPARTMENT", "DEPARTMENT ") || asset?.departmentCode || "",
+    priority: priority(value(row, "priority", "OBJECT CRITICALITY")),
+    frequency: value(row, "frequency", "FREQUENCY") || "Monthly",
+    nextDue,
+    durationHrs: number(value(row, "durationHrs", "duration", "PPA_DURATION"), 2),
+    checklist: value(row, "checklist", "ACTIVITY CHECKLIST", "steps") || "Checklist to be defined.",
+    active: activeValue ? yesNo(activeValue, true) : true,
+  };
+  const ppm = await prisma.preventiveMaintenance.upsert({
+    where: { code },
+    update: data,
+    create: { code, ...data },
+  });
+  return importResult("preventive_maintenance", "UPSERT", ppm, code, data.name);
+}
+
+async function importDocumentIndex(row: Row, context: ImportContext = {}) {
+  const category = value(row, "category") || "OM_MANUAL";
+  const folder = documentCategories[category];
+  if (!folder) throw new Error(`Invalid document category: ${category}`);
+
+  const assetTag = required(row, "assetTag", "EQUIPMENTNO", "Asset Number");
+  const originalName = value(row, "fileName") || path.basename(value(row, "sourcePath", "filePath", "path"));
+  const uploadedFile = originalName ? context.documentFiles?.get(originalName.trim().toLowerCase()) : undefined;
+
+  const asset = await prisma.asset.findUnique({ where: { tag: assetTag } });
+  if (!asset) throw new Error(`Asset not found for document upload: ${assetTag}`);
+
+  if (uploadedFile) return importUploadedDocument(row, assetTag, category, folder, uploadedFile, originalName);
+  const libraryRecord = await getManualLibraryRecord(originalName);
+  if (libraryRecord) return importLibraryDocument(assetTag, category, libraryRecord);
+
+  const sourcePath = required(row, "sourcePath", "filePath", "path");
+  const resolvedSource = path.resolve(sourcePath);
+  if (!allowedManualRoots.some((root) => resolvedSource === root || resolvedSource.startsWith(`${root}${path.sep}`))) {
+    throw new Error(`${originalName || "Document"} was not uploaded with the CSV and the server cannot read this local source path. Attach manual files in the O&M upload form.`);
+  }
+
+  const ext = path.extname(resolvedSource).toLowerCase();
+  if (!allowedDocumentExtensions.has(ext)) throw new Error(`Unsupported document type: ${ext || "unknown"}`);
+
+  let sourceInfo = documentSourceCache.get(resolvedSource);
+  if (!sourceInfo) {
+    const fileStats = await stat(resolvedSource);
+    if (!fileStats.isFile()) throw new Error("Document source path is not a file");
+    if (fileStats.size > MAX_DOCUMENT_FILE_SIZE) throw new Error(`${path.basename(resolvedSource)} exceeds the 60 MB document size limit`);
+    sourceInfo = {
+      checksum: createHash("sha256").update(await readFile(resolvedSource)).digest("hex"),
+      ext,
+      size: fileStats.size,
+    };
+    documentSourceCache.set(resolvedSource, sourceInfo);
+  }
+
+  const checksum = sourceInfo.checksum;
+  const existing = await prisma.documentUpload.findUnique({
+    where: { category_assetTag_checksum: { category, assetTag, checksum } },
+  });
+  if (existing) return importResult("document_upload", "EXISTS", existing, assetTag, existing.fileName);
+
+  const uploadDir = path.join(privateUploadRoot, "document-management", folder, "_manual-library");
+  await mkdir(uploadDir, { recursive: true });
+  const storedName = `${checksum}-${safeSegment(path.basename(originalName, ext)) || "document"}${ext}`;
+  const storedPath = path.join(uploadDir, storedName);
+  if (!copiedDocumentCache.has(storedPath)) {
+    try {
+      await stat(storedPath);
+    } catch {
+      await copyFile(resolvedSource, storedPath);
+    }
+    copiedDocumentCache.add(storedPath);
+  }
+
+  const record = await prisma.documentUpload.create({
+    data: {
+      category,
+      assetTag,
+      fileName: originalName,
+      fileUrl: privateFileUrl(`document-management/${folder}/_manual-library/${storedName}`),
+      fileSize: sourceInfo.size,
+      mimeType: mimeTypeFromExtension(ext),
+      checksum,
+      uploadedBy: "Bulk Upload",
+    },
+  });
+  return importResult("document_upload", "CREATE", record, assetTag, originalName);
+}
+
+async function getManualLibraryRecord(originalName: string) {
+  if (!originalName) return null;
+  if (!manualLibraryManifestCache) {
+    const manifestPath = path.join(privateUploadRoot, "document-management", documentCategories.OM_MANUAL, "_manual-library", "manifest.json");
+    try {
+      manualLibraryManifestCache = JSON.parse(await readFile(manifestPath, "utf8")) as Record<string, ManualLibraryRecord>;
+    } catch {
+      manualLibraryManifestCache = {};
+    }
+  }
+  return manualLibraryManifestCache[originalName.trim().toLowerCase()] ?? null;
+}
+
+async function importLibraryDocument(assetTag: string, category: string, libraryRecord: ManualLibraryRecord) {
+  const existing = await prisma.documentUpload.findUnique({
+    where: { category_assetTag_checksum: { category, assetTag, checksum: libraryRecord.checksum } },
+  });
+  if (existing) return importResult("document_upload", "EXISTS", existing, assetTag, existing.fileName);
+
+  const record = await prisma.documentUpload.create({
+    data: {
+      category,
+      assetTag,
+      fileName: libraryRecord.originalName,
+      fileUrl: libraryRecord.fileUrl,
+      fileSize: libraryRecord.fileSize,
+      mimeType: libraryRecord.mimeType,
+      checksum: libraryRecord.checksum,
+      uploadedBy: "Bulk Upload",
+    },
+  });
+  return importResult("document_upload", "CREATE", record, assetTag, libraryRecord.originalName);
+}
+
+async function importUploadedDocument(_row: Row, assetTag: string, category: string, folder: string, uploadedFile: UploadedDocumentFile, originalName: string) {
+  const ext = path.extname(originalName).toLowerCase();
+  if (!allowedDocumentExtensions.has(ext)) throw new Error(`Unsupported document type: ${ext || "unknown"}`);
+  if (uploadedFile.size > MAX_DOCUMENT_FILE_SIZE) throw new Error(`${originalName} exceeds the 60 MB document size limit`);
+
+  const cacheKey = `uploaded:${uploadedFile.name}:${uploadedFile.size}`;
+  let sourceInfo = documentSourceCache.get(cacheKey);
+  let buffer: Buffer | null = null;
+  if (!sourceInfo) {
+    buffer = Buffer.from(await uploadedFile.file.arrayBuffer());
+    sourceInfo = {
+      checksum: createHash("sha256").update(buffer).digest("hex"),
+      ext,
+      size: uploadedFile.size,
+    };
+    documentSourceCache.set(cacheKey, sourceInfo);
+  }
+
+  const checksum = sourceInfo.checksum;
+  const existing = await prisma.documentUpload.findUnique({
+    where: { category_assetTag_checksum: { category, assetTag, checksum } },
+  });
+  if (existing) return importResult("document_upload", "EXISTS", existing, assetTag, existing.fileName);
+
+  const uploadDir = path.join(privateUploadRoot, "document-management", folder, "_manual-library");
+  await mkdir(uploadDir, { recursive: true });
+  const storedName = `${checksum}-${safeSegment(path.basename(originalName, ext)) || "document"}${ext}`;
+  const storedPath = path.join(uploadDir, storedName);
+  if (!copiedDocumentCache.has(storedPath)) {
+    try {
+      await stat(storedPath);
+    } catch {
+      if (!buffer) buffer = Buffer.from(await uploadedFile.file.arrayBuffer());
+      await writeFile(storedPath, buffer, { mode: 0o644 });
+    }
+    copiedDocumentCache.add(storedPath);
+  }
+
+  const record = await prisma.documentUpload.create({
+    data: {
+      category,
+      assetTag,
+      fileName: originalName,
+      fileUrl: privateFileUrl(`document-management/${folder}/_manual-library/${storedName}`),
+      fileSize: sourceInfo.size,
+      mimeType: mimeTypeFromExtension(ext),
+      checksum,
+      uploadedBy: "Bulk Upload",
+    },
+  });
+  return importResult("document_upload", "CREATE", record, assetTag, originalName);
+}
+
 function importResult(recordType: string, action: string, record: { id?: string } | null | undefined, recordKey?: string, displayName?: string): ImportResult {
   return {
     action,
@@ -594,7 +1010,25 @@ function importResult(recordType: string, action: string, record: { id?: string 
 }
 
 function rowIdentifier(module: string, row: Row) {
-  return value(row, "tag", "Asset Code", "Housing Asset Code", "EQUIPMENTNO", "ASSET NUMBER", "sku", "ticketNo", "woNo", "code", "Location", "companyId", "email") || module || "unknown";
+  return value(row, "tag", "Asset Code", "Housing Asset Code", "EQUIPMENTNO", "ASSET NUMBER", "sku", "ticketNo", "woNo", "code", "Location", "locationCode", "assetTag", "companyId", "email") || module || "unknown";
+}
+
+function safeSegment(value: string) {
+  return value.trim().replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80);
+}
+
+function mimeTypeFromExtension(ext: string) {
+  if (ext === ".pdf") return "application/pdf";
+  if (ext === ".png") return "image/png";
+  if (ext === ".jpg" || ext === ".jpeg") return "image/jpeg";
+  if (ext === ".webp") return "image/webp";
+  if (ext === ".gif") return "image/gif";
+  if (ext === ".csv") return "text/csv";
+  if (ext === ".txt") return "text/plain";
+  if (ext === ".xlsx") return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+  if (ext === ".docx") return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+  if (ext === ".pptx") return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+  return "application/octet-stream";
 }
 
 function rowDisplayName(row: Row) {
@@ -700,6 +1134,12 @@ function value(row: Row, ...keys: string[]) {
     if (found !== undefined && found !== null && String(found).trim() !== "") return String(found).trim();
   }
   return "";
+}
+
+function uniquePpmCode(baseCode: string, targetKey: string) {
+  const normalizedTarget = targetKey.toUpperCase().replace(/[^A-Z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  const normalizedBase = baseCode.toUpperCase().replace(/[^A-Z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  return `${normalizedBase || "PPM"}-${normalizedTarget || "TARGET"}`.slice(0, 120);
 }
 
 function number(value: string | undefined, fallback: number) {

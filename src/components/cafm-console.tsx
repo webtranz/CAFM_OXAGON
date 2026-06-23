@@ -45,7 +45,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { assetHealth, chartData, moduleStats } from "@/lib/demo-data";
+import { moduleStats } from "@/lib/demo-data";
 
 type ConsoleData = {
   live: boolean;
@@ -63,6 +63,7 @@ type ConsoleData = {
   services: any[];
   categories: any[];
   ppms: any[];
+  ppmsTotal?: number;
   users: any[];
   permissions: any[];
   departments: any[];
@@ -70,6 +71,7 @@ type ConsoleData = {
   rolePermissions: any[];
   locations: any[];
   jobPlans: any[];
+  jobPlansTotal?: number;
   roles: any[];
   auditLogs: any[];
   complianceCertificates: any[];
@@ -109,6 +111,22 @@ type AuditEntry = {
   [key: string]: any;
 };
 
+type BulkUploadProgressState = {
+  jobId?: string;
+  module: string;
+  fileName: string;
+  fileSize: number;
+  totalRows: number;
+  processedRows: number;
+  createdRows?: number;
+  failedRows?: number;
+  completion: number;
+  status: "UPLOADING" | "QUEUED" | "PROCESSING" | "FINALIZING" | "COMPLETED" | "COMPLETED_WITH_ERRORS" | "FAILED";
+  startedAt: string;
+  updatedAt?: string;
+  message: string;
+};
+
 type ActionPermissions = {
   manageRequests: boolean;
   approveRequests: boolean;
@@ -119,6 +137,17 @@ type ActionPermissions = {
 
 type ModuleItem = { id: string; label: string; icon: LucideIcon; view?: string };
 type ModuleGroup = { label: string; icon: LucideIcon; items: ModuleItem[]; flat?: boolean };
+
+function BrandLogoMark({ size = "md" }: { size?: "sm" | "md" }) {
+  const boxClass = size === "sm" ? "h-9 w-9 rounded-lg" : "h-12 w-12 rounded-xl";
+  const imageSize = size === "sm" ? 36 : 48;
+
+  return (
+    <div className={`grid ${boxClass} place-items-center overflow-hidden border border-amber-200 bg-white p-1 shadow-sm`}>
+      <Image src="/tafga.png" alt="Tamimi Global CAFM logo" width={imageSize} height={imageSize} className="h-full w-full object-contain" priority />
+    </div>
+  );
+}
 
 const moduleGroups: ModuleGroup[] = [
   {
@@ -258,12 +287,14 @@ const moduleGroups: ModuleGroup[] = [
     icon: Activity,
     items: [
       { id: "audit", label: "Audit Logs", icon: Activity },
+      { id: "audit", label: "Bulk Upload Progress", icon: Upload, view: "bulk-upload-progress" },
       { id: "reports", label: "Reports Preview", icon: ClipboardCheck },
     ],
   },
 ];
 
 const healthColors = ["#35a852", "#0f8b8d", "#ffd166", "#f45d48"];
+const dashboardColors = ["#0f8b8d", "#f45d48", "#06d6a0", "#ffd166", "#0b1f3a", "#7c3aed", "#2563eb", "#db2777", "#64748b", "#16a34a"];
 const PAGE_SIZE = 100;
 const HOUSING_FIELD_CLASS = "h-11 rounded-lg border border-slate-200 bg-white px-3 outline-none focus:border-lagoon";
 const FACILITY_FIELD_CLASS = "h-11 w-full min-w-0 rounded-lg border border-slate-200 bg-white px-3 outline-none focus:border-lagoon";
@@ -324,7 +355,7 @@ const modulePermissions: Record<string, string> = {
   inventory: "assets.manage",
   hse: "reports.view",
   iot: "reports.view",
-  documents: "reports.view",
+  documents: "",
   incidents: "requests.view",
   resource: "requests.manage",
   audit: "reports.view",
@@ -549,21 +580,86 @@ function roleKindLabel(role: string) {
   return "requester";
 }
 
-export function CafmConsole({ data, user }: { data: ConsoleData; user: { id?: string; name: string; email: string; role: string; department?: string | null; team?: { code: string; name?: string } | null } }) {
+export function CafmConsole({ data, user, deferInitialData = false }: { data: ConsoleData; user: { id?: string; name: string; email: string; role: string; department?: string | null; team?: { code: string; name?: string } | null }; deferInitialData?: boolean }) {
   const [records, setRecords] = useState(data);
+  const [fullDataLoaded, setFullDataLoaded] = useState(!deferInitialData);
   const [active, setActive] = useState("command");
   const [activeView, setActiveView] = useState("dashboard");
   const [activeMenuKey, setActiveMenuKey] = useState("Dashboard-Dashboard");
   const [query, setQuery] = useState("");
   const [toast, setToast] = useState("");
   const [health, setHealth] = useState<{ app: string; database: string; message?: string } | null>(null);
+  const [initialDataLoading, setInitialDataLoading] = useState(deferInitialData);
   const [saving, setSaving] = useState(false);
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [bulkUploadProgress, setBulkUploadProgress] = useState<BulkUploadProgressState | null>(null);
 
   useEffect(() => {
-    checkHealth();
-  }, []);
+    let cancelled = false;
+    async function loadInitialData() {
+      if (!deferInitialData) {
+        await checkHealth();
+        return;
+      }
+      setInitialDataLoading(true);
+      try {
+        await loadDashboardData();
+      } finally {
+        if (!cancelled) setInitialDataLoading(false);
+      }
+    }
+    void loadInitialData();
+    return () => {
+      cancelled = true;
+    };
+  }, [deferInitialData]);
+
+  useEffect(() => {
+    const jobId = bulkUploadProgress?.jobId;
+    if (!jobId) return;
+
+    const terminalStatuses = new Set(["COMPLETED", "COMPLETED_WITH_ERRORS", "FAILED"]);
+    let cancelled = false;
+    const pollJob = async () => {
+      try {
+        const response = await fetch(`/api/bulk-upload?jobId=${encodeURIComponent(jobId)}`, { cache: "no-store" });
+        const result = await response.json();
+        const job = result.job;
+        if (!response.ok || !job || cancelled) return;
+        if (terminalStatuses.has(job.status)) {
+          setBulkUploadProgress(null);
+          setToast(cleanMessage(job.message ?? (job.status === "FAILED" ? "Bulk upload failed." : "Bulk upload complete.")));
+          await refreshData();
+          return;
+        }
+        setBulkUploadProgress({
+          jobId: job.id,
+          module: job.module,
+          fileName: job.fileName,
+          fileSize: job.fileSize,
+          totalRows: job.totalRows,
+          processedRows: job.processedRows,
+          createdRows: job.createdRows,
+          failedRows: job.failedRows,
+          completion: job.completion,
+          status: job.status,
+          startedAt: job.startedAt,
+          updatedAt: job.updatedAt,
+          message: job.message ?? "Bulk upload is processing in the background.",
+        });
+      } catch {
+        // Keep the current progress visible; the next poll may recover.
+      }
+    };
+
+    void pollJob();
+    const interval = window.setInterval(pollJob, 2000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [bulkUploadProgress?.jobId]);
 
   const permissionCodes = useMemo(() => {
     return new Set(records.rolePermissions.filter((item) => item.role === user.role).map((item) => item.permission.code));
@@ -590,6 +686,10 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { id?: st
     setActive(moduleId);
     setActiveView(view);
     setActiveMenuKey(menuKey);
+    if (!fullDataLoaded && !["command", "documents"].includes(moduleId)) {
+      setInitialDataLoading(true);
+      void refreshData().finally(() => setInitialDataLoading(false));
+    }
   }
 
   async function checkHealth() {
@@ -602,6 +702,16 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { id?: st
     const response = await fetch("/api/operating-data", { cache: "no-store" });
     if (response.ok) {
       setRecords(await response.json());
+      setFullDataLoaded(true);
+    }
+    await checkHealth();
+  }
+
+  async function loadDashboardData() {
+    const response = await fetch("/api/dashboard-data", { cache: "no-store" });
+    if (response.ok) {
+      setRecords(await response.json());
+      setFullDataLoaded(false);
     }
     await checkHealth();
   }
@@ -634,7 +744,7 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { id?: st
     setSaving(false);
   }
 
-  async function postRecord(path: string, formData: FormData, successLabel: string) {
+  async function postRecord(path: string, formData: FormData, successLabel: string, refresh = true) {
     setSaving(true);
     const payload = Object.fromEntries(formData.entries());
     const response = await fetch(path, {
@@ -644,23 +754,78 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { id?: st
     });
     const result = await response.json();
     setToast(response.ok ? `${successLabel} saved.` : cleanMessage(result.message ?? "Action failed."));
-    if (response.ok) await refreshData();
+    if (response.ok && refresh) await refreshData();
     setSaving(false);
   }
 
   async function bulkUpload(formData: FormData) {
     setSaving(true);
-    const response = await fetch("/api/bulk-upload", {
-      method: "POST",
-      body: formData,
+    const module = String(formData.get("module") || "bulk upload");
+    const file = formData.get("file");
+    const startedAt = new Date().toISOString();
+    let totalRows = 0;
+    let fileName = "CSV upload";
+    let fileSize = 0;
+
+    if (file instanceof File) {
+      fileName = file.name;
+      fileSize = file.size;
+      totalRows = countCsvDataRows(await file.text());
+    }
+
+    if (canOpenModule("audit")) {
+      navigate("audit", "Activity Logs-Bulk Upload Progress", "bulk-upload-progress");
+    }
+    setBulkUploadProgress({
+      module,
+      fileName,
+      fileSize,
+      totalRows,
+      processedRows: 0,
+      completion: 10,
+      status: "UPLOADING",
+      startedAt,
+      message: "Uploading CSV file to the server.",
     });
-    const result = await response.json();
-    setToast(cleanMessage(result.message ?? (response.ok ? "Bulk upload complete." : "Bulk upload failed.")));
-    await refreshData();
-    setSaving(false);
+
+    try {
+      const response = await fetch("/api/bulk-upload", {
+        method: "POST",
+        body: formData,
+      });
+      setBulkUploadProgress((current) => current ? { ...current, processedRows: Math.max(0, Math.floor(totalRows * 0.7)), completion: 70, status: "PROCESSING", message: "Server is validating rows and creating records." } : current);
+      const result = await response.json();
+      if (response.status === 202 && result.jobId) {
+        setBulkUploadProgress({
+          jobId: result.jobId,
+          module: result.module ?? module,
+          fileName: result.fileName ?? fileName,
+          fileSize: result.fileSize ?? fileSize,
+          totalRows: result.totalRows ?? totalRows,
+          processedRows: result.processedRows ?? 0,
+          createdRows: result.createdRows ?? 0,
+          failedRows: result.failedRows ?? 0,
+          completion: result.completion ?? 0,
+          status: result.status ?? "QUEUED",
+          startedAt: result.startedAt ?? startedAt,
+          message: result.message ?? "Bulk upload is processing in the background.",
+        });
+        setToast(cleanMessage(result.message ?? "Bulk upload is processing in the background."));
+        return;
+      }
+      setBulkUploadProgress((current) => current ? { ...current, processedRows: totalRows, completion: 95, status: "FINALIZING", message: "Finalizing upload and refreshing audit logs." } : current);
+      setToast(cleanMessage(result.message ?? (response.ok ? "Bulk upload complete." : "Bulk upload failed.")));
+      await refreshData();
+      setBulkUploadProgress(null);
+    } catch (error) {
+      setToast(cleanMessage(error instanceof Error ? error.message : "Bulk upload failed."));
+      setBulkUploadProgress(null);
+    } finally {
+      setSaving(false);
+    }
   }
 
-  async function patchRecord(path: string, body: Record<string, unknown>, successLabel: string) {
+  async function patchRecord(path: string, body: Record<string, unknown>, successLabel: string, refresh = true) {
     setSaving(true);
     const response = await fetch(path, {
       method: "PATCH",
@@ -669,7 +834,7 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { id?: st
     });
     const result = await response.json();
     setToast(response.ok ? successLabel : cleanMessage(result.message ?? "Action failed."));
-    if (response.ok) await refreshData();
+    if (response.ok && refresh) await refreshData();
     setSaving(false);
   }
 
@@ -677,12 +842,12 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { id?: st
     await patchRecord(`/api/assets/${id}`, Object.fromEntries(formData.entries()) as Record<string, string>, "Asset updated by admin.");
   }
 
-  async function deleteRecord(path: string, successLabel: string) {
+  async function deleteRecord(path: string, successLabel: string, refresh = true) {
     setSaving(true);
     const response = await fetch(path, { method: "DELETE" });
     const result = await response.json();
     setToast(response.ok ? successLabel : cleanMessage(result.message ?? "Delete failed."));
-    if (response.ok) await refreshData();
+    if (response.ok && refresh) await refreshData();
     setSaving(false);
   }
 
@@ -740,10 +905,9 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { id?: st
     <main className="cafm-shell h-screen overflow-hidden bg-slate-50 text-ink">
       <header className="fixed left-0 right-0 top-0 z-40 flex h-16 items-center justify-between border-b border-slate-100 bg-white px-4 lg:hidden">
         <div className="flex items-center gap-2">
-          <div className="grid h-9 w-9 place-items-center overflow-hidden rounded-lg border border-amber-200 bg-white p-1 shadow-sm">
-            <Image src="/tafga.png" alt="Tamimi Global CAFM logo" width={36} height={36} className="h-full w-full object-contain" priority />
-          </div>
+          <BrandLogoMark size="sm" />
           <div className="leading-tight">
+            <span className="mb-1 hidden w-fit border border-coral px-2 py-0.5 text-[9px] font-medium uppercase leading-none tracking-normal text-coral sm:block">Production System</span>
             <span className="block text-sm font-bold text-slate-900">Tamimi Global</span>
             <span className="block text-[10px] text-slate-500">CAFM system</span>
           </div>
@@ -763,21 +927,24 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { id?: st
       <section className="h-screen min-w-0 overflow-hidden lg:pl-72">
         <aside className={`${mobileMenuOpen ? "fixed flex flex-col" : "hidden"} inset-y-0 left-0 z-50 w-72 overflow-y-auto border-r border-slate-100 bg-white scrollbar-thin lg:fixed lg:flex lg:w-72 lg:flex-col`}>
           <div className="border-b border-slate-100 p-6">
+            <div className="mb-3 ml-[60px] w-[122px] border border-coral py-1 text-center text-[10px] font-medium uppercase leading-none tracking-normal text-coral">Production System</div>
             <div className="flex items-center gap-3">
-              <div className="grid h-12 w-12 place-items-center overflow-hidden rounded-xl border border-amber-200 bg-white p-1 shadow-sm">
-                <Image src="/tafga.png" alt="Tamimi Global CAFM logo" width={48} height={48} className="h-full w-full object-contain" priority />
-              </div>
+              <BrandLogoMark />
               <div>
                 <h1 className="text-lg font-bold leading-tight text-slate-900">Tamimi Global</h1>
                 <p className="text-xs text-slate-500">CAFM system</p>
               </div>
+            </div>
+            <div className="mt-3 pl-[60px] font-['Arial_Narrow','Aptos_Narrow','Arial',sans-serif] font-bold leading-tight tracking-normal text-slate-950">
+              <p className="text-[9px] uppercase">FADHILI BACHELOR CAMP AND GSRC</p>
+              <p className="text-[8px]">Contract # 6601019711</p>
             </div>
           </div>
 
           <div className="m-4 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm">
             <div className="flex items-center gap-2 font-medium text-emerald-700">
               <Activity size={16} />
-              {health?.database === "connected" || records.live ? "Database online" : "Database issue"}
+              {initialDataLoading ? "Loading data" : health?.database === "connected" || records.live ? "Database online" : "Database issue"}
             </div>
             <p className="mt-1 text-xs text-emerald-700">
               {health ? `Status: ${health.database}` : "Checking database..."}
@@ -862,38 +1029,43 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { id?: st
         </aside>
 
         <section className="cafm-content min-h-0 min-w-0 space-y-5 overflow-auto px-3 pb-6 pt-20 scrollbar-thin sm:px-5 lg:h-screen lg:p-6">
-          <header className="min-w-0 rounded-lg border border-slate-200 bg-white p-4 text-slate-900 shadow-sm sm:p-5">
-            <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-              <div className="min-w-0">
-                <p className="text-sm font-bold uppercase text-emerald-700">Complete CAFM Suite</p>
-                <h2 className="mt-1 text-2xl font-bold text-slate-900 sm:text-3xl">One-stop facility operations system</h2>
-                <p className="mt-2 max-w-3xl text-sm text-slate-500">
-                  {dashboardSubtitle(user.role, user.department)}
-                </p>
+          {active !== "command" && (
+            <header className="min-w-0 rounded-lg border border-slate-200 bg-white p-4 text-slate-900 shadow-sm sm:p-5">
+              <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+                <div className="min-w-0">
+                  <p className="text-sm font-bold uppercase text-emerald-700">Complete CAFM Suite</p>
+                  <h2 className="mt-1 text-2xl font-bold text-slate-900 sm:text-3xl">One-stop facility operations system</h2>
+                  <p className="mt-2 max-w-3xl text-sm text-slate-500">
+                    {dashboardSubtitle(user.role, user.department)}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button onClick={() => navigate("work", "Tickets-Work Orders")} className="flex h-11 items-center gap-2 rounded-lg bg-emerald-600 px-4 font-medium text-white shadow-sm transition hover:bg-emerald-700">
+                    Work Orders
+                  </button>
+                  <button onClick={() => navigate("helpdesk", "Tickets-Service Requests")} className="flex h-11 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 font-medium text-slate-700 shadow-sm transition hover:bg-slate-100">
+                    <Smartphone size={18} />
+                    Dispatch
+                  </button>
+                </div>
               </div>
-              <div className="flex flex-wrap gap-2">
-                <button onClick={() => navigate("work", "Tickets-Work Orders")} className="flex h-11 items-center gap-2 rounded-lg bg-emerald-600 px-4 font-medium text-white shadow-sm transition hover:bg-emerald-700">
-                  Work Orders
-                </button>
-                <button onClick={() => navigate("helpdesk", "Tickets-Service Requests")} className="flex h-11 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 font-medium text-slate-700 shadow-sm transition hover:bg-slate-100">
-                  <Smartphone size={18} />
-                  Dispatch
-                </button>
-              </div>
-            </div>
-          </header>
+            </header>
+          )}
 
           {toast && <div className="rounded-lg border border-emerald-100 bg-white p-3 font-medium text-emerald-700 shadow-sm">{toast}</div>}
+          {initialDataLoading && <div className="rounded-lg border border-emerald-100 bg-white p-3 font-medium text-emerald-700 shadow-sm">Loading latest dashboard data...</div>}
 
-          <section className="grid min-w-0 gap-4 md:grid-cols-2 xl:grid-cols-4">
-            {moduleStats.map((stat) => (
-              <div key={stat.label} className="min-w-0 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-                <p className="text-sm font-medium text-slate-500">{stat.label}</p>
-                <p className="mt-2 text-3xl font-bold text-slate-900">{stat.currency ? <CurrencyAmount value={stat.value} /> : stat.value}</p>
-                <p className={`mt-1 text-sm font-medium ${statToneClasses[stat.tone]}`}>{stat.delta}</p>
-              </div>
-            ))}
-          </section>
+          {active !== "command" && (
+            <section className="grid min-w-0 gap-4 md:grid-cols-2 xl:grid-cols-4">
+              {moduleStats.map((stat) => (
+                <div key={stat.label} className="min-w-0 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+                  <p className="text-sm font-medium text-slate-500">{stat.label}</p>
+                  <p className="mt-2 text-3xl font-bold text-slate-900">{stat.currency ? <CurrencyAmount value={stat.value} /> : stat.value}</p>
+                  <p className={`mt-1 text-sm font-medium ${statToneClasses[stat.tone]}`}>{stat.delta}</p>
+                </div>
+              ))}
+            </section>
+          )}
 
           {!canViewActive && <AccessDenied moduleId={active} />}
           {canViewActive && active === "command" && <CommandCenter data={records} />}
@@ -949,7 +1121,7 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { id?: st
               saving={saving}
             />
           )}
-          {canViewActive && active === "jobPlans" && <JobPlans jobPlans={records.jobPlans} services={records.services} departments={records.departments} saving={saving} isAdmin={isAdmin} submitJobPlan={(formData) => postRecord("/api/job-plans", formData, "Job plan")} deleteJobPlan={(id) => deleteRecord(`/api/job-plans?id=${encodeURIComponent(id)}`, "Job plan deleted.")} />}
+          {canViewActive && active === "jobPlans" && <JobPlans jobPlans={records.jobPlans} jobPlansTotal={records.jobPlansTotal} services={records.services} departments={records.departments} saving={saving} isAdmin={isAdmin} submitJobPlan={(formData) => postRecord("/api/job-plans", formData, "Job plan")} deleteJobPlan={(id) => deleteRecord(`/api/job-plans?id=${encodeURIComponent(id)}`, "Job plan deleted.")} />}
           {canViewActive && active === "locations" && <Locations locations={records.locations} saving={saving} isAdmin={isAdmin} submitLocation={(formData) => postRecord("/api/locations", formData, "Location")} deleteLocation={(id) => deleteRecord(`/api/locations/${id}`, "Location deleted.")} />}
           {canViewActive && active === "assetSetup" && (
             <AssetHierarchySetup
@@ -967,7 +1139,7 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { id?: st
               submitCategory={(formData) => postRecord("/api/asset-categories", formData, "Asset category")}
             />
           )}
-          {canViewActive && active === "ppm" && <Ppm ppms={records.ppms} assets={records.assets} workOrders={records.workOrders} saving={saving} isAdmin={isAdmin} submitPpm={(formData) => postRecord("/api/ppm", formData, "PPM")} updatePpm={(body) => patchRecord("/api/ppm", body, "PPM updated.")} deletePpm={(id) => deleteRecord(`/api/ppm?id=${encodeURIComponent(id)}`, "PPM deleted.")} />}
+          {canViewActive && active === "ppm" && <Ppm ppms={records.ppms} ppmsTotal={records.ppmsTotal} assets={records.assets} locations={records.locations} workOrders={records.workOrders} saving={saving} isAdmin={isAdmin} submitPpm={(formData) => postRecord("/api/ppm", formData, "PPM")} updatePpm={(body) => patchRecord("/api/ppm", body, "PPM updated.")} deletePpm={(id) => deleteRecord(`/api/ppm?id=${encodeURIComponent(id)}`, "PPM deleted.")} />}
           {canViewActive && active === "inventory" && <Inventory inventory={records.inventory} saving={saving} isAdmin={isAdmin} submitInventory={(formData) => postRecord("/api/inventory", formData, "Inventory item")} deleteInventory={(id) => deleteRecord(`/api/inventory?id=${encodeURIComponent(id)}`, "Inventory item deleted.")} />}
           {canViewActive && active === "hse" && <Hse inspections={records.inspections} saving={saving} isAdmin={isAdmin} submitInspection={(formData) => postRecord("/api/inspections", formData, "Inspection")} deleteInspection={(id) => deleteRecord(`/api/inspections?id=${encodeURIComponent(id)}`, "Inspection deleted.")} />}
           {canViewActive && active === "compliance" && (
@@ -996,6 +1168,7 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { id?: st
               canUploadDocuments={roleKindLabel(user.role) === "admin"}
               isAdmin={isAdmin}
               deleteDocument={(id) => deleteRecord(`/api/document-uploads?id=${encodeURIComponent(id)}`, "Document deleted.")}
+              setToast={(message) => setToast(cleanMessage(message))}
             />
           )}
           {canViewActive && active === "incidents" && (
@@ -1040,10 +1213,10 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { id?: st
               permissions={records.permissions}
               rolePermissions={records.rolePermissions}
               saving={saving}
-              submitUser={(formData) => postRecord("/api/users", formData, "User")}
+              submitUser={(formData) => postRecord("/api/users", formData, "User", false)}
               submitRole={(formData) => postRecord("/api/roles", formData, "Custom role")}
-              updateUser={(id, formData) => patchRecord(`/api/users/${id}`, Object.fromEntries(formData.entries()) as Record<string, string>, "User updated.")}
-              deleteUser={(id) => deleteRecord(`/api/users/${id}`, "User deleted.")}
+              updateUser={(id, formData) => patchRecord(`/api/users/${id}`, Object.fromEntries(formData.entries()) as Record<string, string>, "User updated.", false)}
+              deleteUser={(id) => deleteRecord(`/api/users/${id}`, "User deleted.", false)}
               deleteRole={(roleName) => deleteRecord(`/api/roles?name=${encodeURIComponent(roleName)}`, "Role deleted.")}
               isAdmin={isAdmin}
               refreshData={refreshData}
@@ -1063,7 +1236,7 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { id?: st
             />
           )}
           {canViewActive && active === "reports" && <Reports />}
-          {canViewActive && active === "audit" && <AuditLogs logs={records.auditLogs ?? []} />}
+          {canViewActive && active === "audit" && (activeView === "bulk-upload-progress" ? <BulkUploadProgress progress={bulkUploadProgress} /> : <AuditLogs logs={records.auditLogs ?? []} />)}
           {canViewActive && active === "resource" && (
             <ResourceManagement
               employees={records.employees}
@@ -1104,74 +1277,445 @@ export function CafmConsole({ data, user }: { data: ConsoleData; user: { id?: st
   );
 }
 
+type DashboardEvent = {
+  id: string;
+  module: string;
+  type: string;
+  status: string;
+  priority: string;
+  title: string;
+  occurredAt: Date;
+};
+
+function eventDate(record: any, keys: string[]) {
+  for (const key of keys) {
+    const value = record?.[key];
+    if (!value) continue;
+    const date = new Date(value);
+    if (!Number.isNaN(date.getTime())) return date;
+  }
+  return null;
+}
+
+function pushDashboardEvent(events: DashboardEvent[], module: string, type: string, record: any, dateKeys: string[], titleKeys: string[], status = "Tracked", priority = "Normal") {
+  const occurredAt = eventDate(record, dateKeys);
+  if (!occurredAt) return;
+  const title = titleKeys.map((key) => record?.[key]).find(Boolean) ?? `${module} activity`;
+  events.push({
+    id: String(record?.id ?? `${module}-${events.length}`),
+    module,
+    type,
+    status: String(record?.status ?? status),
+    priority: String(record?.priority ?? record?.risk ?? record?.severity ?? priority),
+    title: String(title),
+    occurredAt,
+  });
+}
+
+function buildDashboardEvents(data: ConsoleData) {
+  const events: DashboardEvent[] = [];
+  data.requests.forEach((record) => pushDashboardEvent(events, "Service Requests", "Request", record, ["createdAt", "updatedAt", "dueAt"], ["ticketNo", "title"], "New", "Normal"));
+  data.workOrders.forEach((record) => pushDashboardEvent(events, "Work Orders", "Work Order", record, ["createdAt", "updatedAt", "dueAt", "plannedStart"], ["woNo", "title"], "Open", "Normal"));
+  data.assets.forEach((record) => pushDashboardEvent(events, "Assets", "Asset", record, ["createdAt", "updatedAt", "installDate", "warrantyExpiry"], ["tag", "assetDescription", "name"], "Active", "Normal"));
+  data.inventory.forEach((record) => pushDashboardEvent(events, "Inventory", "Stock Item", record, ["createdAt", "updatedAt", "lastMovementAt", "expiryDate"], ["sku", "name"], "Tracked", "Normal"));
+  data.inspections.forEach((record) => pushDashboardEvent(events, "HSE", "Inspection", record, ["createdAt", "updatedAt", "dueAt"], ["code", "title"], "Scheduled", "Normal"));
+  data.alerts.forEach((record) => pushDashboardEvent(events, "IoT / BMS", "Alert", record, ["detectedAt", "createdAt", "updatedAt"], ["source", "message"], "New", "Normal"));
+  data.ppms.forEach((record) => pushDashboardEvent(events, "PPM Planner", "PPM", record, ["nextDue", "createdAt", "updatedAt"], ["code", "name"], record.active ? "Active" : "Paused", "Normal"));
+  data.jobPlans.forEach((record) => pushDashboardEvent(events, "Job Plans", "Job Plan", record, ["createdAt", "updatedAt"], ["code", "name"], record.active ? "Active" : "Inactive", "Normal"));
+  data.locations.forEach((record) => pushDashboardEvent(events, "Locations", "Location", record, ["createdAt", "updatedAt"], ["code", "description"], record.active ? "Active" : "Inactive", "Normal"));
+  data.complianceCertificates.forEach((record) => pushDashboardEvent(events, "Compliance", "Certificate", record, ["createdAt", "updatedAt", "expiryDate", "issueDate"], ["certificateNo", "title"], "Active", "Normal"));
+  data.documentUploads.forEach((record) => pushDashboardEvent(events, "Documents", "Document", record, ["createdAt", "updatedAt"], ["fileName", "category"], "Uploaded", "Normal"));
+  data.employees.forEach((record) => pushDashboardEvent(events, "Resource", "Employee", record, ["createdAt", "updatedAt"], ["companyId", "name"], record.active ? "Active" : "Inactive", "Normal"));
+  data.users.forEach((record) => pushDashboardEvent(events, "Users", "User", record, ["createdAt", "updatedAt"], ["email", "name"], record.active ? "Active" : "Inactive", "Normal"));
+  data.auditLogs.forEach((record) => pushDashboardEvent(events, "Activity Logs", "Audit", record, ["createdAt"], ["action", "entity"], "Logged", "Normal"));
+  data.housing.bookings.forEach((record) => pushDashboardEvent(events, "Housing Bookings", "Booking", record, ["createdAt", "updatedAt", "checkIn", "checkOut"], ["bookingNo", "residentName"], "Requested", "Normal"));
+  data.housing.inspections.forEach((record) => pushDashboardEvent(events, "Housing Inspections", "Inspection", record, ["createdAt", "updatedAt", "dueAt"], ["inspectionNo", "inspectionType"], "Scheduled", "Normal"));
+  data.housing.assets.forEach((record) => pushDashboardEvent(events, "Housing Assets", "Asset", record, ["createdAt", "updatedAt", "nextPmDue", "lastInspectionAt"], ["tag", "name"], "Active", "Normal"));
+  data.housing.inventory.forEach((record) => pushDashboardEvent(events, "Housing Inventory", "Inventory", record, ["createdAt", "updatedAt", "lastMovementAt", "expiryDate"], ["sku", "name"], "Tracked", "Normal"));
+  data.housing.approvals.forEach((record) => pushDashboardEvent(events, "Housing Approvals", "Approval", record, ["createdAt", "updatedAt"], ["approvalNo", "level"], "Pending", "Normal"));
+  data.housing.notifications.forEach((record) => pushDashboardEvent(events, "Housing Alerts", "Notification", record, ["createdAt", "sentAt", "updatedAt"], ["title", "alertType"], "Sent", "Normal"));
+  data.housing.history.forEach((record) => pushDashboardEvent(events, "Housing History", "History", record, ["createdAt"], ["action", "entity"], "Logged", "Normal"));
+  return events.sort((a, b) => b.occurredAt.getTime() - a.occurredAt.getTime());
+}
+
+function formatDateTimeInput(date: Date) {
+  const offset = date.getTimezoneOffset();
+  const local = new Date(date.getTime() - offset * 60000);
+  return local.toISOString().slice(0, 16);
+}
+
+function parseDateTimeInput(value: string, fallback: Date) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? fallback : date;
+}
+
+function countBy<T>(items: T[], getKey: (item: T) => string) {
+  const counts = new Map<string, number>();
+  items.forEach((item) => {
+    const key = getKey(item) || "Unassigned";
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  });
+  return Array.from(counts.entries()).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
+}
+
+function hourlyActivity(events: DashboardEvent[]) {
+  const counts = new Map<string, number>();
+  events.forEach((event) => {
+    const key = `${String(event.occurredAt.getHours()).padStart(2, "0")}:00`;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  });
+  return Array.from({ length: 24 }, (_, hour) => {
+    const name = `${String(hour).padStart(2, "0")}:00`;
+    return { name, activity: counts.get(name) ?? 0 };
+  });
+}
+
+function percent(value: number, total: number) {
+  if (!total) return 0;
+  return Math.round((value / total) * 100);
+}
+
+function compactNumber(value: number) {
+  return Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 }).format(value);
+}
+
 function CommandCenter({ data }: { data: ConsoleData }) {
+  const [fromValue, setFromValue] = useState("");
+  const [toValue, setToValue] = useState("");
+  const [moduleFilter, setModuleFilter] = useState("All");
+  const allEvents = useMemo(() => buildDashboardEvents(data), [data]);
+  const moduleOptions = useMemo(() => ["All", ...Array.from(new Set(allEvents.map((event) => event.module))).sort()], [allEvents]);
+  const fromDate = fromValue ? parseDateTimeInput(fromValue, new Date(0)) : new Date(0);
+  const toDate = toValue ? parseDateTimeInput(toValue, new Date(8640000000000000)) : new Date(8640000000000000);
+
+  useEffect(() => {
+    const current = new Date();
+    setFromValue(formatDateTimeInput(new Date(current.getTime() - 24 * 60 * 60 * 1000)));
+    setToValue(formatDateTimeInput(current));
+  }, []);
+  const filteredEvents = allEvents.filter((event) => {
+    const timestamp = event.occurredAt.getTime();
+    return timestamp >= fromDate.getTime() && timestamp <= toDate.getTime() && (moduleFilter === "All" || event.module === moduleFilter);
+  });
+  const moduleBreakdown = countBy(filteredEvents, (event) => event.module);
+  const statusBreakdown = countBy(filteredEvents, (event) => event.status);
+  const priorityBreakdown = countBy(filteredEvents, (event) => event.priority);
+  const hourlyRows = hourlyActivity(filteredEvents);
+  const busiestModule = moduleBreakdown[0]?.name ?? "-";
+  const activeStatuses = statusBreakdown.length;
+  const workOrders = data.workOrders;
+  const requests = data.requests;
+  const housingBookings = data.housing.bookings;
+  const assets = data.assets;
+  const ppms = data.ppms;
+  const inventory = data.inventory;
+  const openWorkOrders = workOrders.filter((work) => !["CLOSED", "COMPLETED", "VERIFIED", "REJECTED", "CANCELLED"].includes(String(work.status || "").toUpperCase())).length;
+  const inProgressWorkOrders = workOrders.filter((work) => ["IN_PROGRESS", "ASSIGNED", "ACCEPTED"].includes(String(work.status || "").toUpperCase())).length;
+  const completedWorkOrders = workOrders.filter((work) => ["CLOSED", "COMPLETED", "VERIFIED"].includes(String(work.status || "").toUpperCase())).length;
+  const currentGuests = housingBookings.filter((booking) => ["CHECKED_IN", "APPROVED"].includes(String(booking.status || "").toUpperCase())).length;
+  const duePpms = ppms.filter((ppm) => ppm.nextDue && new Date(ppm.nextDue).getTime() <= toDate.getTime()).length;
+  const criticalAssets = assets.filter((asset) => ["CRITICAL", "HIGH"].includes(String(asset.criticality || "").toUpperCase())).length;
+  const inventoryOnHand = inventory.reduce((total, item) => total + Number(item.onHand || 0), 0);
+  const overallProgress = percent(completedWorkOrders + currentGuests + ppms.filter((ppm) => ppm.active).length, Math.max(1, workOrders.length + housingBookings.length + ppms.length));
+  const openWorkPercent = percent(openWorkOrders, Math.max(1, workOrders.length));
+  const inProgressPercent = percent(inProgressWorkOrders, Math.max(1, workOrders.length));
+  const ppmDuePercent = percent(duePpms, Math.max(1, ppms.length));
+  const assetActivePercent = percent(assets.filter((asset) => String(asset.status || "").toUpperCase() === "ACTIVE").length, Math.max(1, assets.length));
+  const hourlyChart = hourlyRows.map((row) => ({
+    ...row,
+    work: filteredEvents.filter((event) => event.module === "Work Orders" && `${String(event.occurredAt.getHours()).padStart(2, "0")}:00` === row.name).length,
+    bookings: filteredEvents.filter((event) => event.module.includes("Housing") && `${String(event.occurredAt.getHours()).padStart(2, "0")}:00` === row.name).length,
+    assets: filteredEvents.filter((event) => event.module.includes("Asset") && `${String(event.occurredAt.getHours()).padStart(2, "0")}:00` === row.name).length,
+    ppm: filteredEvents.filter((event) => event.module === "PPM Planner" && `${String(event.occurredAt.getHours()).padStart(2, "0")}:00` === row.name).length,
+  }));
+  const topCards = [
+    { label: "Work Orders", icon: Wrench, tone: "bg-lagoon text-white", value: openWorkOrders, detail: "Open", sideValue: completedWorkOrders, sideLabel: "Completed" },
+    { label: "Booking & Reservations", icon: CalendarCheck, tone: "bg-emerald-600 text-white", value: housingBookings.length, detail: "Total bookings", sideValue: currentGuests, sideLabel: "Current guests" },
+    { label: "Asset Inventory", icon: Building2, tone: "bg-coral text-white", value: assets.length, detail: "Total assets", sideValue: compactNumber(inventoryOnHand), sideLabel: "Inventory units" },
+    { label: "Planned Maintenance", icon: ClipboardCheck, tone: "bg-amber-500 text-white", value: duePpms, detail: "Due PM assets", sideValue: ppms.length, sideLabel: "Scheduled" },
+    { label: "Recent Progress", icon: Activity, tone: "bg-slate-700 text-white", value: `${overallProgress}%`, detail: "Overall progress", sideValue: activeStatuses, sideLabel: "Active statuses" },
+  ];
+  const progressData = [
+    { name: "Completed", value: completedWorkOrders },
+    { name: "In Progress", value: inProgressWorkOrders },
+    { name: "PPM Due", value: duePpms },
+    { name: "Requests", value: requests.length },
+  ];
+  const workOverview = [
+    { name: "Open", value: openWorkOrders },
+    { name: "In Progress", value: inProgressWorkOrders },
+    { name: "Completed", value: completedWorkOrders },
+    { name: "Pending PPM", value: duePpms },
+  ];
+  const bookingBars = [
+    { name: "Bookings", value: housingBookings.length },
+    { name: "Guests", value: currentGuests },
+    { name: "Requests", value: requests.length },
+    { name: "This Range", value: filteredEvents.filter((event) => event.module.includes("Housing") || event.module === "Service Requests").length },
+  ];
+  const assetStatusRows = countBy(assets, (asset) => String(asset.status || "Unknown")).slice(0, 5);
+  const latestRows = filteredEvents.slice(0, 12).map((event) => ({
+    id: event.id,
+    module: event.module,
+    item: event.title,
+    type: event.type,
+    status: event.status,
+    priority: event.priority,
+    occurredAt: formatDateCell(event.occurredAt.toISOString()),
+  }));
+
   return (
-    <section className="grid gap-5 xl:grid-cols-[1.4fr_0.8fr]">
-      <Panel title="Operational Throughput" icon={Gauge}>
-        <div className="h-80">
-          <ResponsiveContainer>
-            <AreaChart data={chartData}>
-              <defs>
-                <linearGradient id="ppm" x1="0" x2="0" y1="0" y2="1">
-                  <stop offset="0%" stopColor="#0f8b8d" stopOpacity={0.45} />
-                  <stop offset="100%" stopColor="#0f8b8d" stopOpacity={0.04} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#d9e6ee" />
-              <XAxis dataKey="name" />
-              <YAxis />
-              <Tooltip />
-              <Area type="monotone" dataKey="ppm" stroke="#0f8b8d" fill="url(#ppm)" strokeWidth={3} />
-              <Area type="monotone" dataKey="reactive" stroke="#f45d48" fill="#f45d4822" strokeWidth={3} />
-            </AreaChart>
-          </ResponsiveContainer>
+    <section className="grid gap-4">
+      <div className="flex flex-col gap-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm xl:flex-row xl:items-end xl:justify-between">
+        <div>
+          <p className="text-sm font-black uppercase text-emerald-700">Facility Management Summary</p>
+          <h3 className="mt-1 text-2xl font-black text-slate-900">Dashboard overview</h3>
+          <p className="mt-2 text-sm font-bold text-slate-500">Default range is the last 24 hours, with module-level filtering.</p>
         </div>
-      </Panel>
-      <Panel title="Asset Health" icon={Activity}>
-        <div className="h-80">
-          <ResponsiveContainer>
-            <PieChart>
-              <Pie data={assetHealth} dataKey="value" innerRadius={65} outerRadius={105} paddingAngle={5}>
-                {assetHealth.map((entry, index) => (
-                  <Cell key={entry.name} fill={healthColors[index]} />
-                ))}
-              </Pie>
-              <Tooltip />
-            </PieChart>
-          </ResponsiveContainer>
+        <div className="grid gap-2 sm:grid-cols-3 xl:min-w-[660px]">
+          <label className="grid gap-1 text-xs font-black uppercase text-slate-500">
+            From
+            <input type="datetime-local" value={fromValue} onChange={(event) => setFromValue(event.target.value)} className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold normal-case text-slate-700 outline-none focus:border-lagoon" />
+          </label>
+          <label className="grid gap-1 text-xs font-black uppercase text-slate-500">
+            To
+            <input type="datetime-local" value={toValue} onChange={(event) => setToValue(event.target.value)} className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold normal-case text-slate-700 outline-none focus:border-lagoon" />
+          </label>
+          <label className="grid gap-1 text-xs font-black uppercase text-slate-500">
+            Module
+            <select value={moduleFilter} onChange={(event) => setModuleFilter(event.target.value)} className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold normal-case text-slate-700 outline-none focus:border-lagoon">
+              {moduleOptions.map((module) => <option key={module} value={module}>{module}</option>)}
+            </select>
+          </label>
         </div>
-        <div className="grid grid-cols-2 gap-2">
-          {assetHealth.map((item, index) => (
-            <div key={item.name} className="rounded-lg bg-slate-50 p-2 text-sm font-bold">
-              <span className="mr-2 inline-block h-2 w-2 rounded-full" style={{ background: healthColors[index] }} />
-              {item.name}: {item.value}%
+      </div>
+
+      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+        {topCards.map((card) => {
+          const Icon = card.icon;
+          return (
+            <div key={card.label} className="min-w-0 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="flex items-start justify-between gap-3">
+                <div className={`grid h-12 w-12 shrink-0 place-items-center rounded-lg ${card.tone}`}>
+                  <Icon size={24} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-black text-slate-800">{card.label}</p>
+                  <div className="mt-2 flex items-baseline justify-between gap-3">
+                    <p className="text-3xl font-black text-slate-950">{card.value}</p>
+                    <p className="text-2xl font-black text-slate-800">{card.sideValue}</p>
+                  </div>
+                  <div className="mt-1 flex justify-between gap-3 text-xs font-bold text-slate-500">
+                    <span>{card.detail}</span>
+                    <span>{card.sideLabel}</span>
+                  </div>
+                </div>
+              </div>
             </div>
-          ))}
-        </div>
-      </Panel>
-      <Panel title="Priority Work Queue" icon={HardHat}>
-        <DataTable
-          rows={data.workOrders}
-          columns={[
-            ["woNo", "WO"],
-            ["title", "Job"],
-            ["priority", "Priority"],
-            ["status", "Status"],
-            ["dueAt", "Due"],
-          ]}
-        />
-      </Panel>
-      <Panel title="Portfolio Sites" icon={MapPinned}>
-        <DataTable
-          rows={data.sites}
-          columns={[
-            ["name", "Site"],
-            ["city", "City"],
-            ["type", "Type"],
-            ["areaSqm", "Area sqm"],
-          ]}
-        />
-      </Panel>
+          );
+        })}
+      </section>
+
+      <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_260px]">
+        <Panel title="Facility Management Summary" icon={Gauge}>
+          <div className="mb-4 grid gap-3 sm:grid-cols-4">
+            {[
+              ["Completed Work Orders", completedWorkOrders],
+              ["Current Guests", currentGuests],
+              ["Inventory Units", compactNumber(inventoryOnHand)],
+              ["Completed From Range", filteredEvents.length],
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-lg bg-slate-50 p-3 text-center">
+                <p className="text-2xl font-black text-slate-950">{value}</p>
+                <p className="mt-1 text-xs font-bold text-slate-500">{label}</p>
+              </div>
+            ))}
+          </div>
+          <div className="h-72">
+            <ResponsiveContainer>
+              <AreaChart data={hourlyChart}>
+                <defs>
+                  <linearGradient id="dashWork" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stopColor="#0f8b8d" stopOpacity={0.42} /><stop offset="100%" stopColor="#0f8b8d" stopOpacity={0.04} /></linearGradient>
+                  <linearGradient id="dashBookings" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stopColor="#06d6a0" stopOpacity={0.36} /><stop offset="100%" stopColor="#06d6a0" stopOpacity={0.04} /></linearGradient>
+                  <linearGradient id="dashAssets" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stopColor="#f45d48" stopOpacity={0.34} /><stop offset="100%" stopColor="#f45d48" stopOpacity={0.04} /></linearGradient>
+                  <linearGradient id="dashPpm" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stopColor="#ffd166" stopOpacity={0.42} /><stop offset="100%" stopColor="#ffd166" stopOpacity={0.04} /></linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#d9e6ee" />
+                <XAxis dataKey="name" />
+                <YAxis allowDecimals={false} />
+                <Tooltip />
+                <Area type="monotone" dataKey="work" stroke="#0f8b8d" fill="url(#dashWork)" strokeWidth={3} />
+                <Area type="monotone" dataKey="bookings" stroke="#06d6a0" fill="url(#dashBookings)" strokeWidth={3} />
+                <Area type="monotone" dataKey="assets" stroke="#f45d48" fill="url(#dashAssets)" strokeWidth={3} />
+                <Area type="monotone" dataKey="ppm" stroke="#d99b00" fill="url(#dashPpm)" strokeWidth={3} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </Panel>
+        <Panel title="Overall Progress" icon={Activity}>
+          <div className="grid h-full content-center gap-4">
+            <div className="text-center">
+              <p className="text-3xl font-black text-slate-950">{overallProgress}%</p>
+              <p className="text-xs font-black uppercase text-slate-500">Overall Progress</p>
+            </div>
+            <div className="h-52">
+              <ResponsiveContainer>
+                <PieChart>
+                  <Pie data={progressData.length ? progressData : [{ name: "No activity", value: 1 }]} dataKey="value" nameKey="name" innerRadius={62} outerRadius={92} paddingAngle={4}>
+                    {(progressData.length ? progressData : [{ name: "No activity", value: 1 }]).map((entry, index) => (
+                      <Cell key={entry.name} fill={progressData.length ? dashboardColors[index % dashboardColors.length] : "#cbd5e1"} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </Panel>
+      </section>
+
+      <section className="grid gap-4 xl:grid-cols-3">
+        <Panel title="Work Orders Overview" icon={Wrench}>
+          <div className="grid gap-4 md:grid-cols-[170px_1fr]">
+            <div className="h-44">
+              <ResponsiveContainer>
+                <PieChart>
+                  <Pie data={workOverview} dataKey="value" nameKey="name" innerRadius={52} outerRadius={76} paddingAngle={4}>
+                    {workOverview.map((entry, index) => <Cell key={entry.name} fill={dashboardColors[index % dashboardColors.length]} />)}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="grid content-center gap-3">
+              {[
+                ["Open", openWorkOrders, openWorkPercent, "bg-lagoon"],
+                ["In Progress", inProgressWorkOrders, inProgressPercent, "bg-emerald-500"],
+                ["Completed", completedWorkOrders, percent(completedWorkOrders, Math.max(1, workOrders.length)), "bg-slate-700"],
+                ["Pending PPM", duePpms, ppmDuePercent, "bg-amber-500"],
+              ].map(([label, value, width, color]) => (
+                <div key={label} className="grid gap-1">
+                  <div className="flex justify-between text-sm font-black text-slate-700"><span>{value} {label}</span><span>{width}%</span></div>
+                  <div className="h-2 overflow-hidden rounded-full bg-slate-100"><div className={`h-full rounded-full ${color}`} style={{ width: `${width}%` }} /></div>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="mt-4 h-28">
+            <ResponsiveContainer>
+              <BarChart data={workOverview}>
+                <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                <Tooltip />
+                <Bar dataKey="value" fill="#0f8b8d" radius={[6, 6, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </Panel>
+
+        <Panel title="Bookings Overview" icon={CalendarCheck}>
+          <div className="grid gap-3">
+            {[
+              ["Total Bookings", housingBookings.length],
+              ["Current Guests", currentGuests],
+              ["This Range", filteredEvents.filter((event) => event.module.includes("Housing")).length],
+              ["Service Requests", requests.length],
+            ].map(([label, value]) => (
+              <div key={label} className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">
+                <span className="text-sm font-bold text-slate-500">{label}</span>
+                <span className="text-xl font-black text-slate-950">{value}</span>
+              </div>
+            ))}
+          </div>
+          <div className="mt-4 h-40">
+            <ResponsiveContainer>
+              <BarChart data={bookingBars}>
+                <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                <YAxis allowDecimals={false} />
+                <Tooltip />
+                <Bar dataKey="value" fill="#06d6a0" radius={[6, 6, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </Panel>
+
+        <Panel title="Asset Inventory Status" icon={Building2}>
+          <div className="grid gap-4 md:grid-cols-[1fr_150px]">
+            <div className="grid content-center gap-3">
+              <div><p className="text-3xl font-black text-slate-950">{assets.length}</p><p className="text-sm font-bold text-slate-500">Total Assets</p></div>
+              <div><p className="text-2xl font-black text-slate-950">{criticalAssets}</p><p className="text-sm font-bold text-slate-500">Critical / High</p></div>
+              <div><p className="text-2xl font-black text-slate-950">{duePpms}</p><p className="text-sm font-bold text-slate-500">Due This Week</p></div>
+            </div>
+            <div className="h-40">
+              <ResponsiveContainer>
+                <PieChart>
+                  <Pie data={assetStatusRows.length ? assetStatusRows : [{ name: "No assets", value: 1 }]} dataKey="value" nameKey="name" innerRadius={42} outerRadius={68} paddingAngle={3}>
+                    {(assetStatusRows.length ? assetStatusRows : [{ name: "No assets", value: 1 }]).map((entry, index) => <Cell key={entry.name} fill={assetStatusRows.length ? dashboardColors[index % dashboardColors.length] : "#cbd5e1"} />)}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+          <div className="mt-4 grid gap-2">
+            {assetStatusRows.map((item, index) => (
+              <div key={item.name} className="flex items-center justify-between text-sm font-bold text-slate-600">
+                <span><span className="mr-2 inline-block h-2 w-2 rounded-full" style={{ background: dashboardColors[index % dashboardColors.length] }} />{item.name}</span>
+                <span>{percent(item.value, Math.max(1, assets.length))}%</span>
+              </div>
+            ))}
+          </div>
+        </Panel>
+      </section>
+
+      <section className="grid gap-4 xl:grid-cols-[0.9fr_0.8fr_1.1fr_0.9fr]">
+        <Panel title="Module Share" icon={LayoutDashboard}>
+          <div className="h-52">
+            <ResponsiveContainer>
+              <PieChart>
+                <Pie data={moduleBreakdown.length ? moduleBreakdown : [{ name: "No activity", value: 1 }]} dataKey="value" nameKey="name" innerRadius={58} outerRadius={108} paddingAngle={4}>
+                  {(moduleBreakdown.length ? moduleBreakdown : [{ name: "No activity", value: 1 }]).map((entry, index) => (
+                    <Cell key={entry.name} fill={moduleBreakdown.length ? dashboardColors[index % dashboardColors.length] : "#cbd5e1"} />
+                  ))}
+                </Pie>
+                <Tooltip />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="grid gap-2">
+            {moduleBreakdown.slice(0, 6).map((item, index) => (
+              <div key={item.name} className="rounded-lg bg-slate-50 p-2 text-sm font-bold">
+                <span className="mr-2 inline-block h-2 w-2 rounded-full" style={{ background: dashboardColors[index % dashboardColors.length] }} />
+                {item.name}: {item.value}
+              </div>
+            ))}
+          </div>
+        </Panel>
+        <Panel title="Status Breakdown" icon={Activity}>
+          <div className="h-72">
+            <ResponsiveContainer>
+              <BarChart data={statusBreakdown.slice(0, 10)} layout="vertical" margin={{ left: 18, right: 12 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#d9e6ee" />
+                <XAxis type="number" allowDecimals={false} />
+                <YAxis type="category" dataKey="name" width={132} />
+                <Tooltip />
+                <Bar dataKey="value" fill="#06d6a0" radius={[0, 6, 6, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </Panel>
+        <Panel title="Asset Inventory Status" icon={Building2}>
+          <DataTable
+            rows={assets.slice(0, 6).map((asset) => ({ id: asset.id, facility: asset.siteCode || asset.organization || "-", building: asset.buildingCode || "-", asset: asset.assetDescription || asset.name || asset.tag, priority: asset.criticality || "-", status: asset.status || "-" }))}
+            columns={[["facility", "Facility"], ["building", "Building"], ["asset", "Asset"], ["priority", "Priority"], ["status", "Status"]]}
+          />
+        </Panel>
+        <Panel title="Recent Work Orders" icon={HardHat}>
+          <DataTable
+            rows={latestRows.filter((row) => row.module === "Work Orders").slice(0, 6)}
+            columns={[["item", "Work Order"], ["status", "Status"], ["priority", "Priority"], ["occurredAt", "When"]]}
+          />
+        </Panel>
+      </section>
     </section>
   );
 }
@@ -2020,6 +2564,13 @@ function WorkOrders({
   useEffect(() => {
     const controller = new AbortController();
     const timer = window.setTimeout(async () => {
+      const defaultFilters = page === 1 && !search && statusFilter === "All" && priorityFilter === "All" && categoryFilter === "All" && departmentFilter === "All" && typeFilter === "All" && assignedFilter === "All" && !overdueOnly && !showOnlyDelayed;
+      if (defaultFilters && data.workOrders.length) {
+        setWorkRowsSource(data.workOrders);
+        setWorkTotal(data.workOrdersTotal ?? data.workOrders.length);
+        setWorkLoading(false);
+        return;
+      }
       setWorkLoading(true);
       try {
         const params = new URLSearchParams({
@@ -4340,7 +4891,9 @@ function WorkExecutionForm({ work, inventory, onSubmit, saving }: { work: any; i
 
 function Ppm({
   ppms,
+  ppmsTotal,
   assets,
+  locations,
   workOrders,
   submitPpm,
   updatePpm,
@@ -4349,7 +4902,9 @@ function Ppm({
   saving,
 }: {
   ppms: any[];
+  ppmsTotal?: number;
   assets: any[];
+  locations: any[];
   workOrders: any[];
   submitPpm: (formData: FormData) => void;
   updatePpm: (body: Record<string, unknown>) => Promise<void> | void;
@@ -4362,25 +4917,81 @@ function Ppm({
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
   const [selectedPpmIds, setSelectedPpmIds] = useState<Set<string>>(new Set());
-  const filtered = ppms.filter((ppm) => {
-    const asset = assets.find((item) => item.tag === ppm.assetTag);
-    const haystack = `${ppm.code} ${ppm.name} ${ppm.assetTag} ${ppm.frequency} ${ppm.checklist} ${asset?.assetGroup || ""}`.toLowerCase();
-    const queryMatch = !search || haystack.includes(search.toLowerCase());
-    const statusMatch = statusFilter === "All" || (statusFilter === "Active" ? ppm.active : !ppm.active);
-    return queryMatch && statusMatch;
-  });
-  const grouped = filtered.reduce((acc: Record<string, any[]>, ppm) => {
+  const [page, setPage] = useState(1);
+  const [ppmRowsSource, setPpmRowsSource] = useState<any[]>(ppms);
+  const [ppmTotal, setPpmTotal] = useState(ppmsTotal ?? ppms.length);
+  const [ppmLoading, setPpmLoading] = useState(false);
+  const ppmScrollRef = useRef<HTMLDivElement | null>(null);
+  const grouped = ppmRowsSource.reduce((acc: Record<string, any[]>, ppm) => {
     const key = ppm.nextDue ? new Date(ppm.nextDue).toISOString().slice(0, 10) : "Unscheduled";
     acc[key] = [...(acc[key] ?? []), ppm];
     return acc;
   }, {});
-  const selectedVisiblePpms = filtered.filter((ppm) => selectedPpmIds.has(ppm.id));
-  const allVisiblePpmsSelected = isAdmin && Boolean(filtered.length) && selectedVisiblePpms.length === filtered.length;
+  const hasMorePpms = ppmRowsSource.length < ppmTotal;
+  const selectedVisiblePpms = ppmRowsSource.filter((ppm) => selectedPpmIds.has(ppm.id));
+  const allVisiblePpmsSelected = isAdmin && Boolean(ppmRowsSource.length) && selectedVisiblePpms.length === ppmRowsSource.length;
   const someVisiblePpmsSelected = isAdmin && selectedVisiblePpms.length > 0 && !allVisiblePpmsSelected;
 
   useEffect(() => {
-    setSelectedPpmIds((current) => new Set(Array.from(current).filter((id) => ppms.some((ppm) => ppm.id === id))));
-  }, [ppms]);
+    setPage(1);
+    ppmScrollRef.current?.scrollTo({ top: 0 });
+  }, [search, statusFilter]);
+
+  useEffect(() => {
+    setPpmRowsSource(ppms);
+    setPpmTotal((current) => Math.max(current, ppmsTotal ?? ppms.length));
+  }, [ppms, ppmsTotal]);
+
+  useEffect(() => {
+    setSelectedPpmIds((current) => new Set(Array.from(current).filter((id) => ppmRowsSource.some((ppm) => ppm.id === id))));
+  }, [ppmRowsSource]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      const defaultFilters = page === 1 && !search && statusFilter === "All";
+      if (defaultFilters && ppms.length) {
+        setPpmRowsSource(ppms);
+        setPpmTotal(ppmsTotal ?? ppms.length);
+        setPpmLoading(false);
+        return;
+      }
+      setPpmLoading(true);
+      try {
+        const params = new URLSearchParams({
+          page: String(page),
+          pageSize: String(PAGE_SIZE),
+          query: search,
+          status: statusFilter,
+        });
+        const response = await fetch(`/api/ppm?${params.toString()}`, { cache: "no-store", signal: controller.signal });
+        if (response.ok) {
+          const result = await response.json();
+          setPpmRowsSource((current) => page === 1 ? result.ppms ?? [] : [...current, ...(result.ppms ?? [])]);
+          setPpmTotal(Number(result.total ?? result.ppms?.length ?? 0));
+        }
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === "AbortError")) {
+          console.error(error);
+        }
+      } finally {
+        if (!controller.signal.aborted) setPpmLoading(false);
+      }
+    }, 250);
+    return () => {
+      controller.abort();
+      window.clearTimeout(timer);
+    };
+  }, [page, search, statusFilter]);
+
+  function handlePpmScroll(event: UIEvent<HTMLDivElement>) {
+    const element = event.currentTarget;
+    const nearBottom = element.scrollTop + element.clientHeight >= element.scrollHeight - 180;
+    if (nearBottom && hasMorePpms && !ppmLoading) {
+      setPpmLoading(true);
+      setPage((current) => current + 1);
+    }
+  }
 
   function togglePpmSelection(id: string, checked: boolean) {
     setSelectedPpmIds((current) => {
@@ -4394,7 +5005,7 @@ function Ppm({
   function toggleVisiblePpms(checked: boolean) {
     setSelectedPpmIds((current) => {
       const next = new Set(current);
-      filtered.forEach((ppm) => {
+      ppmRowsSource.forEach((ppm) => {
         if (checked) next.add(ppm.id);
         else next.delete(ppm.id);
       });
@@ -4440,8 +5051,12 @@ function Ppm({
                 </div>
               </div>
             )}
-            <div className="cafm-scroll-x overflow-auto rounded-lg border border-slate-200 scrollbar-thin">
-              <table className="cafm-data-table min-w-[1140px] border-collapse bg-white text-sm">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-sm font-black text-slate-600">
+              <span>Showing {ppmRowsSource.length.toLocaleString()} of {ppmTotal.toLocaleString()} PPM plans</span>
+              {ppmLoading && <span className="text-lagoon">Loading PPM plans...</span>}
+            </div>
+            <div ref={ppmScrollRef} onScroll={handlePpmScroll} className="cafm-scroll-x max-h-[70vh] overflow-auto rounded-lg border border-slate-200 scrollbar-thin">
+              <table className="cafm-data-table min-w-[1280px] border-collapse bg-white text-sm">
                 <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
                   <tr>
                     {isAdmin && (
@@ -4456,12 +5071,13 @@ function Ppm({
                         />
                       </th>
                     )}
-                    <th className="px-3 py-3">#</th><th className="px-3 py-3">Title</th><th className="px-3 py-3">Status</th><th className="px-3 py-3">Frequency</th><th className="px-3 py-3">Next Due</th><th className="px-3 py-3">Category</th><th className="px-3 py-3">Asset</th><th className="px-3 py-3">Actions</th>
+                    <th className="px-3 py-3">#</th><th className="px-3 py-3">Title</th><th className="px-3 py-3">Status</th><th className="px-3 py-3">Frequency</th><th className="px-3 py-3">Next Due</th><th className="px-3 py-3">Priority</th><th className="px-3 py-3">Department</th><th className="px-3 py-3">Asset</th><th className="px-3 py-3">Location</th><th className="px-3 py-3">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((ppm, index) => {
+                {ppmRowsSource.map((ppm, index) => {
                   const asset = assets.find((item) => item.tag === ppm.assetTag);
+                  const location = locations.find((item) => item.code === ppm.locationCode);
                   return (
                     <tr key={ppm.id} onClick={() => setPreviewPpm(ppm)} className="cursor-pointer border-t border-slate-100 hover:bg-slate-50">
                       {isAdmin && (
@@ -4479,8 +5095,10 @@ function Ppm({
                       <td className="px-3 py-3"><span className={`rounded-full border px-2 py-1 text-xs font-black ${ppm.active ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-amber-200 bg-amber-50 text-amber-700"}`}>{ppm.active ? "Planned" : "Paused"}</span></td>
                       <td className="px-3 py-3">{ppm.frequency}</td>
                       <td className="px-3 py-3">{formatDateCell(ppm.nextDue)}</td>
-                      <td className="px-3 py-3">{asset?.assetGroup || asset?.category || "-"}</td>
-                      <td className="px-3 py-3 text-lagoon">{ppm.assetTag}</td>
+                      <td className="px-3 py-3"><RequestPriorityBadge priority={ppm.priority || "MEDIUM"} /></td>
+                      <td className="px-3 py-3">{ppm.departmentCode || asset?.departmentCode || "-"}</td>
+                      <td className="px-3 py-3 text-lagoon">{ppm.assetTag || "-"}</td>
+                      <td className="px-3 py-3"><p className="font-bold">{ppm.locationCode || asset?.locationCode || "-"}</p><p className="text-xs text-slate-500">{location?.description || asset?.locationDesc || ""}</p></td>
                       <td className="px-3 py-3">
                         <div className="flex gap-2">
                           <button type="button" onClick={(event) => { event.stopPropagation(); setPreviewPpm(ppm); }} className="rounded-lg bg-lagoon px-3 py-2 text-xs font-black text-white">Preview</button>
@@ -4494,6 +5112,9 @@ function Ppm({
               </tbody>
             </table>
             </div>
+            <div className="mt-3 text-center text-sm font-black text-slate-500">
+              {hasMorePpms ? "Scroll down to load more PPM plans" : "All matching PPM plans loaded"}
+            </div>
           </>
         ) : (
           <div className="grid gap-3 md:grid-cols-3">
@@ -4504,7 +5125,7 @@ function Ppm({
                   {items.map((ppm) => (
                     <button key={ppm.id} type="button" onClick={() => setPreviewPpm(ppm)} className="rounded-lg bg-white p-2 text-left text-sm hover:bg-lagoon/10">
                       <p className="font-bold">{ppm.name}</p>
-                      <p className="text-slate-500">{ppm.assetTag} / {ppm.frequency}</p>
+                      <p className="text-slate-500">{ppm.assetTag || ppm.locationCode} / {ppm.frequency}</p>
                     </button>
                   ))}
                 </div>
@@ -4518,6 +5139,7 @@ function Ppm({
         <PmPreviewModal
           ppm={previewPpm}
           asset={assets.find((asset) => asset.tag === previewPpm.assetTag)}
+          location={locations.find((location) => location.code === previewPpm.locationCode)}
           workOrders={workOrders.filter((work) => work.asset?.tag === previewPpm.assetTag || work.assetTag === previewPpm.assetTag)}
           saving={saving}
           onClose={() => setPreviewPpm(null)}
@@ -4563,6 +5185,8 @@ function PpmCreateForm({ assets, onSubmit, saving }: { assets: any[]; onSubmit: 
             </option>
           ))}
         </select>
+        <input name="locationCode" value={selectedAsset?.locationCode || ""} readOnly placeholder="Linked location" className={`${TICKET_PLAN_FIELD_CLASS} bg-slate-50 text-slate-500`} />
+        <input name="departmentCode" value={selectedAsset?.departmentCode || ""} readOnly placeholder="Department" className={`${TICKET_PLAN_FIELD_CLASS} bg-slate-50 text-slate-500`} />
         {selectedAsset && (
           <div className="grid gap-1 rounded-lg bg-slate-50 p-3 text-xs font-bold text-slate-600">
             <span>Location: {selectedLocation || "-"}</span>
@@ -4579,6 +5203,13 @@ function PpmCreateForm({ assets, onSubmit, saving }: { assets: any[]; onSubmit: 
           <option>Semi Annual</option>
           <option>Annual</option>
         </select>
+        <input name="nextDue" type="date" className={TICKET_PLAN_FIELD_CLASS} />
+        <select name="priority" className={TICKET_PLAN_FIELD_CLASS}>
+          <option value="MEDIUM">Medium priority</option>
+          <option value="LOW">Low priority</option>
+          <option value="HIGH">High priority</option>
+          <option value="CRITICAL">Critical priority</option>
+        </select>
         <input name="durationHrs" type="number" min={0} step="0.5" placeholder="Duration hours" className={TICKET_PLAN_FIELD_CLASS} />
         <textarea name="checklist" placeholder="Checklist / preventive maintenance procedure" className={`${TICKET_PLAN_TEXTAREA_CLASS} min-h-28`} />
         <button disabled={saving} className="mt-2 flex h-11 items-center justify-center gap-2 rounded-lg bg-ink px-4 font-black text-white disabled:cursor-not-allowed disabled:bg-slate-400">
@@ -4593,6 +5224,7 @@ function PpmCreateForm({ assets, onSubmit, saving }: { assets: any[]; onSubmit: 
 function PmPreviewModal({
   ppm,
   asset,
+  location,
   workOrders,
   saving,
   onClose,
@@ -4600,6 +5232,7 @@ function PmPreviewModal({
 }: {
   ppm: any;
   asset?: any;
+  location?: any;
   workOrders: any[];
   saving: boolean;
   onClose: () => void;
@@ -4609,7 +5242,7 @@ function PmPreviewModal({
   const [tab, setTab] = useState<"comments" | "history">("history");
   const [quickForm, setQuickForm] = useState<"" | "procedure" | "part">("");
   const [quickValue, setQuickValue] = useState("");
-  const priority = ppm.durationHrs >= 8 ? "CRITICAL" : ppm.durationHrs >= 4 ? "HIGH" : "MEDIUM";
+  const priority = ppm.priority || (ppm.durationHrs >= 8 ? "CRITICAL" : ppm.durationHrs >= 4 ? "HIGH" : "MEDIUM");
   const historyData = workOrders.slice(0, 8).map((work) => ({
     name: String(formatDateCell(work.createdAt)).slice(0, 10),
     created: 1,
@@ -4651,8 +5284,10 @@ function PmPreviewModal({
           <PreviewField label="Work Type" value="Preventive" />
           <PreviewField label="Schedule" value={ppm.frequency} />
           <PreviewField label="Asset" value={ppm.assetTag} />
+          <PreviewField label="Location Code" value={ppm.locationCode || asset?.locationCode} />
+          <PreviewField label="Department" value={ppm.departmentCode || asset?.departmentCode} />
           <PreviewField label="Category" value={asset?.assetGroup || asset?.category} />
-          <PreviewField label="Location" value={[asset?.buildingCode, asset?.floor, asset?.room].filter(Boolean).join(" / ")} />
+          <PreviewField label="Location" value={location?.description || asset?.locationDesc || [asset?.buildingCode, asset?.floor, asset?.room].filter(Boolean).join(" / ")} />
         </div>
         <div className="rounded-lg border border-slate-200 bg-white p-4">
           <div className="flex items-center justify-between gap-3">
@@ -5258,6 +5893,7 @@ function DocumentManagement({
   canUploadDocuments,
   isAdmin,
   deleteDocument,
+  setToast,
 }: {
   assets: any[];
   services: any[];
@@ -5269,145 +5905,122 @@ function DocumentManagement({
   canUploadDocuments: boolean;
   isAdmin: boolean;
   deleteDocument: (id: string) => void;
+  setToast: (message: string) => void;
 }) {
   const [tab, setTab] = useState(view || "documents-om-manuals");
+  const [documentPages, setDocumentPages] = useState<Record<string, { rows: any[]; total: number; page: number; loading: boolean }>>({});
+  const [bulkDeletingCategory, setBulkDeletingCategory] = useState("");
 
   useEffect(() => {
     if (view?.startsWith("documents")) setTab(view);
   }, [view]);
 
-  const uploadedRows = (category: string, documentType: string) => documentUploads
-    .filter((document) => document.category === category)
-    .map((document) => {
-      const asset = assets.find((item) => item.tag === document.assetTag);
-      return {
-        id: document.id,
-        canDelete: true,
-        documentType,
-        reference: document.assetTag,
-        title: document.fileName,
-        assetType: asset?.assetGroup || asset?.category || "-",
-        location: [asset?.siteCode, asset?.buildingCode, asset?.floor, asset?.room].filter(Boolean).join(" / ") || "-",
-        owner: document.uploadedBy || "Document Management",
-        provider: document.uploadedBy || "Document Management",
-        scope: document.assetTag,
-        sla: "-",
-        expiryDate: "-",
-        status: "AVAILABLE",
-        attachment: document.fileUrl,
-        uploadedAt: formatDateCell(document.createdAt),
-        size: formatFileSize(document.fileSize),
-      };
-    });
-  const manualRows = [
-    ...uploadedRows("OM_MANUAL", "O&M Manual"),
-    ...assets
-    .map((asset) => ({
-      id: asset.id,
-      documentType: "O&M Manual",
-      reference: asset.tag,
-      title: asset.assetDescription || asset.name,
-      assetType: asset.assetGroup || asset.category,
-      location: [asset.siteCode, asset.buildingCode, asset.floor, asset.room].filter(Boolean).join(" / ") || "-",
-      owner: asset.assignedSupervisorEmail || asset.assignedTeamCode || "Unassigned",
-      attachment: attachmentList(asset.documentationUrl)[0] || "-",
-      status: asset.documentationUrl ? "AVAILABLE" : "MISSING",
-      uploadedAt: "-",
-      size: "-",
-    }))
-    .filter((row) => row.title || row.reference),
-  ];
-  const warrantyRows = [
-    ...uploadedRows("WARRANTY_GUARANTEE", "Warranty / Guarantee"),
-    ...assets.map((asset) => ({
-      id: `asset-${asset.id}`,
-      documentType: "Equipment Warranty",
-      reference: asset.tag,
-      title: asset.assetDescription || asset.name,
-      assetType: asset.assetGroup || asset.category,
-      provider: asset.manufacturer || asset.contractRef || "Not specified",
-      expiryDate: asset.warrantyExpiry ? formatDateCell(asset.warrantyExpiry) : "-",
-      status: asset.warrantyExpiry ? "ACTIVE" : "MISSING",
-      attachment: attachmentList(asset.documentationUrl)[1] || attachmentList(asset.documentationUrl)[0] || "-",
-      uploadedAt: "-",
-      size: "-",
-    })),
-    ...complianceCertificates.map((certificate) => ({
-      id: `certificate-${certificate.id}`,
-      documentType: "Guarantee / Certificate",
-      reference: certificate.certificateNo,
-      title: certificate.title,
-      assetType: certificate.category,
-      provider: certificate.authority,
-      expiryDate: formatDateCell(certificate.expiryDate),
-      status: certificate.status,
-      attachment: certificate.evidenceUrl || "-",
-      uploadedAt: "-",
-      size: "-",
-    })),
-  ];
-  const contractRows = [
-    ...uploadedRows("SUPPORT_CONTRACT_SLA", "Support Contract / SLA"),
-    ...services.map((service) => ({
-      id: `service-${service.id}`,
-      documentType: "Support SLA",
-      reference: service.code,
-      title: service.name,
-      provider: service.team?.name || service.teamCode || "Internal team",
-      scope: service.category || service.type,
-      sla: `${service.slaHours ?? "-"} hours`,
-      status: service.active === false ? "INACTIVE" : "ACTIVE",
-      attachment: "-",
-      uploadedAt: "-",
-      size: "-",
-    })),
-    ...workOrders
-      .filter((work) => work.serviceCode || work.assignedTeamCode)
-      .map((work) => ({
-        id: `work-${work.id}`,
-        documentType: "Support Contract Link",
-        reference: work.woNo,
-        title: work.title,
-        provider: work.assignedTeamCode || "Unassigned",
-        scope: work.serviceCode || work.type,
-        sla: work.dueHours ? `${work.dueHours} hours` : "-",
-        status: work.status,
-        attachment: "-",
-        uploadedAt: "-",
-        size: "-",
-      })),
-  ];
   const tabs = [
-    ["documents-om-manuals", "Operation & Maintenance Manuals", "OM_MANUAL", manualRows.length],
-    ["documents-warranties", "Equipment Warranties and Guarantees", "WARRANTY_GUARANTEE", warrantyRows.length],
-    ["documents-contracts-slas", "Support Contracts and SLAs", "SUPPORT_CONTRACT_SLA", contractRows.length],
+    ["documents-om-manuals", "Operation & Maintenance Manuals", "OM_MANUAL"],
+    ["documents-warranties", "Equipment Warranties and Guarantees", "WARRANTY_GUARANTEE"],
+    ["documents-contracts-slas", "Support Contracts and SLAs", "SUPPORT_CONTRACT_SLA"],
   ] as const;
   const activeCategory = tabs.find(([id]) => id === tab)?.[2] ?? "OM_MANUAL";
+  const activeLabel = tabs.find(([, , category]) => category === activeCategory)?.[1] ?? "Documents";
+  const activeDocuments = documentPages[activeCategory] ?? { rows: [], total: 0, page: 0, loading: false };
+
+  async function loadDocuments(category: string, reset = false) {
+    const current = documentPages[category] ?? { rows: [], total: 0, page: 0, loading: false };
+    if (current.loading) return;
+    const nextPage = reset ? 1 : current.page + 1;
+    setDocumentPages((pages) => ({ ...pages, [category]: { ...(pages[category] ?? current), loading: true } }));
+    const response = await fetch(`/api/document-uploads?category=${encodeURIComponent(category)}&page=${nextPage}&pageSize=${PAGE_SIZE}`, { cache: "no-store" });
+    if (!response.ok) {
+      setDocumentPages((pages) => ({ ...pages, [category]: { ...(pages[category] ?? current), loading: false } }));
+      return;
+    }
+    const result = await response.json();
+    const rows = (result.rows ?? []).map((row: any) => ({
+      ...row,
+      uploadedAt: formatDateCell(row.uploadedAt),
+      size: formatFileSize(row.size ?? row.fileSize),
+      attachment: row.attachment || (row.missingFileUrl ? "Missing file" : "-"),
+    }));
+    setDocumentPages((pages) => ({
+      ...pages,
+      [category]: {
+        rows: reset ? rows : [...(pages[category]?.rows ?? []), ...rows],
+        total: Number(result.total ?? rows.length),
+        page: Number(result.page ?? nextPage),
+        loading: false,
+      },
+    }));
+  }
+
+  useEffect(() => {
+    if (!documentPages[activeCategory]) void loadDocuments(activeCategory, true);
+  }, [activeCategory]);
+
+  async function deleteLoadedDocument(id: string) {
+    await deleteDocument(id);
+    await loadDocuments(activeCategory, true);
+  }
+
+  async function deleteAllActiveDocuments() {
+    const expectedText = `DELETE ${activeLabel}`;
+    const typed = window.prompt(`This will delete all ${activeDocuments.total.toLocaleString()} ${activeLabel} records from the database. Type "${expectedText}" to continue.`);
+    if (typed !== expectedText) return;
+    setBulkDeletingCategory(activeCategory);
+    const response = await fetch(`/api/document-uploads?category=${encodeURIComponent(activeCategory)}&confirm=DELETE_ALL`, { method: "DELETE" });
+    const result = await response.json();
+    if (response.ok) {
+      setToast(`${Number(result.deletedCount ?? 0).toLocaleString()} ${activeLabel} records deleted.`);
+      setDocumentPages((pages) => ({ ...pages, [activeCategory]: { rows: [], total: 0, page: 0, loading: false } }));
+    } else {
+      setToast(cleanMessage(result.message ?? `Unable to delete ${activeLabel}.`));
+    }
+    setBulkDeletingCategory("");
+  }
 
   return (
     <section className="grid gap-5">
       <Panel title="Document Management" icon={FileText}>
         <div className="mb-4 flex flex-wrap gap-2 border-b border-slate-200 pb-3">
-          {tabs.map(([id, label, , count]) => (
+          {tabs.map(([id, label, category]) => {
+            const count = documentPages[category]?.total ?? documentUploads.filter((document) => document.category === category).length;
+            return (
             <button key={id} type="button" onClick={() => setTab(id)} className={`rounded-lg px-3 py-2 text-sm font-black ${tab === id ? "bg-lagoon text-white" : "bg-slate-50 text-slate-600 hover:bg-slate-100"}`}>
               {label}
               <span className={`ml-2 rounded-full px-2 py-0.5 text-xs ${tab === id ? "bg-white/20 text-white" : "bg-white text-slate-500"}`}>{count}</span>
             </button>
-          ))}
+          )})}
         </div>
         <div className="grid gap-4 md:grid-cols-3">
-          {tabs.map(([id, label, , count]) => (
+          {tabs.map(([id, label, category]) => {
+            const count = documentPages[category]?.total ?? documentUploads.filter((document) => document.category === category).length;
+            return (
             <button key={id} type="button" onClick={() => setTab(id)} className={`rounded-lg border p-4 text-left transition ${tab === id ? "border-lagoon bg-lagoon/5" : "border-slate-200 bg-slate-50 hover:bg-slate-100"}`}>
               <p className="text-xs font-black uppercase text-slate-500">{label}</p>
               <p className="mt-2 text-3xl font-black text-ink">{count}</p>
             </button>
-          ))}
+          )})}
         </div>
-        {canUploadDocuments && <DocumentUploadForm assets={assets} category={activeCategory} refreshData={refreshData} />}
+        {isAdmin && (
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-coral/20 bg-coral/5 p-3">
+            <div>
+              <p className="text-sm font-black text-coral">Delete all {activeLabel} records</p>
+              <p className="text-xs font-bold text-slate-500">Deletes all rows in this document category from the database. Stored files are not deleted.</p>
+            </div>
+            <button
+              type="button"
+              disabled={bulkDeletingCategory === activeCategory || activeDocuments.loading || activeDocuments.total === 0}
+              onClick={deleteAllActiveDocuments}
+              className="rounded-lg bg-coral px-4 py-2 text-xs font-black text-white disabled:bg-slate-300"
+            >
+              {bulkDeletingCategory === activeCategory ? "Deleting..." : "Delete All Records"}
+            </button>
+          </div>
+        )}
+        {canUploadDocuments && <DocumentUploadForm assets={assets} category={activeCategory} refreshData={async () => loadDocuments(activeCategory, true)} />}
         <div className="mt-5">
           {tab === "documents-om-manuals" && (
-            <DataTable
-              rows={manualRows}
+            <ScrollableRowsTable
+              rows={activeDocuments.rows}
               columns={[
                 ["documentType", "Document Type"],
                 ["reference", "Asset Code"],
@@ -5420,15 +6033,18 @@ function DocumentManagement({
                 ["uploadedAt", "Uploaded"],
                 ["size", "Size"],
               ]}
-              actions={isAdmin ? (row) => row.canDelete ? <DeleteRowButton saving={false} onDelete={() => deleteDocument(row.id)} /> : null : undefined}
+              actions={isAdmin ? (row) => row.canDelete ? <DeleteRowButton saving={false} onDelete={() => deleteLoadedDocument(row.id)} /> : null : undefined}
               bulkSelectable={isAdmin}
               bulkLabel="documents"
-              onBulkDelete={async (rows) => { await Promise.all(rows.filter((row) => row.canDelete).map((row) => deleteDocument(row.id))); }}
+              onBulkDelete={async (rows) => { await Promise.all(rows.filter((row) => row.canDelete).map((row) => deleteDocument(row.id))); await loadDocuments(activeCategory, true); }}
+              totalRows={activeDocuments.total}
+              loading={activeDocuments.loading}
+              onLoadMore={() => loadDocuments(activeCategory)}
             />
           )}
           {tab === "documents-warranties" && (
-            <DataTable
-              rows={warrantyRows}
+            <ScrollableRowsTable
+              rows={activeDocuments.rows}
               columns={[
                 ["documentType", "Document Type"],
                 ["reference", "Reference"],
@@ -5441,15 +6057,18 @@ function DocumentManagement({
                 ["uploadedAt", "Uploaded"],
                 ["size", "Size"],
               ]}
-              actions={isAdmin ? (row) => row.canDelete ? <DeleteRowButton saving={false} onDelete={() => deleteDocument(row.id)} /> : null : undefined}
+              actions={isAdmin ? (row) => row.canDelete ? <DeleteRowButton saving={false} onDelete={() => deleteLoadedDocument(row.id)} /> : null : undefined}
               bulkSelectable={isAdmin}
               bulkLabel="documents"
-              onBulkDelete={async (rows) => { await Promise.all(rows.filter((row) => row.canDelete).map((row) => deleteDocument(row.id))); }}
+              onBulkDelete={async (rows) => { await Promise.all(rows.filter((row) => row.canDelete).map((row) => deleteDocument(row.id))); await loadDocuments(activeCategory, true); }}
+              totalRows={activeDocuments.total}
+              loading={activeDocuments.loading}
+              onLoadMore={() => loadDocuments(activeCategory)}
             />
           )}
           {tab === "documents-contracts-slas" && (
-            <DataTable
-              rows={contractRows}
+            <ScrollableRowsTable
+              rows={activeDocuments.rows}
               columns={[
                 ["documentType", "Document Type"],
                 ["reference", "Reference"],
@@ -5462,15 +6081,173 @@ function DocumentManagement({
                 ["uploadedAt", "Uploaded"],
                 ["size", "Size"],
               ]}
-              actions={isAdmin ? (row) => row.canDelete ? <DeleteRowButton saving={false} onDelete={() => deleteDocument(row.id)} /> : null : undefined}
+              actions={isAdmin ? (row) => row.canDelete ? <DeleteRowButton saving={false} onDelete={() => deleteLoadedDocument(row.id)} /> : null : undefined}
               bulkSelectable={isAdmin}
               bulkLabel="documents"
-              onBulkDelete={async (rows) => { await Promise.all(rows.filter((row) => row.canDelete).map((row) => deleteDocument(row.id))); }}
+              onBulkDelete={async (rows) => { await Promise.all(rows.filter((row) => row.canDelete).map((row) => deleteDocument(row.id))); await loadDocuments(activeCategory, true); }}
+              totalRows={activeDocuments.total}
+              loading={activeDocuments.loading}
+              onLoadMore={() => loadDocuments(activeCategory)}
             />
           )}
         </div>
       </Panel>
     </section>
+  );
+}
+
+function ScrollableRowsTable({
+  rows,
+  columns,
+  actions,
+  bulkSelectable = false,
+  bulkLabel = "documents",
+  onBulkDelete,
+  totalRows,
+  loading = false,
+  onLoadMore,
+}: {
+  rows: any[];
+  columns: [string, string][];
+  actions?: (row: any) => ReactNode;
+  bulkSelectable?: boolean;
+  bulkLabel?: string;
+  onBulkDelete?: (rows: any[]) => Promise<void> | void;
+  totalRows?: number;
+  loading?: boolean;
+  onLoadMore?: () => Promise<void> | void;
+}) {
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const [selectedRowKeys, setSelectedRowKeys] = useState<Set<string>>(new Set());
+  const visibleRows = rows.slice(0, visibleCount);
+  const rowKey = (row: any, index: number) => String(row.id ?? row.reference ?? row.title ?? index);
+  const visibleRowKeys = visibleRows.map((row, index) => rowKey(row, index));
+  const selectedRows = rows.filter((row, index) => selectedRowKeys.has(rowKey(row, index)));
+  const selectedVisibleKeys = visibleRowKeys.filter((key) => selectedRowKeys.has(key));
+  const allVisibleSelected = bulkSelectable && Boolean(visibleRowKeys.length) && selectedVisibleKeys.length === visibleRowKeys.length;
+  const someVisibleSelected = bulkSelectable && selectedVisibleKeys.length > 0 && !allVisibleSelected;
+  const displayTotal = totalRows ?? rows.length;
+  const hasMoreRows = onLoadMore ? rows.length < displayTotal : visibleRows.length < rows.length;
+
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE);
+  }, [rows.length]);
+
+  useEffect(() => {
+    const allKeys = new Set(rows.map((row, index) => rowKey(row, index)));
+    setSelectedRowKeys((current) => new Set(Array.from(current).filter((key) => allKeys.has(key))));
+  }, [rows]);
+
+  function handleScroll(event: UIEvent<HTMLDivElement>) {
+    const element = event.currentTarget;
+    const nearBottom = element.scrollTop + element.clientHeight >= element.scrollHeight - 180;
+    if (nearBottom && hasMoreRows && !loading) {
+      if (onLoadMore) {
+        void onLoadMore();
+        return;
+      }
+      setVisibleCount((current) => Math.min(rows.length, current + PAGE_SIZE));
+    }
+  }
+
+  function toggleVisibleRows(checked: boolean) {
+    setSelectedRowKeys((current) => {
+      const next = new Set(current);
+      visibleRows.forEach((row, index) => {
+        const key = rowKey(row, index);
+        if (checked) next.add(key);
+        else next.delete(key);
+      });
+      return next;
+    });
+  }
+
+  function toggleRow(key: string, checked: boolean) {
+    setSelectedRowKeys((current) => {
+      const next = new Set(current);
+      if (checked) next.add(key);
+      else next.delete(key);
+      return next;
+    });
+  }
+
+  async function deleteSelectedRows() {
+    if (!onBulkDelete || !selectedRows.length) return;
+    await onBulkDelete(selectedRows);
+    setSelectedRowKeys(new Set());
+  }
+
+  return (
+    <div className="grid gap-3">
+      {bulkSelectable && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm font-black text-slate-600">
+          <span>Selected {selectedRowKeys.size.toLocaleString()} {bulkLabel}</span>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={() => toggleVisibleRows(true)} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-black text-lagoon">Select Visible</button>
+            <button type="button" disabled={!selectedRowKeys.size || !onBulkDelete} onClick={deleteSelectedRows} className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white disabled:bg-slate-300">Delete All</button>
+            <button type="button" disabled={!selectedRowKeys.size} onClick={() => setSelectedRowKeys(new Set())} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-600 disabled:opacity-50">Clear Selection</button>
+          </div>
+        </div>
+      )}
+      <div onScroll={handleScroll} className="cafm-scroll-x max-h-[70vh] overflow-auto rounded-lg border border-slate-200 scrollbar-thin">
+        <table className="cafm-data-table min-w-[1500px] table-fixed border-collapse bg-white text-sm">
+          <thead className="sticky top-0 z-10 bg-slate-50 text-left text-xs uppercase text-slate-500">
+            <tr>
+              {bulkSelectable && (
+                <th className="w-12 px-3 py-3 font-black">
+                  <input
+                    type="checkbox"
+                    checked={allVisibleSelected}
+                    ref={(input) => {
+                      if (input) input.indeterminate = someVisibleSelected;
+                    }}
+                    onChange={(event) => toggleVisibleRows(event.target.checked)}
+                  />
+                </th>
+              )}
+              <th className="w-14 px-3 py-3 font-black">#</th>
+              {columns.map(([, label]) => (
+                <th key={label} className="px-3 py-3 font-black">
+                  {label}
+                </th>
+              ))}
+              {actions && <th className="w-28 px-3 py-3 font-black">Actions</th>}
+            </tr>
+          </thead>
+          <tbody>
+            {visibleRows.map((row, index) => {
+              const key = rowKey(row, index);
+              return (
+                <tr key={key} className="border-t border-slate-100 align-top">
+                  {bulkSelectable && (
+                    <td className="px-3 py-3">
+                      <input
+                        type="checkbox"
+                        checked={selectedRowKeys.has(key)}
+                        onChange={(event) => toggleRow(key, event.target.checked)}
+                      />
+                    </td>
+                  )}
+                  <td className="px-3 py-3 font-black text-slate-500">{index + 1}</td>
+                  {columns.map(([columnKey]) => (
+                    <td key={columnKey} className="px-3 py-3">
+                      <div className={`max-w-full leading-5 ${columnKey === "attachment" ? "break-all font-black text-lagoon" : "break-words"}`}>
+                        <CellValue value={row[columnKey]} field={columnKey} />
+                      </div>
+                    </td>
+                  ))}
+                  {actions && <td className="px-3 py-3">{actions(row)}</td>}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-center text-sm font-black text-slate-500">
+        Showing {visibleRows.length.toLocaleString()} of {displayTotal.toLocaleString()} rows
+        {loading ? " / loading..." : hasMoreRows ? " / scroll down to load more" : ""}
+      </p>
+    </div>
   );
 }
 
@@ -5517,10 +6294,10 @@ function DocumentUploadForm({ assets, category, refreshData }: { assets: any[]; 
     <form onSubmit={uploadDocuments} className="mt-5 grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 md:grid-cols-[1fr_1fr_auto] md:items-end">
       <label className="grid gap-1 text-sm font-bold text-slate-600">
         Asset Number
-        <select required value={assetTag} onChange={(event) => setAssetTag(event.target.value)} className={HOUSING_FIELD_CLASS}>
-          <option value="">Select asset number</option>
-          {assets.map((asset) => <option key={asset.id} value={asset.tag}>{asset.tag} - {asset.assetDescription || asset.name}</option>)}
-        </select>
+        <input required list="document-upload-assets" value={assetTag} onChange={(event) => setAssetTag(event.target.value)} placeholder="Enter asset number" className={HOUSING_FIELD_CLASS} />
+        <datalist id="document-upload-assets">
+          {assets.map((asset) => <option key={asset.id} value={asset.tag}>{asset.assetDescription || asset.name}</option>)}
+        </datalist>
       </label>
       <label className="grid gap-1 text-sm font-bold text-slate-600">
         File
@@ -5666,7 +6443,7 @@ function TeamsServices({
         {showAll && (
           <Panel title="Asset Categories" icon={Boxes}>
             <ReportButtons type="asset-categories" label="Categories report" />
-            <DataTable rows={categories} columns={[["code", "Code"], ["name", "Category"], ["type", "Type"], ["defaultLifeYrs", "Life yrs"], ["statutory", "Statutory"]]} actions={isAdmin ? (row) => <DeleteRowButton saving={saving} onDelete={() => deleteCategory(row.id)} /> : undefined} bulkSelectable={isAdmin} bulkLabel="categories" onBulkDelete={async (rows) => { await Promise.all(rows.map((row) => deleteCategory(row.id))); }} />
+            <ScrollableRowsTable rows={categories} columns={[["code", "Code"], ["name", "Category"], ["type", "Type"], ["defaultLifeYrs", "Life yrs"], ["statutory", "Statutory"]]} actions={isAdmin ? (row) => <DeleteRowButton saving={saving} onDelete={() => deleteCategory(row.id)} /> : undefined} bulkSelectable={isAdmin} bulkLabel="categories" onBulkDelete={async (rows) => { await Promise.all(rows.map((row) => deleteCategory(row.id))); }} />
           </Panel>
         )}
       </div>
@@ -5740,17 +6517,79 @@ function AssetHierarchySetup({
   submitDepartment: (formData: FormData) => void;
   submitCategory: (formData: FormData) => void;
 }) {
-  const siteRows = sites.map((site) => ({
+  const [setupRows, setSetupRows] = useState({ sites, buildings, spaces, categories });
+  const [setupTotals, setSetupTotals] = useState({ sites: sites.length, buildings: buildings.length, spaces: spaces.length, categories: categories.length });
+  const [setupPages, setSetupPages] = useState({ sites: 1, buildings: 1, spaces: 1, categories: 1 });
+  const [setupLoading, setSetupLoading] = useState("");
+  const setupKey = view === "asset-sites" ? "sites" : view === "asset-buildings" ? "buildings" : view === "asset-spaces" ? "spaces" : view === "asset-categories" ? "categories" : "";
+  const setupEndpoint = setupKey === "sites" ? "/api/sites" : setupKey === "buildings" ? "/api/buildings" : setupKey === "spaces" ? "/api/spaces" : setupKey === "categories" ? "/api/asset-categories" : "";
+  const setupResponseKey = setupKey === "categories" ? "categories" : setupKey;
+
+  useEffect(() => {
+    setSetupRows({ sites, buildings, spaces, categories });
+    setSetupTotals((current) => ({
+      sites: Math.max(current.sites, sites.length),
+      buildings: Math.max(current.buildings, buildings.length),
+      spaces: Math.max(current.spaces, spaces.length),
+      categories: Math.max(current.categories, categories.length),
+    }));
+  }, [sites, buildings, spaces, categories]);
+
+  useEffect(() => {
+    if (!setupEndpoint || !setupKey) return;
+    const controller = new AbortController();
+    async function loadFirstPage() {
+      setSetupLoading(setupKey);
+      try {
+        const response = await fetch(`${setupEndpoint}?page=1&pageSize=${PAGE_SIZE}`, { cache: "no-store", signal: controller.signal });
+        if (response.ok) {
+          const result = await response.json();
+          setSetupRows((current) => ({ ...current, [setupKey]: result[setupResponseKey] ?? [] }));
+          setSetupTotals((current) => ({ ...current, [setupKey]: Number(result.total ?? result[setupResponseKey]?.length ?? 0) }));
+          setSetupPages((current) => ({ ...current, [setupKey]: 1 }));
+        }
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === "AbortError")) console.error(error);
+      } finally {
+        if (!controller.signal.aborted) setSetupLoading("");
+      }
+    }
+    void loadFirstPage();
+    return () => controller.abort();
+  }, [setupEndpoint, setupKey, setupResponseKey]);
+
+  async function loadMoreSetupRows() {
+    if (!setupEndpoint || !setupKey || setupLoading) return;
+    const currentRows = setupRows[setupKey as keyof typeof setupRows];
+    const total = setupTotals[setupKey as keyof typeof setupTotals];
+    if (currentRows.length >= total) return;
+    const nextPage = setupPages[setupKey as keyof typeof setupPages] + 1;
+    setSetupLoading(setupKey);
+    try {
+      const response = await fetch(`${setupEndpoint}?page=${nextPage}&pageSize=${PAGE_SIZE}`, { cache: "no-store" });
+      if (response.ok) {
+        const result = await response.json();
+        const nextRows = result[setupResponseKey] ?? [];
+        setSetupRows((current) => ({ ...current, [setupKey]: [...current[setupKey as keyof typeof setupRows], ...nextRows] }));
+        setSetupTotals((current) => ({ ...current, [setupKey]: Number(result.total ?? total) }));
+        setSetupPages((current) => ({ ...current, [setupKey]: nextPage }));
+      }
+    } finally {
+      setSetupLoading("");
+    }
+  }
+
+  const siteRows = setupRows.sites.map((site) => ({
     ...site,
-    buildingCount: site.buildings?.length ?? buildings.filter((building) => building.siteId === site.id).length,
+    buildingCount: site.buildings?.length ?? setupRows.buildings.filter((building) => building.siteId === site.id).length,
   }));
-  const buildingRows = buildings.map((building) => ({
+  const buildingRows = setupRows.buildings.map((building) => ({
     ...building,
-    siteName: building.site?.name || sites.find((site) => site.id === building.siteId)?.name || "",
+    siteName: building.site?.name || setupRows.sites.find((site) => site.id === building.siteId)?.name || "",
   }));
-  const spaceRows = spaces.map((space) => ({
+  const spaceRows = setupRows.spaces.map((space) => ({
     ...space,
-    buildingCode: space.building?.code || buildings.find((building) => building.id === space.buildingId)?.code || "",
+    buildingCode: space.building?.code || setupRows.buildings.find((building) => building.id === space.buildingId)?.code || "",
     siteName: space.building?.site?.name || "",
   }));
   const showSites = view === "asset-sites";
@@ -5764,17 +6603,17 @@ function AssetHierarchySetup({
       <div className="space-y-5">
         {showSites && (
           <Panel title="Sites" icon={MapPinned}>
-            <DataTable rows={siteRows} columns={[["name", "Site"], ["city", "City"], ["country", "Country"], ["type", "Type"], ["areaSqm", "Area sqm"], ["buildingCount", "Buildings"]]} />
+            <ScrollableRowsTable rows={siteRows} totalRows={setupTotals.sites} loading={setupLoading === "sites"} onLoadMore={loadMoreSetupRows} columns={[["name", "Site"], ["city", "City"], ["country", "Country"], ["type", "Type"], ["areaSqm", "Area sqm"], ["buildingCount", "Buildings"]]} />
           </Panel>
         )}
         {showBuildings && (
           <Panel title="Buildings" icon={Building2}>
-            <DataTable rows={buildingRows} columns={[["code", "Code"], ["name", "Building"], ["siteName", "Site"], ["floors", "Floors"], ["areaSqm", "Area sqm"]]} />
+            <ScrollableRowsTable rows={buildingRows} totalRows={setupTotals.buildings} loading={setupLoading === "buildings"} onLoadMore={loadMoreSetupRows} columns={[["code", "Code"], ["name", "Building"], ["siteName", "Site"], ["floors", "Floors"], ["areaSqm", "Area sqm"]]} />
           </Panel>
         )}
         {showSpaces && (
           <Panel title="Spaces" icon={Boxes}>
-            <DataTable rows={spaceRows} columns={[["name", "Space"], ["buildingCode", "Building"], ["floor", "Floor"], ["type", "Type"], ["capacity", "Capacity"], ["areaSqm", "Area sqm"], ["occupancy", "Occupancy"]]} />
+            <ScrollableRowsTable rows={spaceRows} totalRows={setupTotals.spaces} loading={setupLoading === "spaces"} onLoadMore={loadMoreSetupRows} columns={[["name", "Space"], ["buildingCode", "Building"], ["floor", "Floor"], ["type", "Type"], ["capacity", "Capacity"], ["areaSqm", "Area sqm"], ["occupancy", "Occupancy"]]} />
           </Panel>
         )}
         {showDepartments && (
@@ -5784,7 +6623,7 @@ function AssetHierarchySetup({
         )}
         {showCategories && (
           <Panel title="Asset Categories" icon={PackagePlus}>
-            <DataTable rows={categories} columns={[["code", "Code"], ["name", "Category"], ["type", "Type"], ["defaultLifeYrs", "Life yrs"], ["statutory", "Statutory"], ["description", "Description"]]} />
+            <ScrollableRowsTable rows={setupRows.categories} totalRows={setupTotals.categories} loading={setupLoading === "categories"} onLoadMore={loadMoreSetupRows} columns={[["code", "Code"], ["name", "Category"], ["type", "Type"], ["defaultLifeYrs", "Life yrs"], ["statutory", "Statutory"], ["description", "Description"]]} />
           </Panel>
         )}
       </div>
@@ -6216,7 +7055,92 @@ function Locations({ locations, submitLocation, deleteLocation, isAdmin, saving 
   );
 }
 
-function JobPlans({ jobPlans, services, departments, submitJobPlan, deleteJobPlan, isAdmin, saving }: { jobPlans: any[]; services: any[]; departments: any[]; submitJobPlan: (formData: FormData) => void; deleteJobPlan: (id: string) => void; isAdmin: boolean; saving: boolean }) {
+function JobPlans({ jobPlans, jobPlansTotal, services, departments, submitJobPlan, deleteJobPlan, isAdmin, saving }: { jobPlans: any[]; jobPlansTotal?: number; services: any[]; departments: any[]; submitJobPlan: (formData: FormData) => void; deleteJobPlan: (id: string) => void; isAdmin: boolean; saving: boolean }) {
+  const [page, setPage] = useState(1);
+  const [jobPlanRowsSource, setJobPlanRowsSource] = useState<any[]>(jobPlans);
+  const [jobPlanTotal, setJobPlanTotal] = useState(jobPlansTotal ?? jobPlans.length);
+  const [jobPlanLoading, setJobPlanLoading] = useState(false);
+  const [selectedJobPlanIds, setSelectedJobPlanIds] = useState<Set<string>>(new Set());
+  const jobPlanScrollRef = useRef<HTMLDivElement | null>(null);
+  const hasMoreJobPlans = jobPlanRowsSource.length < jobPlanTotal;
+  const selectedVisibleJobPlans = jobPlanRowsSource.filter((jobPlan) => selectedJobPlanIds.has(jobPlan.id));
+  const allVisibleJobPlansSelected = isAdmin && Boolean(jobPlanRowsSource.length) && selectedVisibleJobPlans.length === jobPlanRowsSource.length;
+  const someVisibleJobPlansSelected = isAdmin && selectedVisibleJobPlans.length > 0 && !allVisibleJobPlansSelected;
+
+  useEffect(() => {
+    setJobPlanRowsSource(jobPlans);
+    setJobPlanTotal((current) => Math.max(current, jobPlansTotal ?? jobPlans.length));
+  }, [jobPlans, jobPlansTotal]);
+
+  useEffect(() => {
+    setSelectedJobPlanIds((current) => new Set(Array.from(current).filter((id) => jobPlanRowsSource.some((jobPlan) => jobPlan.id === id))));
+  }, [jobPlanRowsSource]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      setJobPlanLoading(true);
+      try {
+        const params = new URLSearchParams({
+          page: String(page),
+          pageSize: String(PAGE_SIZE),
+        });
+        const response = await fetch(`/api/job-plans?${params.toString()}`, { cache: "no-store", signal: controller.signal });
+        if (response.ok) {
+          const result = await response.json();
+          setJobPlanRowsSource((current) => page === 1 ? result.jobPlans ?? [] : [...current, ...(result.jobPlans ?? [])]);
+          setJobPlanTotal(Number(result.total ?? result.jobPlans?.length ?? 0));
+        }
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === "AbortError")) {
+          console.error(error);
+        }
+      } finally {
+        if (!controller.signal.aborted) setJobPlanLoading(false);
+      }
+    }, 250);
+    return () => {
+      controller.abort();
+      window.clearTimeout(timer);
+    };
+  }, [page]);
+
+  function handleJobPlanScroll(event: UIEvent<HTMLDivElement>) {
+    const element = event.currentTarget;
+    const nearBottom = element.scrollTop + element.clientHeight >= element.scrollHeight - 180;
+    if (nearBottom && hasMoreJobPlans && !jobPlanLoading) {
+      setJobPlanLoading(true);
+      setPage((current) => current + 1);
+    }
+  }
+
+  function toggleJobPlanSelection(id: string, checked: boolean) {
+    setSelectedJobPlanIds((current) => {
+      const next = new Set(current);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }
+
+  function toggleVisibleJobPlans(checked: boolean) {
+    setSelectedJobPlanIds((current) => {
+      const next = new Set(current);
+      jobPlanRowsSource.forEach((jobPlan) => {
+        if (checked) next.add(jobPlan.id);
+        else next.delete(jobPlan.id);
+      });
+      return next;
+    });
+  }
+
+  async function bulkDeleteSelectedJobPlans() {
+    const ids = Array.from(selectedJobPlanIds);
+    if (!ids.length) return;
+    await Promise.all(ids.map((id) => deleteJobPlan(id)));
+    setSelectedJobPlanIds(new Set());
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
@@ -6228,7 +7152,69 @@ function JobPlans({ jobPlans, services, departments, submitJobPlan, deleteJobPla
     <section className="grid gap-5 xl:grid-cols-[1fr_420px]">
       <Panel title="Job Plans" icon={ClipboardCheck}>
         <ReportButtons type="job-plans" label="Job plans report" />
-        <DataTable rows={jobPlans} columns={[["code", "Code"], ["name", "Name"], ["assetType", "Asset Type"], ["departmentCode", "Dept"], ["serviceCode", "Service"], ["estimatedHours", "Hours"], ["priority", "Priority"], ["active", "Active"]]} actions={isAdmin ? (row) => <DeleteRowButton saving={saving} onDelete={() => deleteJobPlan(row.id)} /> : undefined} bulkSelectable={isAdmin} bulkLabel="job plans" onBulkDelete={async (rows) => { await Promise.all(rows.map((row) => deleteJobPlan(row.id))); }} />
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-sm font-black text-slate-600">
+          <span>Showing {jobPlanRowsSource.length.toLocaleString()} of {jobPlanTotal.toLocaleString()} job plans{isAdmin ? ` / Selected ${selectedJobPlanIds.size.toLocaleString()}` : ""}</span>
+          {jobPlanLoading && <span className="text-lagoon">Loading job plans...</span>}
+        </div>
+        {isAdmin && (
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm font-black text-slate-600">
+            <span>Selected {selectedJobPlanIds.size.toLocaleString()} job plans</span>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={() => toggleVisibleJobPlans(true)} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-black text-lagoon">Select Visible</button>
+              <button type="button" disabled={!selectedJobPlanIds.size} onClick={bulkDeleteSelectedJobPlans} className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white disabled:bg-slate-300">Delete All</button>
+              <button type="button" disabled={!selectedJobPlanIds.size} onClick={() => setSelectedJobPlanIds(new Set())} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-600 disabled:opacity-50">Clear Selection</button>
+            </div>
+          </div>
+        )}
+        <div ref={jobPlanScrollRef} onScroll={handleJobPlanScroll} className="cafm-scroll-x max-h-[70vh] overflow-auto rounded-lg border border-slate-200 scrollbar-thin">
+          <table className="cafm-data-table min-w-[1180px] border-collapse bg-white text-sm">
+            <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
+              <tr>
+                {isAdmin && (
+                  <th className="px-3 py-3">
+                    <input
+                      type="checkbox"
+                      checked={allVisibleJobPlansSelected}
+                      ref={(input) => {
+                        if (input) input.indeterminate = someVisibleJobPlansSelected;
+                      }}
+                      onChange={(event) => toggleVisibleJobPlans(event.target.checked)}
+                    />
+                  </th>
+                )}
+                {["#", "Code", "Name", "Asset Type", "Dept", "Service", "Hours", "Priority", "Active", ...(isAdmin ? ["Actions"] : [])].map((label) => <th key={label} className="px-3 py-3">{label}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {jobPlanRowsSource.map((jobPlan, index) => (
+                <tr key={jobPlan.id} className="border-t border-slate-100">
+                  {isAdmin && (
+                    <td className="px-3 py-3">
+                      <input
+                        type="checkbox"
+                        checked={selectedJobPlanIds.has(jobPlan.id)}
+                        onChange={(event) => toggleJobPlanSelection(jobPlan.id, event.target.checked)}
+                      />
+                    </td>
+                  )}
+                  <td className="px-3 py-3 font-black text-slate-500">{index + 1}</td>
+                  <td className="px-3 py-3 font-black text-lagoon">{displayValue(jobPlan.code)}</td>
+                  <td className="px-3 py-3">{displayValue(jobPlan.name)}</td>
+                  <td className="px-3 py-3">{displayValue(jobPlan.assetType)}</td>
+                  <td className="px-3 py-3">{displayValue(jobPlan.departmentCode)}</td>
+                  <td className="px-3 py-3">{displayValue(jobPlan.serviceCode)}</td>
+                  <td className="px-3 py-3">{displayValue(jobPlan.estimatedHours)}</td>
+                  <td className="px-3 py-3"><RequestPriorityBadge priority={jobPlan.priority || "MEDIUM"} /></td>
+                  <td className="px-3 py-3">{displayValue(jobPlan.active)}</td>
+                  {isAdmin && <td className="px-3 py-3"><DeleteRowButton saving={saving} onDelete={() => deleteJobPlan(jobPlan.id)} /></td>}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="mt-3 text-center text-sm font-black text-slate-500">
+          {hasMoreJobPlans ? "Scroll down to load more job plans" : "All job plans loaded"}
+        </div>
       </Panel>
       <form onSubmit={handleSubmit} className="min-w-0 rounded-lg border border-white/80 bg-white p-5 shadow-lift">
         <h3 className="text-xl font-black">Add Job Plan</h3>
@@ -6259,6 +7245,8 @@ function JobPlans({ jobPlans, services, departments, submitJobPlan, deleteJobPla
 
 function BulkUpload({ saving, onSubmit, initialModule }: { saving: boolean; onSubmit: (formData: FormData) => void; initialModule: string }) {
   const [module, setModule] = useState(initialModule);
+  const [manualProgress, setManualProgress] = useState("");
+  const [manualUploading, setManualUploading] = useState(false);
 
   useEffect(() => {
     setModule(initialModule);
@@ -6266,8 +7254,38 @@ function BulkUpload({ saving, onSubmit, initialModule }: { saving: boolean; onSu
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    await onSubmit(new FormData(event.currentTarget));
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+    if (module === "omManuals") {
+      const manualInput = form.elements.namedItem("manualFiles") as HTMLInputElement | null;
+      const manualFiles = Array.from(manualInput?.files ?? []);
+      if (manualFiles.length) {
+        setManualUploading(true);
+        setManualProgress(`Uploading manual file 1 of ${manualFiles.length}...`);
+        try {
+          for (const [index, manualFile] of manualFiles.entries()) {
+            const manualFormData = new FormData();
+            manualFormData.set("files", manualFile);
+            const response = await fetch("/api/manual-library", { method: "POST", body: manualFormData });
+            const result = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(cleanMessage(result.message ?? `${manualFile.name} failed to upload.`));
+            setManualProgress(`Uploaded ${index + 1} of ${manualFiles.length} manual files.`);
+          }
+        } finally {
+          setManualUploading(false);
+        }
+      }
+
+      const csvFile = formData.get("file");
+      const uploadData = new FormData();
+      uploadData.set("module", module);
+      if (csvFile instanceof File) uploadData.set("file", csvFile);
+      await onSubmit(uploadData);
+    } else {
+      await onSubmit(formData);
+    }
     event.currentTarget.reset();
+    setManualProgress("");
     setModule(initialModule);
   }
 
@@ -6287,6 +7305,8 @@ function BulkUpload({ saving, onSubmit, initialModule }: { saving: boolean; onSu
               <option value="inventory">Inventory</option>
               <option value="requests">Service Requests</option>
               <option value="workOrders">Work Orders</option>
+              <option value="ppm">PPM Schedule</option>
+              <option value="omManuals">O&M Manual Index</option>
               <option value="jobPlans">Job Plans</option>
               <option value="locations">Locations</option>
               <option value="inspections">Inspections</option>
@@ -6300,8 +7320,16 @@ function BulkUpload({ saving, onSubmit, initialModule }: { saving: boolean; onSu
             CSV File
             <input name="file" type="file" accept=".csv,text/csv" className="rounded-lg border border-slate-200 bg-white p-3" />
           </label>
-          <button disabled={saving} className="h-11 rounded-lg bg-ink font-black text-white disabled:bg-slate-400">
-            {saving ? "Uploading..." : "Upload CSV"}
+          {module === "omManuals" && (
+            <label className="grid gap-1 text-sm font-bold text-slate-600">
+              Manual PDF Files
+              <input name="manualFiles" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.txt,.csv,.xlsx,.docx,.pptx" multiple className="rounded-lg border border-slate-200 bg-white p-3" />
+              <span className="text-xs font-bold text-slate-500">Select all files from the O&M manual upload folder. Files upload one by one, then the CSV links them to assets.</span>
+            </label>
+          )}
+          {manualProgress && <div className="rounded-lg border border-lagoon/20 bg-lagoon/5 p-3 text-sm font-black text-lagoon">{manualProgress}</div>}
+          <button disabled={saving || manualUploading} className="h-11 rounded-lg bg-ink font-black text-white disabled:bg-slate-400">
+            {saving || manualUploading ? "Uploading..." : module === "omManuals" ? "Upload Manuals then CSV" : "Upload CSV"}
           </button>
         </form>
       </Panel>
@@ -6323,6 +7351,8 @@ function Templates() {
     ["inventory", "Inventory", "sku,name,category,unit,onHand,reorderPoint,unitCost,vendor,location"],
     ["requests", "Requests", "ticketNo,title,category,departmentCode,serviceCode,assignedTeamCode,requester,channel,priority,status,location,attachmentUrls,rejectionReason,slaHours,description"],
     ["workOrders", "Work Orders", "woNo,title,type,assetType,departmentCode,serviceCode,assignedTeamCode,jobPlanCode,priority,status,assetTag,plannedStart,dueAt,finishedAt,resolutionAt,dateTimeCreated,estimatedHours,actualHours,cost,jobPlan,safetyNotes,workNotes,materialRequest,photoUrls,assetsUsed,inventoryUsed,supervisorDecision,sourceYear,sourceWorkOrder,sourceServiceRequest,sourceEquipmentLocation,sourceLocation,matchSource"],
+    ["ppm", "PPM Schedule", "code,name,assetTag,locationCode,frequency,nextDue,durationHrs,departmentCode,priority,checklist,active"],
+    ["omManuals", "O&M Manual Index", "category,assetTag,sourcePath,fileName,manualCode,manualTitle,matchField,assetClass,assetCategory,assetPrimarySystem,department"],
     ["jobPlans", "Job Plans", "code,name,assetType,departmentCode,serviceCode,estimatedHours,priority,steps,safetyNotes"],
     ["locations", "Locations", "Location,Description,Class,Parent Location,Out of Service,Residential"],
     ["inspections", "Inspections", "code,title,area,inspector,risk,score,status,dueAt,findings"],
@@ -6368,10 +7398,10 @@ function UsersRoles({
   currentUser: { id?: string; email: string; name: string; role: string };
   permissions: any[];
   rolePermissions: any[];
-  submitUser: (formData: FormData) => void;
+  submitUser: (formData: FormData) => Promise<void> | void;
   submitRole: (formData: FormData) => void;
-  updateUser: (id: string, formData: FormData) => void;
-  deleteUser: (id: string) => void;
+  updateUser: (id: string, formData: FormData) => Promise<void> | void;
+  deleteUser: (id: string) => Promise<void> | void;
   deleteRole: (role: string) => void;
   isAdmin: boolean;
   saveRolePermissions: (role: string, permissionCodes: string[]) => void;
@@ -6381,6 +7411,12 @@ function UsersRoles({
 }) {
   const [editingUser, setEditingUser] = useState<any | null>(null);
   const [role, setRole] = useState("Admin");
+  const [userRows, setUserRows] = useState<any[]>(users);
+  const [userTotal, setUserTotal] = useState(users.length);
+  const [userPage, setUserPage] = useState(1);
+  const [userSearch, setUserSearch] = useState("");
+  const [userLoading, setUserLoading] = useState(false);
+  const userScrollRef = useRef<HTMLDivElement | null>(null);
   const permissionsByCode = useMemo(() => {
     const catalog = new Map(permissionCatalog.map((permission) => [permission.code, { ...permission, id: permission.code }]));
     permissions.forEach((permission) => {
@@ -6405,6 +7441,87 @@ function UsersRoles({
     setRole(nextRole);
     const nextPermissions = rolePermissions.filter((item) => item.role === nextRole).map((item) => item.permission.code);
     setSelectedPermissions(nextRole === "Admin" ? nextPermissions : nextPermissions.filter((code) => code !== "documents.upload"));
+  }
+
+  useEffect(() => {
+    setUserRows(users);
+    setUserTotal((current) => Math.max(current, users.length));
+  }, [users]);
+
+  useEffect(() => {
+    setUserPage(1);
+    userScrollRef.current?.scrollTo({ top: 0 });
+  }, [userSearch]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      setUserLoading(true);
+      try {
+        const params = new URLSearchParams({
+          page: String(userPage),
+          pageSize: String(PAGE_SIZE),
+          query: userSearch,
+        });
+        const response = await fetch(`/api/users?${params.toString()}`, { cache: "no-store", signal: controller.signal });
+        if (response.ok) {
+          const result = await response.json();
+          setUserRows((current) => userPage === 1 ? result.users ?? [] : [...current, ...(result.users ?? [])]);
+          setUserTotal(Number(result.total ?? result.users?.length ?? 0));
+        }
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === "AbortError")) {
+          console.error(error);
+        }
+      } finally {
+        if (!controller.signal.aborted) setUserLoading(false);
+      }
+    }, 250);
+    return () => {
+      controller.abort();
+      window.clearTimeout(timer);
+    };
+  }, [userPage, userSearch]);
+
+  async function refreshUserRows() {
+    setUserLoading(true);
+    try {
+      const params = new URLSearchParams({ page: "1", pageSize: String(Math.max(PAGE_SIZE, userRows.length || PAGE_SIZE)), query: userSearch });
+      const response = await fetch(`/api/users?${params.toString()}`, { cache: "no-store" });
+      if (response.ok) {
+        const result = await response.json();
+        setUserRows(result.users ?? []);
+        setUserTotal(Number(result.total ?? result.users?.length ?? 0));
+        setUserPage(1);
+      }
+    } finally {
+      setUserLoading(false);
+    }
+  }
+
+  function handleUserScroll(event: UIEvent<HTMLDivElement>) {
+    const element = event.currentTarget;
+    const nearBottom = element.scrollTop + element.clientHeight >= element.scrollHeight - 160;
+    if (nearBottom && userRows.length < userTotal && !userLoading) {
+      setUserLoading(true);
+      setUserPage((current) => current + 1);
+    }
+  }
+
+  async function submitUserAndRefresh(formData: FormData) {
+    await submitUser(formData);
+    await refreshUserRows();
+  }
+
+  async function updateUserAndRefresh(id: string, formData: FormData) {
+    await updateUser(id, formData);
+    await refreshUserRows();
+    setEditingUser(null);
+  }
+
+  async function deleteUserAndRefresh(id: string) {
+    await deleteUser(id);
+    await refreshUserRows();
   }
 
   function togglePermission(code: string) {
@@ -6439,8 +7556,18 @@ function UsersRoles({
       <div className="space-y-5">
         <Panel title="Users" icon={Users}>
           <ReportButtons type="users" label="Users report" />
-          <div className="grid gap-2">
-            {users.map((account) => (
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex min-w-[260px] flex-1 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 lg:max-w-md">
+              <Search size={16} className="text-slate-400" />
+              <input value={userSearch} onChange={(event) => setUserSearch(event.target.value)} placeholder="Search users" className="h-11 w-full text-sm outline-none" />
+            </div>
+            <div className="text-sm font-black text-slate-600">
+              Showing {userRows.length.toLocaleString()} of {userTotal.toLocaleString()} users
+              {userLoading && <span className="ml-2 text-lagoon">Loading...</span>}
+            </div>
+          </div>
+          <div ref={userScrollRef} onScroll={handleUserScroll} className="grid max-h-[60vh] gap-2 overflow-auto pr-1 scrollbar-thin">
+            {userRows.map((account) => (
               <div key={account.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-slate-50 p-3">
                 <div>
                   <p className="font-black">{account.name}</p>
@@ -6460,7 +7587,7 @@ function UsersRoles({
                           setToast("Initial admin user cannot be deleted.");
                           return;
                         }
-                        deleteUser(account.id);
+                        void deleteUserAndRefresh(account.id);
                       }}
                       className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white disabled:bg-slate-300"
                     >
@@ -6532,8 +7659,8 @@ function UsersRoles({
       </div>
       <div className="space-y-5">
         <RoleForm onSubmit={submitRole} saving={saving} />
-        <UserForm title="Create User" teams={teams} departments={departments} users={users} roles={roles} onSubmit={submitUser} saving={saving} />
-        {editingUser && <UserForm title="Edit User" user={editingUser} teams={teams} departments={departments} users={users} roles={roles} onSubmit={(formData) => updateUser(editingUser.id, formData)} saving={saving} />}
+        <UserForm title="Create User" teams={teams} departments={departments} users={userRows} roles={roles} onSubmit={submitUserAndRefresh} saving={saving} />
+        {editingUser && <UserForm title="Edit User" user={editingUser} teams={teams} departments={departments} users={userRows} roles={roles} onSubmit={(formData) => updateUserAndRefresh(editingUser.id, formData)} saving={saving} />}
       </div>
     </section>
   );
@@ -8541,6 +9668,83 @@ function Reports() {
   );
 }
 
+function BulkUploadProgress({ progress }: { progress: BulkUploadProgressState | null }) {
+  return (
+    <Panel title="Bulk Upload Progress" icon={Upload}>
+      {!progress ? (
+        <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-6 text-center">
+          <p className="font-black text-ink">No bulk upload is currently in progress</p>
+          <p className="mt-1 text-sm font-bold text-slate-500">This page only shows live upload progress. Completed upload details are available under Activity Logs &gt; Audit Logs.</p>
+        </div>
+      ) : (
+        <div className="grid gap-5">
+          <div className="grid gap-3 md:grid-cols-4">
+            <ProgressStat label="Estimated Rows" value={progress.totalRows} />
+            <ProgressStat label="Rows Processed" value={progress.processedRows} />
+            <ProgressStat label="Completion" value={progress.completion} suffix="%" tone="leaf" />
+            <ProgressStat label="Remaining" value={Math.max(progress.totalRows - progress.processedRows, 0)} />
+          </div>
+          {(progress.createdRows !== undefined || progress.failedRows !== undefined) && (
+            <div className="grid gap-3 md:grid-cols-2">
+              <ProgressStat label="Rows Created" value={progress.createdRows ?? 0} tone="leaf" />
+              <ProgressStat label="Rows Failed" value={progress.failedRows ?? 0} tone="coral" />
+            </div>
+          )}
+
+          <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-black uppercase text-slate-400">Current Upload</p>
+                <h3 className="mt-1 text-xl font-black text-ink">{friendlyAuditLabel(progress.module)}</h3>
+                <p className="mt-1 text-sm font-bold text-slate-600">{progress.fileName} - started {formatDateCell(progress.startedAt)}</p>
+              </div>
+              <span className="rounded-full bg-lagoon/10 px-3 py-1 text-xs font-black text-lagoon">
+                {friendlyAuditLabel(progress.status)}
+              </span>
+            </div>
+
+            <div className="mt-5">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm font-black text-slate-700">Completion</p>
+                <p className="text-2xl font-black text-ink">{progress.completion}%</p>
+              </div>
+              <div className="mt-2 h-3 overflow-hidden rounded-full bg-slate-100">
+                <div className="h-full rounded-full bg-leaf transition-all" style={{ width: `${progress.completion}%` }} />
+              </div>
+              <p className="mt-2 text-sm font-bold text-slate-600">
+                {progress.message}
+              </p>
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+            <h4 className="font-black text-ink">Live Upload Details</h4>
+            <div className="mt-3 grid gap-2 md:grid-cols-2">
+              <PreviewField label="Module" value={friendlyAuditLabel(progress.module)} />
+              <PreviewField label="File" value={progress.fileName} />
+              <PreviewField label="File Size" value={formatBytes(progress.fileSize)} />
+              <PreviewField label="Started At" value={formatDateCell(progress.startedAt)} />
+              {progress.updatedAt && <PreviewField label="Last Updated" value={formatDateCell(progress.updatedAt)} />}
+              <PreviewField label="Status" value={friendlyAuditLabel(progress.status)} />
+              <PreviewField label="Completion" value={`${progress.completion}%`} />
+            </div>
+          </div>
+        </div>
+      )}
+    </Panel>
+  );
+}
+
+function ProgressStat({ label, value, suffix = "", tone = "slate" }: { label: string; value: number; suffix?: string; tone?: "slate" | "leaf" | "coral" }) {
+  const color = tone === "leaf" ? "text-leaf" : tone === "coral" ? "text-coral" : "text-ink";
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+      <p className="text-sm font-black uppercase text-slate-400">{label}</p>
+      <p className={`mt-2 text-3xl font-black ${color}`}>{value}{suffix}</p>
+    </div>
+  );
+}
+
 function AuditLogs({ logs }: { logs: any[] }) {
   const [selectedLog, setSelectedLog] = useState<any | null>(null);
 
@@ -8754,6 +9958,18 @@ function formatAuditValue(value: any): string {
   if (Array.isArray(value)) return `${value.length} item${value.length === 1 ? "" : "s"}`;
   if (typeof value === "object") return value.name || value.email || value.id || JSON.stringify(value);
   return String(value);
+}
+
+function formatBytes(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return "-";
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function countCsvDataRows(value: string): number {
+  const rows = value.split(/\r?\n/).filter((row) => row.trim().length > 0);
+  return Math.max(rows.length - 1, 0);
 }
 
 function downloadAuditEntries(log: any, entries: AuditEntry[]) {
