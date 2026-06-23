@@ -928,8 +928,7 @@ export function CafmConsole({ data, user, deferInitialData = false }: { data: Co
               </div>
             </div>
             <div className="mt-3 pl-[60px] font-['Arial_Narrow','Aptos_Narrow','Arial',sans-serif] font-bold leading-tight tracking-normal text-slate-950">
-              <p className="text-[9px] uppercase">FADHILI BACHELOR CAMP AND GSRC</p>
-              <p className="text-[8px]">Contract # 6601019711</p>
+              <p className="text-[9px] uppercase">NRC Oxagon Plot-D</p>
             </div>
           </div>
 
