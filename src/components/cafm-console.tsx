@@ -8408,6 +8408,10 @@ function HousingOperations({
   const [dateTo, setDateTo] = useState("");
   const [selected, setSelected] = useState<{ type: string; record: any } | null>(null);
   const [runningAlerts, setRunningAlerts] = useState(false);
+  const [housingAssetRowsSource, setHousingAssetRowsSource] = useState<any[]>(housing?.assets ?? []);
+  const [housingAssetTotal, setHousingAssetTotal] = useState((housing?.assets ?? []).length);
+  const [housingAssetPage, setHousingAssetPage] = useState(1);
+  const [housingAssetLoading, setHousingAssetLoading] = useState(false);
   const rooms = housing?.rooms ?? [];
   const bookings = housing?.bookings ?? [];
   const inspections = housing?.inspections ?? [];
@@ -8517,10 +8521,11 @@ function HousingOperations({
     const haystack = `${inspection.inspectionNo} ${inspection.inspectionType} ${inspection.inspector} ${inspection.status} ${inspection.findings} ${inspection.room?.roomNumber}`.toLowerCase();
     return (!search || haystack.includes(filterText)) && (status === "All" || inspection.status === status);
   });
-  const visibleAssets = assets.filter((asset) => {
+  const visibleAssets = housingAssetRowsSource.filter((asset) => {
     const haystack = `${asset.tag} ${asset.name} ${asset.category} ${asset.status} ${asset.serialNumber} ${asset.room?.property?.name} ${asset.room?.block?.name} ${asset.room?.floor} ${asset.room?.roomNumber} ${asset.description} ${asset.brand} ${asset.model} ${asset.buildingLocation} ${asset.roomLocation} ${asset.custodianName}`.toLowerCase();
     return (!search || haystack.includes(filterText)) && (status === "All" || asset.status === status);
   });
+  const hasMoreHousingAssets = housingAssetRowsSource.length < housingAssetTotal;
   const housingAssetRows = visibleAssets.map((asset) => ({
     ...asset,
     site: asset.room?.property?.name ?? "",
@@ -8579,6 +8584,52 @@ function HousingOperations({
     await refreshData();
     setRunningAlerts(false);
   };
+  const loadMoreHousingAssets = () => {
+    if (hasMoreHousingAssets && !housingAssetLoading) {
+      setHousingAssetLoading(true);
+      setHousingAssetPage((current) => current + 1);
+    }
+  };
+
+  useEffect(() => {
+    setHousingAssetRowsSource(assets);
+    setHousingAssetTotal((current) => Math.max(current, assets.length));
+  }, [assets]);
+
+  useEffect(() => {
+    setHousingAssetPage(1);
+  }, [search, status]);
+
+  useEffect(() => {
+    if (activePanel !== "assets") return;
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      setHousingAssetLoading(true);
+      try {
+        const params = new URLSearchParams({
+          type: "assets",
+          page: String(housingAssetPage),
+          pageSize: String(PAGE_SIZE),
+          query: search,
+          status,
+        });
+        const response = await fetch(`/api/housing?${params.toString()}`, { cache: "no-store", signal: controller.signal });
+        if (response.ok) {
+          const result = await response.json();
+          setHousingAssetRowsSource((current) => housingAssetPage === 1 ? result.assets ?? [] : [...current, ...(result.assets ?? [])]);
+          setHousingAssetTotal(Number(result.total ?? result.assets?.length ?? 0));
+        }
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === "AbortError")) console.error(error);
+      } finally {
+        if (!controller.signal.aborted) setHousingAssetLoading(false);
+      }
+    }, 250);
+    return () => {
+      controller.abort();
+      window.clearTimeout(timer);
+    };
+  }, [activePanel, housingAssetPage, search, status]);
 
   return (
     <section className="grid gap-5">
@@ -8768,6 +8819,10 @@ function HousingOperations({
             reportType="housing-assets"
             bulkSelectable={isAdmin}
             onBulkDelete={async (rows) => { await Promise.all(rows.map((row) => deleteHousing("asset", row.id))); }}
+            scrollLoad
+            totalRows={housingAssetTotal}
+            loading={housingAssetLoading}
+            onLoadMore={loadMoreHousingAssets}
             actions={(record) => canManage && (
               <div className="flex flex-wrap gap-2">
                 <button type="button" onClick={(event) => { event.stopPropagation(); updateHousing("asset", record.id, { status: "INSTALLED", issuedAt: new Date().toISOString(), movementAction: "Asset issuance" }); }} className="rounded-lg bg-leaf px-3 py-2 text-xs font-black text-white">Issue</button>
@@ -8915,16 +8970,44 @@ function HousingSummaryTable({ title, rows }: { title: string; rows: Array<{ met
   );
 }
 
-function HousingTable({ title, rows, columns, onSelect, actions, reportType, bulkSelectable = false, onBulkDelete }: { title: string; rows: any[]; columns: [string, string][]; onSelect?: (record: any) => void; actions?: (record: any) => any; reportType: string; bulkSelectable?: boolean; onBulkDelete?: (rows: any[]) => Promise<void> | void }) {
+function HousingTable({
+  title,
+  rows,
+  columns,
+  onSelect,
+  actions,
+  reportType,
+  bulkSelectable = false,
+  onBulkDelete,
+  scrollLoad = false,
+  totalRows,
+  loading = false,
+  onLoadMore,
+}: {
+  title: string;
+  rows: any[];
+  columns: [string, string][];
+  onSelect?: (record: any) => void;
+  actions?: (record: any) => any;
+  reportType: string;
+  bulkSelectable?: boolean;
+  onBulkDelete?: (rows: any[]) => Promise<void> | void;
+  scrollLoad?: boolean;
+  totalRows?: number;
+  loading?: boolean;
+  onLoadMore?: () => void;
+}) {
   const [page, setPage] = useState(1);
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
   const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
-  const visibleRows = rows.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  const visibleRows = scrollLoad ? rows : rows.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
   const selectedVisibleRows = visibleRows.filter((row) => selectedRowIds.has(row.id));
   const selectedRows = rows.filter((row) => selectedRowIds.has(row.id));
   const allVisibleSelected = bulkSelectable && Boolean(visibleRows.length) && selectedVisibleRows.length === visibleRows.length;
   const someVisibleSelected = bulkSelectable && selectedVisibleRows.length > 0 && !allVisibleSelected;
+  const displayTotalRows = totalRows ?? rows.length;
+  const hasMoreRows = scrollLoad && rows.length < displayTotalRows;
 
   useEffect(() => {
     setPage(1);
@@ -8960,6 +9043,13 @@ function HousingTable({ title, rows, columns, onSelect, actions, reportType, bul
     setSelectedRowIds(new Set());
   }
 
+  function handleScroll(event: UIEvent<HTMLDivElement>) {
+    if (!scrollLoad || !onLoadMore || loading || !hasMoreRows) return;
+    const element = event.currentTarget;
+    const nearBottom = element.scrollTop + element.clientHeight >= element.scrollHeight - 220;
+    if (nearBottom) onLoadMore();
+  }
+
   return (
     <Panel title={title} icon={Building2}>
       <ReportButtons type={reportType} label={`${title} report`} />
@@ -8973,7 +9063,7 @@ function HousingTable({ title, rows, columns, onSelect, actions, reportType, bul
           </div>
         </div>
       )}
-      <div className="cafm-scroll-x mt-4 overflow-auto rounded-lg border border-slate-200 scrollbar-thin">
+      <div onScroll={handleScroll} className={`cafm-scroll-x mt-4 overflow-auto rounded-lg border border-slate-200 scrollbar-thin ${scrollLoad ? "max-h-[70vh]" : ""}`}>
         <table className="cafm-data-table min-w-[900px] bg-white text-sm">
           <thead className="bg-slate-50 text-left text-xs uppercase text-slate-500">
             <tr>
@@ -9007,7 +9097,7 @@ function HousingTable({ title, rows, columns, onSelect, actions, reportType, bul
                     />
                   </td>
                 )}
-                <td className="px-3 py-3 font-black text-slate-500">{(safePage - 1) * PAGE_SIZE + index + 1}</td>
+                <td className="px-3 py-3 font-black text-slate-500">{scrollLoad ? index + 1 : (safePage - 1) * PAGE_SIZE + index + 1}</td>
                 {columns.map(([key]) => <td key={key} className="max-w-[260px] px-3 py-3"><HousingCellValue field={key} value={key.includes("At") || key.includes("Date") || key === "dueAt" || key === "checkIn" ? formatDateCell(row[key]) : row[key]} /></td>)}
                 {actions && <td className="px-3 py-3">{actions(row)}</td>}
               </tr>
@@ -9016,21 +9106,29 @@ function HousingTable({ title, rows, columns, onSelect, actions, reportType, bul
           </tbody>
         </table>
       </div>
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg bg-slate-50 p-3 text-sm font-bold text-slate-600">
-        <span>Page {safePage} of {totalPages} / {rows.length} entries / {PAGE_SIZE} per page</span>
-        <div className="flex flex-wrap gap-2">
-          <button type="button" disabled={safePage === 1} onClick={() => setPage((current) => Math.max(1, current - 1))} className="rounded-lg border border-slate-200 bg-white px-3 py-2 disabled:opacity-50">Previous</button>
-          {Array.from({ length: Math.min(totalPages, 5) }, (_, index) => {
-            const pageNumber = Math.min(totalPages, Math.max(1, safePage - 2) + index);
-            return (
-              <button key={`${reportType}-${pageNumber}`} type="button" onClick={() => setPage(pageNumber)} className={`rounded-lg px-3 py-2 ${safePage === pageNumber ? "bg-lagoon text-white" : "border border-slate-200 bg-white"}`}>
-                {pageNumber}
-              </button>
-            );
-          })}
-          <button type="button" disabled={safePage === totalPages} onClick={() => setPage((current) => Math.min(totalPages, current + 1))} className="rounded-lg border border-slate-200 bg-white px-3 py-2 disabled:opacity-50">Next</button>
+      {scrollLoad ? (
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg bg-slate-50 p-3 text-sm font-bold text-slate-600">
+          <span>Showing {rows.length.toLocaleString()} of {displayTotalRows.toLocaleString()} entries / Scroll down to load more</span>
+          {loading && <span className="text-lagoon">Loading more...</span>}
+          {!hasMoreRows && !loading && <span>All matching entries loaded</span>}
         </div>
-      </div>
+      ) : (
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg bg-slate-50 p-3 text-sm font-bold text-slate-600">
+          <span>Page {safePage} of {totalPages} / {rows.length} entries / {PAGE_SIZE} per page</span>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" disabled={safePage === 1} onClick={() => setPage((current) => Math.max(1, current - 1))} className="rounded-lg border border-slate-200 bg-white px-3 py-2 disabled:opacity-50">Previous</button>
+            {Array.from({ length: Math.min(totalPages, 5) }, (_, index) => {
+              const pageNumber = Math.min(totalPages, Math.max(1, safePage - 2) + index);
+              return (
+                <button key={`${reportType}-${pageNumber}`} type="button" onClick={() => setPage(pageNumber)} className={`rounded-lg px-3 py-2 ${safePage === pageNumber ? "bg-lagoon text-white" : "border border-slate-200 bg-white"}`}>
+                  {pageNumber}
+                </button>
+              );
+            })}
+            <button type="button" disabled={safePage === totalPages} onClick={() => setPage((current) => Math.min(totalPages, current + 1))} className="rounded-lg border border-slate-200 bg-white px-3 py-2 disabled:opacity-50">Next</button>
+          </div>
+        </div>
+      )}
     </Panel>
   );
 }
