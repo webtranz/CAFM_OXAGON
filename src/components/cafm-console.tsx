@@ -9208,23 +9208,26 @@ function HousingTable({
 }) {
   const [page, setPage] = useState(1);
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
-  const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  const [tableFilters, setTableFilters] = useState({ keyword: "", dateFrom: "", dateTo: "", module: "All" });
+  const moduleOptions = useMemo(() => Array.from(new Set(rows.map(rowModuleValue).filter(Boolean))).sort(), [rows]);
+  const filteredRows = useMemo(() => filterRowsByControls(rows, tableFilters), [rows, tableFilters]);
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
-  const visibleRows = scrollLoad ? rows : rows.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  const visibleRows = scrollLoad ? filteredRows : filteredRows.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
   const selectedVisibleRows = visibleRows.filter((row) => selectedRowIds.has(row.id));
-  const selectedRows = rows.filter((row) => selectedRowIds.has(row.id));
+  const selectedRows = filteredRows.filter((row) => selectedRowIds.has(row.id));
   const allVisibleSelected = bulkSelectable && Boolean(visibleRows.length) && selectedVisibleRows.length === visibleRows.length;
   const someVisibleSelected = bulkSelectable && selectedVisibleRows.length > 0 && !allVisibleSelected;
-  const displayTotalRows = totalRows ?? rows.length;
-  const hasMoreRows = scrollLoad && rows.length < displayTotalRows;
+  const displayTotalRows = totalRows ?? filteredRows.length;
+  const hasMoreRows = scrollLoad && rows.length < (totalRows ?? rows.length);
 
   useEffect(() => {
     setPage(1);
-  }, [rows.length, reportType]);
+  }, [rows.length, reportType, tableFilters]);
 
   useEffect(() => {
-    setSelectedRowIds((current) => new Set(Array.from(current).filter((id) => rows.some((row) => row.id === id))));
-  }, [rows]);
+    setSelectedRowIds((current) => new Set(Array.from(current).filter((id) => filteredRows.some((row) => row.id === id))));
+  }, [filteredRows]);
 
   function toggleVisibleRows(checked: boolean) {
     setSelectedRowIds((current) => {
@@ -9262,6 +9265,9 @@ function HousingTable({
   return (
     <Panel title={title} icon={Building2}>
       <ReportButtons type={reportType} label={`${title} report`} />
+      <div className="mt-4">
+        <TableFilterControls filters={tableFilters} setFilters={setTableFilters} moduleOptions={moduleOptions} label={title.toLowerCase()} />
+      </div>
       {bulkSelectable && (
         <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm font-black text-slate-600">
           <span>Selected {selectedRowIds.size.toLocaleString()} records</span>
@@ -9311,19 +9317,19 @@ function HousingTable({
                 {actions && <td className="px-3 py-3">{actions(row)}</td>}
               </tr>
             ))}
-            {!rows.length && <tr><td colSpan={columns.length + (actions ? 2 : 1) + (bulkSelectable ? 1 : 0)} className="px-3 py-6 text-center font-bold text-slate-500">No housing records found.</td></tr>}
+            {!filteredRows.length && <tr><td colSpan={columns.length + (actions ? 2 : 1) + (bulkSelectable ? 1 : 0)} className="px-3 py-6 text-center font-bold text-slate-500">No housing records found.</td></tr>}
           </tbody>
         </table>
       </div>
       {scrollLoad ? (
         <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg bg-slate-50 p-3 text-sm font-bold text-slate-600">
-          <span>Showing {rows.length.toLocaleString()} of {displayTotalRows.toLocaleString()} entries / Scroll down to load more</span>
+          <span>Showing {filteredRows.length.toLocaleString()} of {displayTotalRows.toLocaleString()} entries / Scroll down to load more</span>
           {loading && <span className="text-lagoon">Loading more...</span>}
           {!hasMoreRows && !loading && <span>All matching entries loaded</span>}
         </div>
       ) : (
         <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg bg-slate-50 p-3 text-sm font-bold text-slate-600">
-          <span>Page {safePage} of {totalPages} / {rows.length} entries / {PAGE_SIZE} per page</span>
+          <span>Page {safePage} of {totalPages} / {filteredRows.length} entries / {PAGE_SIZE} per page</span>
           <div className="flex flex-wrap gap-2">
             <button type="button" disabled={safePage === 1} onClick={() => setPage((current) => Math.max(1, current - 1))} className="rounded-lg border border-slate-200 bg-white px-3 py-2 disabled:opacity-50">Previous</button>
             {Array.from({ length: Math.min(totalPages, 5) }, (_, index) => {
@@ -10455,6 +10461,75 @@ function DeleteRowButton({ saving, onDelete }: { saving: boolean; onDelete: () =
   );
 }
 
+function rowSearchText(row: any): string {
+  return Object.values(row ?? {}).map((value) => {
+    if (value === null || value === undefined) return "";
+    if (typeof value === "object") return rowSearchText(value);
+    return String(value);
+  }).join(" ").toLowerCase();
+}
+
+function rowFilterDate(row: any) {
+  const dateKeys = ["createdAt", "updatedAt", "date", "checkIn", "checkOut", "dueAt", "expiryDate", "purchaseDate", "completedAt", "sentAt", "scheduledDate"];
+  for (const key of dateKeys) {
+    const value = row?.[key];
+    if (!value) continue;
+    const time = new Date(String(value)).getTime();
+    if (!Number.isNaN(time)) return time;
+  }
+  return null;
+}
+
+function rowModuleValue(row: any) {
+  return String(row?.module ?? row?.source ?? row?.type ?? row?.entity ?? row?.category ?? row?.status ?? "").trim();
+}
+
+function filterRowsByControls(rows: any[], filters: { keyword: string; dateFrom: string; dateTo: string; module: string }) {
+  const keyword = filters.keyword.trim().toLowerCase();
+  const from = filters.dateFrom ? new Date(`${filters.dateFrom}T00:00:00`).getTime() : null;
+  const to = filters.dateTo ? new Date(`${filters.dateTo}T23:59:59`).getTime() : null;
+  return rows.filter((row) => {
+    if (keyword && !rowSearchText(row).includes(keyword)) return false;
+    const moduleValue = rowModuleValue(row);
+    if (filters.module && filters.module !== "All" && moduleValue !== filters.module) return false;
+    if (from !== null || to !== null) {
+      const time = rowFilterDate(row);
+      if (time === null) return false;
+      if (from !== null && time < from) return false;
+      if (to !== null && time > to) return false;
+    }
+    return true;
+  });
+}
+
+function TableFilterControls({
+  filters,
+  setFilters,
+  moduleOptions,
+  label,
+}: {
+  filters: { keyword: string; dateFrom: string; dateTo: string; module: string };
+  setFilters: (filters: { keyword: string; dateFrom: string; dateTo: string; module: string }) => void;
+  moduleOptions: string[];
+  label: string;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 p-2">
+      <div className="flex min-w-[220px] flex-1 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3">
+        <Search size={15} className="text-slate-400" />
+        <input value={filters.keyword} onChange={(event) => setFilters({ ...filters, keyword: event.target.value })} placeholder={`Keyword search ${label}`} className="h-10 w-full bg-transparent text-sm outline-none" />
+      </div>
+      <input value={filters.dateFrom} onChange={(event) => setFilters({ ...filters, dateFrom: event.target.value })} type="date" className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold" />
+      <input value={filters.dateTo} onChange={(event) => setFilters({ ...filters, dateTo: event.target.value })} type="date" className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold" />
+      <select value={filters.module} onChange={(event) => setFilters({ ...filters, module: event.target.value })} className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold">
+        <option>All</option>
+        {moduleOptions.map((option) => <option key={option}>{option}</option>)}
+      </select>
+      <button type="button" onClick={() => setFilters({ keyword: "", dateFrom: "", dateTo: "", module: "All" })} className="h-10 rounded-lg bg-white px-3 text-sm font-black text-lagoon">Clear</button>
+    </div>
+  );
+}
+
 function DataTable({
   rows,
   columns,
@@ -10474,25 +10549,28 @@ function DataTable({
 }) {
   const [page, setPage] = useState(1);
   const [selectedRowKeys, setSelectedRowKeys] = useState<Set<string>>(new Set());
-  const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  const [tableFilters, setTableFilters] = useState({ keyword: "", dateFrom: "", dateTo: "", module: "All" });
+  const moduleOptions = useMemo(() => Array.from(new Set(rows.map(rowModuleValue).filter(Boolean))).sort(), [rows]);
+  const filteredRows = useMemo(() => filterRowsByControls(rows, tableFilters), [rows, tableFilters]);
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
   const startIndex = (currentPage - 1) * PAGE_SIZE;
-  const visibleRows = rows.slice(startIndex, startIndex + PAGE_SIZE);
+  const visibleRows = filteredRows.slice(startIndex, startIndex + PAGE_SIZE);
   const rowKey = (row: any, index: number) => String(row.id ?? row.code ?? row.name ?? row.reference ?? row.ticketNo ?? row.woNo ?? index);
   const visibleRowKeys = visibleRows.map((row, index) => rowKey(row, startIndex + index));
-  const selectedRows = rows.filter((row, index) => selectedRowKeys.has(rowKey(row, index)));
+  const selectedRows = filteredRows.filter((row, index) => selectedRowKeys.has(rowKey(row, index)));
   const selectedVisibleKeys = visibleRowKeys.filter((key) => selectedRowKeys.has(key));
   const allVisibleSelected = bulkSelectable && Boolean(visibleRowKeys.length) && selectedVisibleKeys.length === visibleRowKeys.length;
   const someVisibleSelected = bulkSelectable && selectedVisibleKeys.length > 0 && !allVisibleSelected;
 
   useEffect(() => {
     setPage(1);
-  }, [rows.length]);
+  }, [rows.length, tableFilters]);
 
   useEffect(() => {
-    const allKeys = new Set(rows.map((row, index) => String(row.id ?? row.code ?? row.name ?? row.reference ?? row.ticketNo ?? row.woNo ?? index)));
+    const allKeys = new Set(filteredRows.map((row, index) => String(row.id ?? row.code ?? row.name ?? row.reference ?? row.ticketNo ?? row.woNo ?? index)));
     setSelectedRowKeys((current) => new Set(Array.from(current).filter((key) => allKeys.has(key))));
-  }, [rows]);
+  }, [filteredRows]);
 
   function toggleVisibleRows(checked: boolean) {
     setSelectedRowKeys((current) => {
@@ -10523,6 +10601,7 @@ function DataTable({
 
   return (
     <div className="grid gap-3">
+      <TableFilterControls filters={tableFilters} setFilters={setTableFilters} moduleOptions={moduleOptions} label={bulkLabel} />
       {bulkSelectable && (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm font-black text-slate-600">
           <span>Selected {selectedRowKeys.size.toLocaleString()} {bulkLabel}</span>
@@ -10582,7 +10661,7 @@ function DataTable({
           </tbody>
         </table>
       </div>
-      <PaginationControls page={currentPage} totalPages={totalPages} onPageChange={setPage} totalItems={rows.length} />
+      <PaginationControls page={currentPage} totalPages={totalPages} onPageChange={setPage} totalItems={filteredRows.length} />
     </div>
   );
 }
