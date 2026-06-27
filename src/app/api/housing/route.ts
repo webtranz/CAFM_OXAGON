@@ -173,7 +173,7 @@ const housingSchema = z.object({
 export async function GET(request: Request) {
   const url = new URL(request.url);
   if (url.searchParams.get("type") === "references") {
-    const [properties, blocks, rooms, beds, residents, assets] = await Promise.all([
+    const [properties, blocks, rooms, beds, residents, assets, locations, spaces, cafmAssets] = await Promise.all([
       prisma.housingProperty.findMany({
         select: { id: true, code: true, name: true, site: true, city: true },
         orderBy: { name: "asc" },
@@ -220,8 +220,23 @@ export async function GET(request: Request) {
         select: { id: true, tag: true, name: true, category: true, status: true, roomId: true, roomLocation: true, buildingLocation: true },
         orderBy: { tag: "asc" },
       }),
+      prisma.location.findMany({
+        select: { id: true, code: true, description: true, site: true, building: true, floor: true, room: true, type: true, parentLocation: true },
+        orderBy: { code: "asc" },
+        take: 500,
+      }),
+      prisma.space.findMany({
+        select: { id: true, name: true, floor: true, type: true, building: { select: { code: true, name: true, site: { select: { name: true } } } } },
+        orderBy: [{ building: { code: "asc" } }, { floor: "asc" }, { name: "asc" }],
+        take: 500,
+      }),
+      prisma.asset.findMany({
+        select: { id: true, tag: true, name: true, assetDescription: true, siteCode: true, buildingCode: true, floor: true, room: true, locationCode: true, locationDesc: true, status: true },
+        orderBy: { tag: "asc" },
+        take: 500,
+      }),
     ]);
-    return NextResponse.json({ properties, blocks, rooms, beds, residents, assets });
+    return NextResponse.json({ properties, blocks, rooms, beds, residents, assets, locations, spaces, cafmAssets });
   }
 
   if (url.searchParams.get("type") === "assets") {

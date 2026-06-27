@@ -96,6 +96,9 @@ type ConsoleData = {
     notifications: any[];
     notificationSettings: any[];
     history: any[];
+    locations?: any[];
+    spaces?: any[];
+    cafmAssets?: any[];
   };
 };
 
@@ -735,7 +738,7 @@ export function CafmConsole({ data, user, deferInitialData = false }: { data: Co
     setActive(moduleId);
     setActiveView(view);
     setActiveMenuKey(menuKey);
-    if (!fullDataLoaded && !["command", "documents"].includes(moduleId)) {
+    if (!fullDataLoaded && !["command", "documents", "housing"].includes(moduleId)) {
       setInitialDataLoading(true);
       void refreshData().finally(() => setInitialDataLoading(false));
     }
@@ -8673,6 +8676,9 @@ function HousingOperations({
         beds: references.beds ?? current.beds,
         residents: references.residents ?? current.residents,
         assets: references.assets ?? current.assets,
+        locations: references.locations ?? current.locations,
+        spaces: references.spaces ?? current.spaces,
+        cafmAssets: references.cafmAssets ?? current.cafmAssets,
       }));
     } else {
       await refreshData();
@@ -8690,6 +8696,42 @@ function HousingOperations({
     await deleteHousing(type, id);
     await refreshHousingData();
   };
+  const fallbackLocationOptions = useMemo(() => {
+    const optionMap = new Map<string, { key: string; label: string; building?: string; floor?: string; room?: string }>();
+    (housingRecords.locations ?? []).forEach((location) => {
+      const key = `location-${location.id || location.code}`;
+      optionMap.set(key, {
+        key,
+        label: `${location.code || "Location"} / ${location.description || location.room || location.floor || location.building || location.site || "Location"}`,
+        building: location.building || location.parentLocation || location.site || "",
+        floor: location.floor || "",
+        room: location.room || location.code || "",
+      });
+    });
+    (housingRecords.spaces ?? []).forEach((space) => {
+      const key = `space-${space.id || space.code}`;
+      optionMap.set(key, {
+        key,
+        label: `${space.building?.name || space.building?.code || "Building"} / Floor ${space.floor || "-"} / ${space.roomNumber || space.name || space.code}`,
+        building: space.building?.name || space.building?.code || "",
+        floor: space.floor || "",
+        room: space.roomNumber || space.name || space.code || "",
+      });
+    });
+    (housingRecords.cafmAssets ?? []).forEach((asset) => {
+      const room = asset.room || asset.locationCode;
+      if (!asset.buildingCode && !asset.floor && !room) return;
+      const key = `asset-${asset.id || asset.tag}`;
+      optionMap.set(key, {
+        key,
+        label: `${asset.tag || "Asset"} / ${asset.assetDescription || asset.name || "Asset"} / ${asset.buildingCode || "-"} / ${asset.floor || "-"} / ${room || "-"}`,
+        building: asset.buildingCode || "",
+        floor: asset.floor || "",
+        room: room || "",
+      });
+    });
+    return Array.from(optionMap.values()).slice(0, 500);
+  }, [housingRecords.locations, housingRecords.spaces, housingRecords.cafmAssets]);
   const loadMoreHousingAssets = () => {
     if (hasMoreHousingAssets && !housingAssetLoading) {
       setHousingAssetLoading(true);
@@ -8879,7 +8921,7 @@ function HousingOperations({
               )}
             />
           </div>
-          {canManage && <HousingBookingForm rooms={rooms} beds={beds} residents={housingRecords.residents ?? []} saving={saving} onSubmit={submitHousingAndRefresh} />}
+          {canManage && <HousingBookingForm rooms={rooms} beds={beds} residents={housingRecords.residents ?? []} locationOptions={fallbackLocationOptions} saving={saving} onSubmit={submitHousingAndRefresh} />}
         </section>
       )}
 
@@ -8895,7 +8937,7 @@ function HousingOperations({
             onBulkDelete={async (rows) => { await Promise.all(rows.map((row) => deleteHousingAndRefresh("inspection", row.id))); }}
             actions={(record) => canManage && <button type="button" onClick={(event) => { event.stopPropagation(); updateHousingAndRefresh("inspection", record.id, { status: "CLOSED", completedAt: new Date().toISOString() }); }} className="rounded-lg bg-lagoon px-3 py-2 text-xs font-black text-white">Close</button>}
           />
-          {canManage && <HousingInspectionForm rooms={rooms} beds={beds} bookings={bookings} assets={assets} saving={saving} onSubmit={submitHousingAndRefresh} />}
+          {canManage && <HousingInspectionForm rooms={rooms} beds={beds} bookings={bookings} assets={assets} locationOptions={fallbackLocationOptions} saving={saving} onSubmit={submitHousingAndRefresh} />}
         </section>
       )}
 
@@ -8946,7 +8988,7 @@ function HousingOperations({
               </div>
             )}
           />
-          {canManage && <HousingAssetForm rooms={rooms} saving={saving} onSubmit={submitHousingAndRefresh} />}
+          {canManage && <HousingAssetForm rooms={rooms} locationOptions={fallbackLocationOptions} saving={saving} onSubmit={submitHousingAndRefresh} />}
         </section>
       )}
 
@@ -8969,7 +9011,7 @@ function HousingOperations({
               </div>
             )}
           />
-          {canManage && <HousingInventoryForm rooms={rooms} saving={saving} onSubmit={submitHousingAndRefresh} />}
+          {canManage && <HousingInventoryForm rooms={rooms} locationOptions={fallbackLocationOptions} saving={saving} onSubmit={submitHousingAndRefresh} />}
         </section>
       )}
 
@@ -9536,11 +9578,20 @@ function HousingSetupForms({ properties, blocks, rooms, saving, onSubmit }: { pr
   );
 }
 
-function HousingBookingForm({ rooms, beds, residents, saving, onSubmit }: { rooms: any[]; beds: any[]; residents: any[]; saving: boolean; onSubmit: (formData: FormData) => void }) {
+function HousingLocationDatalist({ id, options }: { id: string; options: Array<{ key: string; label: string; building?: string; floor?: string; room?: string }> }) {
+  return (
+    <datalist id={id}>
+      {options.map((option) => <option key={option.key} value={option.label} />)}
+    </datalist>
+  );
+}
+
+function HousingBookingForm({ rooms, beds, residents, locationOptions, saving, onSubmit }: { rooms: any[]; beds: any[]; residents: any[]; locationOptions: Array<{ key: string; label: string; building?: string; floor?: string; room?: string }>; saving: boolean; onSubmit: (formData: FormData) => void }) {
   const allocatableRooms = rooms.filter((room) => !["BLOCKED", "MAINTENANCE"].includes(room.status));
   const allocatableBeds = beds.filter((bed) => bed.status === "AVAILABLE");
   return (
     <HousingForm title="Accommodation & Booking Management" type="booking" saving={saving} onSubmit={onSubmit}>
+      <HousingLocationDatalist id="housing-booking-locations" options={locationOptions} />
       <select name="residentId" className={HOUSING_FIELD_CLASS}>
         <option value="">New employee / select existing</option>
         {residents.map((resident) => <option key={resident.id} value={resident.id}>{resident.residentNo} - {resident.name} - {resident.companyName || resident.companyId || "Company"}</option>)}
@@ -9584,9 +9635,9 @@ function HousingBookingForm({ rooms, beds, residents, saving, onSubmit }: { room
         {allocatableBeds.map((bed) => <option key={bed.id} value={bed.id}>{bed.room?.roomNumber || "Room"} / {bed.label} / available</option>)}
       </select>
       <div className="grid gap-3 md:grid-cols-2">
-        <input name="buildingNumber" placeholder="Building number / override" className={HOUSING_FIELD_CLASS} />
-        <input name="floorNumber" placeholder="Floor / override" className={HOUSING_FIELD_CLASS} />
-        <input name="roomNumber" placeholder="Room number / override" className={HOUSING_FIELD_CLASS} />
+        <input name="buildingNumber" list="housing-booking-locations" placeholder="Building number / override" className={HOUSING_FIELD_CLASS} />
+        <input name="floorNumber" list="housing-booking-locations" placeholder="Floor / override" className={HOUSING_FIELD_CLASS} />
+        <input name="roomNumber" list="housing-booking-locations" placeholder="Room number / override" className={HOUSING_FIELD_CLASS} />
         <input name="bedNumber" placeholder="Bed number / override" className={HOUSING_FIELD_CLASS} />
         <input name="checkIn" type="datetime-local" className={HOUSING_FIELD_CLASS} />
         <input name="checkOut" type="datetime-local" className={HOUSING_FIELD_CLASS} />
@@ -9604,7 +9655,7 @@ function HousingBookingForm({ rooms, beds, residents, saving, onSubmit }: { room
   );
 }
 
-function HousingInspectionForm({ rooms, beds, bookings, assets, saving, onSubmit }: { rooms: any[]; beds: any[]; bookings: any[]; assets: any[]; saving: boolean; onSubmit: (formData: FormData) => void }) {
+function HousingInspectionForm({ rooms, beds, bookings, assets, locationOptions, saving, onSubmit }: { rooms: any[]; beds: any[]; bookings: any[]; assets: any[]; locationOptions: Array<{ key: string; label: string; building?: string; floor?: string; room?: string }>; saving: boolean; onSubmit: (formData: FormData) => void }) {
   const conditionOptions = ["Good", "Fair", "Damaged", "Missing", "Needs Repair", "Not Applicable"];
   const checklistFields = [
     ["furnitureCondition", "Furniture condition"],
@@ -9625,6 +9676,7 @@ function HousingInspectionForm({ rooms, beds, bookings, assets, saving, onSubmit
   ] as const;
   return (
     <HousingForm title="Room Inspection Management" type="inspection" saving={saving} onSubmit={onSubmit}>
+      <HousingLocationDatalist id="housing-inspection-locations" options={locationOptions} />
       <select name="inspectionType" className={HOUSING_FIELD_CLASS}>
         <option>Pre-check-in inspection</option>
         <option>Occupied room inspection</option>
@@ -9639,7 +9691,7 @@ function HousingInspectionForm({ rooms, beds, bookings, assets, saving, onSubmit
       <select name="occupantId" className={HOUSING_FIELD_CLASS}><option value="">Link occupant / booking</option>{bookings.map((booking) => <option key={booking.id} value={booking.residentId || booking.id}>{booking.bookingNo} / {booking.residentName} / {booking.status}</option>)}</select>
       <input name="occupantName" placeholder="Occupant name" className={HOUSING_FIELD_CLASS} />
       <select name="assetId" className={HOUSING_FIELD_CLASS}><option value="">Link asset</option>{assets.map((asset) => <option key={asset.id} value={asset.id}>{asset.tag} / {asset.name} / {asset.status}</option>)}</select>
-      <input name="workOrderRef" placeholder="Linked work order / reference" className={HOUSING_FIELD_CLASS} />
+      <input name="workOrderRef" list="housing-inspection-locations" placeholder="Linked work order / reference" className={HOUSING_FIELD_CLASS} />
       <input name="inspector" placeholder="Inspector" className={HOUSING_FIELD_CLASS} />
       <input name="dueAt" type="datetime-local" className={HOUSING_FIELD_CLASS} />
       <input name="score" type="number" placeholder="Score" className={HOUSING_FIELD_CLASS} />
@@ -9671,11 +9723,12 @@ function HousingInspectionForm({ rooms, beds, bookings, assets, saving, onSubmit
   );
 }
 
-function HousingAssetForm({ rooms, saving, onSubmit }: { rooms: any[]; saving: boolean; onSubmit: (formData: FormData) => void }) {
+function HousingAssetForm({ rooms, locationOptions, saving, onSubmit }: { rooms: any[]; locationOptions: Array<{ key: string; label: string; building?: string; floor?: string; room?: string }>; saving: boolean; onSubmit: (formData: FormData) => void }) {
   const categories = ["Furniture", "Beds", "Mattresses", "TVs", "Refrigerators", "Air conditioners", "Curtains", "Water dispensers", "Fire extinguishers", "Smoke detectors", "Office equipment", "Housekeeping tools", "Electrical items"];
   const statuses = ["AVAILABLE", "INSTALLED", "UNDER_REPAIR", "MISSING", "DAMAGED", "SCRAPPED", "TRANSFERRED"];
   return (
     <HousingForm title="Housing Asset Management" type="asset" saving={saving} onSubmit={onSubmit}>
+      <HousingLocationDatalist id="housing-asset-locations" options={locationOptions} />
       <input name="tag" placeholder="Asset code" className={HOUSING_FIELD_CLASS} />
       <input name="qrCode" placeholder="Barcode / QR code" className={HOUSING_FIELD_CLASS} />
       <textarea name="description" placeholder="Asset description" className="min-h-20 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />
@@ -9694,8 +9747,8 @@ function HousingAssetForm({ rooms, saving, onSubmit }: { rooms: any[]; saving: b
       </div>
       <select name="roomId" className={HOUSING_FIELD_CLASS}><option value="">Assign room / room profile</option>{rooms.map((room) => <option key={room.id} value={room.id}>{room.property?.name} / {room.block?.name} / Floor {room.floor} / Room {room.roomNumber}</option>)}</select>
       <div className="grid gap-3 md:grid-cols-2">
-        <input name="buildingLocation" placeholder="Building location" className={HOUSING_FIELD_CLASS} />
-        <input name="roomLocation" placeholder="Room location" className={HOUSING_FIELD_CLASS} />
+        <input name="buildingLocation" list="housing-asset-locations" placeholder="Building location" className={HOUSING_FIELD_CLASS} />
+        <input name="roomLocation" list="housing-asset-locations" placeholder="Room location" className={HOUSING_FIELD_CLASS} />
         <input name="custodianName" placeholder="Custodian name" className={HOUSING_FIELD_CLASS} />
         <input name="custodianContact" placeholder="Custodian contact" className={HOUSING_FIELD_CLASS} />
       </div>
@@ -9730,10 +9783,11 @@ function HousingAssetForm({ rooms, saving, onSubmit }: { rooms: any[]; saving: b
   );
 }
 
-function HousingInventoryForm({ rooms, saving, onSubmit }: { rooms: any[]; saving: boolean; onSubmit: (formData: FormData) => void }) {
+function HousingInventoryForm({ rooms, locationOptions, saving, onSubmit }: { rooms: any[]; locationOptions: Array<{ key: string; label: string; building?: string; floor?: string; room?: string }>; saving: boolean; onSubmit: (formData: FormData) => void }) {
   const categories = ["Linen", "Pillows", "Blankets", "Cleaning materials", "Electrical spare parts", "Plumbing spare parts", "PPE items", "Office stationery", "Kitchen equipment", "Hygiene materials"];
   return (
     <HousingForm title="Add Housing Inventory" type="inventory" saving={saving} onSubmit={onSubmit}>
+      <HousingLocationDatalist id="housing-inventory-locations" options={locationOptions} />
       <input name="sku" placeholder="SKU / barcode" className={HOUSING_FIELD_CLASS} />
       <input name="name" placeholder="Item name" className={HOUSING_FIELD_CLASS} />
       <select name="category" className={HOUSING_FIELD_CLASS}>
@@ -9742,7 +9796,7 @@ function HousingInventoryForm({ rooms, saving, onSubmit }: { rooms: any[]; savin
       </select>
       <textarea name="description" placeholder="Description / item specification" className="min-h-20 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />
       <select name="roomId" className={HOUSING_FIELD_CLASS}><option value="">Room / store location</option>{rooms.map((room) => <option key={room.id} value={room.id}>{room.roomNumber} / {room.roomType}</option>)}</select>
-      <input name="storeLocation" placeholder="Store / shelf / bin location" className={HOUSING_FIELD_CLASS} />
+      <input name="storeLocation" list="housing-inventory-locations" placeholder="Store / shelf / bin location" className={HOUSING_FIELD_CLASS} />
       <div className="grid gap-3 md:grid-cols-3">
         <input name="onHand" type="number" min="0" placeholder="Opening / adjusted stock" className={HOUSING_FIELD_CLASS} />
         <input name="minimumStock" type="number" min="0" placeholder="Minimum stock" className={HOUSING_FIELD_CLASS} />
