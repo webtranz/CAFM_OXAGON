@@ -303,6 +303,27 @@ const PAGE_SIZE = 100;
 const PAGINATION_WINDOW = 7;
 const HOUSING_REFERENCE_LIMIT = 300;
 const HOUSING_LOCATION_OPTION_LIMIT = 120;
+const DEFAULT_NATIONALITIES = [
+  "Saudi Arabia",
+  "India",
+  "Pakistan",
+  "Bangladesh",
+  "Philippines",
+  "Nepal",
+  "Sri Lanka",
+  "Egypt",
+  "Jordan",
+  "Sudan",
+  "Yemen",
+  "United Arab Emirates",
+  "Bahrain",
+  "Kuwait",
+  "Oman",
+  "Qatar",
+  "United Kingdom",
+  "United States",
+  "Other",
+];
 const HOUSING_FIELD_CLASS = "h-11 rounded-lg border border-slate-200 bg-white px-3 outline-none focus:border-lagoon";
 const FACILITY_FIELD_CLASS = "h-11 w-full min-w-0 rounded-lg border border-slate-200 bg-white px-3 outline-none focus:border-lagoon";
 const RESOURCE_EMPLOYEE_FIELD_CLASS = "h-11 w-full min-w-0 rounded-lg border border-slate-200 bg-white px-3 outline-none focus:border-lagoon";
@@ -8759,6 +8780,7 @@ function HousingOperations({
   }, [facilityLocations, housingRecords.locations, housingRecords.spaces, housingRecords.cafmAssets]);
   const nationalityOptions = useMemo(() => {
     return Array.from(new Set([
+      ...DEFAULT_NATIONALITIES,
       ...(housingRecords.residents ?? []).map((resident) => resident.nationality),
       ...employees.map((employee) => employee.nationality || employee.nationalityType),
     ].map((item) => String(item || "").trim()).filter((item) => item && !["Not specified", "Unspecified"].includes(item)))).sort();
@@ -9630,12 +9652,10 @@ function HousingLocationSelect({ options, className = HOUSING_FIELD_CLASS }: { o
 
 function NationalityInput({ options }: { options: string[] }) {
   return (
-    <>
-      <input name="nationality" list="housing-nationalities" placeholder="Nationality" className={HOUSING_FIELD_CLASS} />
-      <datalist id="housing-nationalities">
-        {options.map((nationality) => <option key={nationality} value={nationality} />)}
-      </datalist>
-    </>
+    <select name="nationality" className={HOUSING_FIELD_CLASS}>
+      <option value="">Nationality</option>
+      {options.map((nationality) => <option key={nationality} value={nationality}>{nationality}</option>)}
+    </select>
   );
 }
 
