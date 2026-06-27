@@ -9974,8 +9974,11 @@ function HousingForm({ title, type, saving, onSubmit, children }: { title: strin
 function HousingPreviewModal({ type, record, history, canDelete, onClose, onDelete }: { type: string; record: any; history: any[]; canDelete: boolean; onClose: () => void; onDelete: () => void }) {
   const attachments = attachmentList(record.photoUrls || record.attachmentUrls);
   const images = attachments.filter(isImageUrl);
+  const titleValue = type === "asset"
+    ? record.assetDescription || record.description || record.assetName || record.name || record.tag
+    : record.bookingNo || record.inspectionNo || record.code || record.tag || record.sku || record.name;
   return (
-    <RequestModalShell title={`Housing ${type}: ${record.bookingNo || record.inspectionNo || record.code || record.tag || record.sku || record.name}`} onClose={onClose}>
+    <RequestModalShell title={`Housing ${type}: ${titleValue}`} onClose={onClose}>
       <div className="grid gap-4">
         <div className="grid gap-3 md:grid-cols-2">
           {Object.entries(record).filter(([key]) => !["property", "block", "room", "bed", "resident", "approvals", "beds"].includes(key)).slice(0, 18).map(([key, value]) => (
