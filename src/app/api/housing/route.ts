@@ -6,6 +6,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { ensureHousingNotificationSettings } from "@/lib/housing-alerts";
 import { prisma } from "@/lib/prisma";
 
+const HOUSING_REFERENCE_LIMIT = 300;
 const activeBookingStatuses = ["REQUESTED", "PENDING_APPROVAL", "APPROVED", "CHECKED_IN"];
 const bookingStatuses = ["REQUESTED", "PENDING_APPROVAL", "APPROVED", "CHECKED_IN", "CHECKED_OUT", "REJECTED", "CANCELLED", "NO_SHOW", "TRANSFERRED"];
 const bookingApprovalSteps = [
@@ -177,10 +178,12 @@ export async function GET(request: Request) {
       prisma.housingProperty.findMany({
         select: { id: true, code: true, name: true, site: true, city: true },
         orderBy: { name: "asc" },
+        take: HOUSING_REFERENCE_LIMIT,
       }),
       prisma.housingBlock.findMany({
         select: { id: true, code: true, name: true, propertyId: true, property: { select: { id: true, code: true, name: true } } },
         orderBy: { code: "asc" },
+        take: HOUSING_REFERENCE_LIMIT,
       }),
       prisma.housingRoom.findMany({
         select: {
@@ -200,6 +203,7 @@ export async function GET(request: Request) {
           beds: { select: { id: true, code: true, label: true, roomId: true, status: true } },
         },
         orderBy: [{ property: { name: "asc" } }, { roomNumber: "asc" }],
+        take: HOUSING_REFERENCE_LIMIT,
       }),
       prisma.housingBed.findMany({
         select: {
@@ -211,29 +215,32 @@ export async function GET(request: Request) {
           room: { select: { id: true, roomNumber: true, floor: true, roomType: true, property: { select: { id: true, name: true } }, block: { select: { id: true, name: true } } } },
         },
         orderBy: { code: "asc" },
+        take: HOUSING_REFERENCE_LIMIT,
       }),
       prisma.housingResident.findMany({
         select: { id: true, residentNo: true, name: true, companyId: true, companyName: true, gender: true, nationality: true, departmentCode: true, status: true },
         orderBy: { name: "asc" },
+        take: HOUSING_REFERENCE_LIMIT,
       }),
       prisma.housingAsset.findMany({
         select: { id: true, tag: true, name: true, category: true, status: true, roomId: true, roomLocation: true, buildingLocation: true },
         orderBy: { tag: "asc" },
+        take: HOUSING_REFERENCE_LIMIT,
       }),
       prisma.location.findMany({
         select: { id: true, code: true, description: true, site: true, building: true, floor: true, room: true, type: true, parentLocation: true },
         orderBy: { code: "asc" },
-        take: 500,
+        take: HOUSING_REFERENCE_LIMIT,
       }),
       prisma.space.findMany({
         select: { id: true, name: true, floor: true, type: true, building: { select: { code: true, name: true, site: { select: { name: true } } } } },
         orderBy: [{ building: { code: "asc" } }, { floor: "asc" }, { name: "asc" }],
-        take: 500,
+        take: HOUSING_REFERENCE_LIMIT,
       }),
       prisma.asset.findMany({
         select: { id: true, tag: true, name: true, assetDescription: true, siteCode: true, buildingCode: true, floor: true, room: true, locationCode: true, locationDesc: true, status: true },
         orderBy: { tag: "asc" },
-        take: 500,
+        take: HOUSING_REFERENCE_LIMIT,
       }),
     ]);
     return NextResponse.json({ properties, blocks, rooms, beds, residents, assets, locations, spaces, cafmAssets });

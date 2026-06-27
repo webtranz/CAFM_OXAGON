@@ -300,6 +300,9 @@ const moduleGroups: ModuleGroup[] = [
 const healthColors = ["#35a852", "#0f8b8d", "#ffd166", "#f45d48"];
 const dashboardColors = ["#0f8b8d", "#f45d48", "#06d6a0", "#ffd166", "#0b1f3a", "#7c3aed", "#2563eb", "#db2777", "#64748b", "#16a34a"];
 const PAGE_SIZE = 100;
+const PAGINATION_WINDOW = 7;
+const HOUSING_REFERENCE_LIMIT = 300;
+const HOUSING_LOCATION_OPTION_LIMIT = 120;
 const HOUSING_FIELD_CLASS = "h-11 rounded-lg border border-slate-200 bg-white px-3 outline-none focus:border-lagoon";
 const FACILITY_FIELD_CLASS = "h-11 w-full min-w-0 rounded-lg border border-slate-200 bg-white px-3 outline-none focus:border-lagoon";
 const RESOURCE_EMPLOYEE_FIELD_CLASS = "h-11 w-full min-w-0 rounded-lg border border-slate-200 bg-white px-3 outline-none focus:border-lagoon";
@@ -8730,7 +8733,7 @@ function HousingOperations({
         room: room || "",
       });
     });
-    return Array.from(optionMap.values()).slice(0, 500);
+    return Array.from(optionMap.values()).slice(0, HOUSING_LOCATION_OPTION_LIMIT);
   }, [housingRecords.locations, housingRecords.spaces, housingRecords.cafmAssets]);
   const loadMoreHousingAssets = () => {
     if (hasMoreHousingAssets && !housingAssetLoading) {
@@ -9589,12 +9592,15 @@ function HousingLocationDatalist({ id, options }: { id: string; options: Array<{
 function HousingBookingForm({ rooms, beds, residents, locationOptions, saving, onSubmit }: { rooms: any[]; beds: any[]; residents: any[]; locationOptions: Array<{ key: string; label: string; building?: string; floor?: string; room?: string }>; saving: boolean; onSubmit: (formData: FormData) => void }) {
   const allocatableRooms = rooms.filter((room) => !["BLOCKED", "MAINTENANCE"].includes(room.status));
   const allocatableBeds = beds.filter((bed) => bed.status === "AVAILABLE");
+  const residentOptions = residents.slice(0, HOUSING_REFERENCE_LIMIT);
+  const roomOptions = allocatableRooms.slice(0, HOUSING_REFERENCE_LIMIT);
+  const bedOptions = allocatableBeds.slice(0, HOUSING_REFERENCE_LIMIT);
   return (
     <HousingForm title="Accommodation & Booking Management" type="booking" saving={saving} onSubmit={onSubmit}>
       <HousingLocationDatalist id="housing-booking-locations" options={locationOptions} />
       <select name="residentId" className={HOUSING_FIELD_CLASS}>
         <option value="">New employee / select existing</option>
-        {residents.map((resident) => <option key={resident.id} value={resident.id}>{resident.residentNo} - {resident.name} - {resident.companyName || resident.companyId || "Company"}</option>)}
+        {residentOptions.map((resident) => <option key={resident.id} value={resident.id}>{resident.residentNo} - {resident.name} - {resident.companyName || resident.companyId || "Company"}</option>)}
       </select>
       <div className="grid gap-3 md:grid-cols-2">
         <input name="employeeId" placeholder="Employee ID" className={HOUSING_FIELD_CLASS} />
@@ -9628,11 +9634,11 @@ function HousingBookingForm({ rooms, beds, residents, locationOptions, saving, o
       </div>
       <select name="roomId" className={HOUSING_FIELD_CLASS}>
         <option value="">Select room by company / building / floor</option>
-        {allocatableRooms.map((room) => <option key={room.id} value={room.id}>{room.property?.name} / {room.block?.name} / Floor {room.floor} / Room {room.roomNumber} / {room.roomType} / {room.genderRestriction || "MIXED"} ({room.occupancy}/{room.capacity})</option>)}
+        {roomOptions.map((room) => <option key={room.id} value={room.id}>{room.property?.name} / {room.block?.name} / Floor {room.floor} / Room {room.roomNumber} / {room.roomType} / {room.genderRestriction || "MIXED"} ({room.occupancy}/{room.capacity})</option>)}
       </select>
       <select name="bedId" className={HOUSING_FIELD_CLASS}>
         <option value="">Auto-assign available bed</option>
-        {allocatableBeds.map((bed) => <option key={bed.id} value={bed.id}>{bed.room?.roomNumber || "Room"} / {bed.label} / available</option>)}
+        {bedOptions.map((bed) => <option key={bed.id} value={bed.id}>{bed.room?.roomNumber || "Room"} / {bed.label} / available</option>)}
       </select>
       <div className="grid gap-3 md:grid-cols-2">
         <input name="buildingNumber" list="housing-booking-locations" placeholder="Building number / override" className={HOUSING_FIELD_CLASS} />
@@ -9656,6 +9662,10 @@ function HousingBookingForm({ rooms, beds, residents, locationOptions, saving, o
 }
 
 function HousingInspectionForm({ rooms, beds, bookings, assets, locationOptions, saving, onSubmit }: { rooms: any[]; beds: any[]; bookings: any[]; assets: any[]; locationOptions: Array<{ key: string; label: string; building?: string; floor?: string; room?: string }>; saving: boolean; onSubmit: (formData: FormData) => void }) {
+  const roomOptions = rooms.slice(0, HOUSING_REFERENCE_LIMIT);
+  const bedOptions = beds.slice(0, HOUSING_REFERENCE_LIMIT);
+  const bookingOptions = bookings.slice(0, HOUSING_REFERENCE_LIMIT);
+  const assetOptions = assets.slice(0, HOUSING_REFERENCE_LIMIT);
   const conditionOptions = ["Good", "Fair", "Damaged", "Missing", "Needs Repair", "Not Applicable"];
   const checklistFields = [
     ["furnitureCondition", "Furniture condition"],
@@ -9686,11 +9696,11 @@ function HousingInspectionForm({ rooms, beds, bookings, assets, locationOptions,
         <option>Monthly inspection</option>
         <option>Safety inspection</option>
       </select>
-      <select name="roomId" className={HOUSING_FIELD_CLASS}><option value="">Select building / room</option>{rooms.map((room) => <option key={room.id} value={room.id}>{room.property?.name} / {room.block?.name} / Floor {room.floor} / Room {room.roomNumber} / {room.roomType}</option>)}</select>
-      <select name="bedId" className={HOUSING_FIELD_CLASS}><option value="">Link bed</option>{beds.map((bed) => <option key={bed.id} value={bed.id}>{bed.room?.roomNumber || "Room"} / {bed.label} / {bed.status}</option>)}</select>
-      <select name="occupantId" className={HOUSING_FIELD_CLASS}><option value="">Link occupant / booking</option>{bookings.map((booking) => <option key={booking.id} value={booking.residentId || booking.id}>{booking.bookingNo} / {booking.residentName} / {booking.status}</option>)}</select>
+      <select name="roomId" className={HOUSING_FIELD_CLASS}><option value="">Select building / room</option>{roomOptions.map((room) => <option key={room.id} value={room.id}>{room.property?.name} / {room.block?.name} / Floor {room.floor} / Room {room.roomNumber} / {room.roomType}</option>)}</select>
+      <select name="bedId" className={HOUSING_FIELD_CLASS}><option value="">Link bed</option>{bedOptions.map((bed) => <option key={bed.id} value={bed.id}>{bed.room?.roomNumber || "Room"} / {bed.label} / {bed.status}</option>)}</select>
+      <select name="occupantId" className={HOUSING_FIELD_CLASS}><option value="">Link occupant / booking</option>{bookingOptions.map((booking) => <option key={booking.id} value={booking.residentId || booking.id}>{booking.bookingNo} / {booking.residentName} / {booking.status}</option>)}</select>
       <input name="occupantName" placeholder="Occupant name" className={HOUSING_FIELD_CLASS} />
-      <select name="assetId" className={HOUSING_FIELD_CLASS}><option value="">Link asset</option>{assets.map((asset) => <option key={asset.id} value={asset.id}>{asset.tag} / {asset.name} / {asset.status}</option>)}</select>
+      <select name="assetId" className={HOUSING_FIELD_CLASS}><option value="">Link asset</option>{assetOptions.map((asset) => <option key={asset.id} value={asset.id}>{asset.tag} / {asset.name} / {asset.status}</option>)}</select>
       <input name="workOrderRef" list="housing-inspection-locations" placeholder="Linked work order / reference" className={HOUSING_FIELD_CLASS} />
       <input name="inspector" placeholder="Inspector" className={HOUSING_FIELD_CLASS} />
       <input name="dueAt" type="datetime-local" className={HOUSING_FIELD_CLASS} />
@@ -9724,6 +9734,7 @@ function HousingInspectionForm({ rooms, beds, bookings, assets, locationOptions,
 }
 
 function HousingAssetForm({ rooms, locationOptions, saving, onSubmit }: { rooms: any[]; locationOptions: Array<{ key: string; label: string; building?: string; floor?: string; room?: string }>; saving: boolean; onSubmit: (formData: FormData) => void }) {
+  const roomOptions = rooms.slice(0, HOUSING_REFERENCE_LIMIT);
   const categories = ["Furniture", "Beds", "Mattresses", "TVs", "Refrigerators", "Air conditioners", "Curtains", "Water dispensers", "Fire extinguishers", "Smoke detectors", "Office equipment", "Housekeeping tools", "Electrical items"];
   const statuses = ["AVAILABLE", "INSTALLED", "UNDER_REPAIR", "MISSING", "DAMAGED", "SCRAPPED", "TRANSFERRED"];
   return (
@@ -9745,7 +9756,7 @@ function HousingAssetForm({ rooms, locationOptions, saving, onSubmit }: { rooms:
         <input name="currentValue" type="number" step="0.01" placeholder="Current value / override" className={HOUSING_FIELD_CLASS} />
         <select name="status" className={HOUSING_FIELD_CLASS}>{statuses.map((status) => <option key={status}>{status}</option>)}</select>
       </div>
-      <select name="roomId" className={HOUSING_FIELD_CLASS}><option value="">Assign room / room profile</option>{rooms.map((room) => <option key={room.id} value={room.id}>{room.property?.name} / {room.block?.name} / Floor {room.floor} / Room {room.roomNumber}</option>)}</select>
+      <select name="roomId" className={HOUSING_FIELD_CLASS}><option value="">Assign room / room profile</option>{roomOptions.map((room) => <option key={room.id} value={room.id}>{room.property?.name} / {room.block?.name} / Floor {room.floor} / Room {room.roomNumber}</option>)}</select>
       <div className="grid gap-3 md:grid-cols-2">
         <input name="buildingLocation" list="housing-asset-locations" placeholder="Building location" className={HOUSING_FIELD_CLASS} />
         <input name="roomLocation" list="housing-asset-locations" placeholder="Room location" className={HOUSING_FIELD_CLASS} />
@@ -9784,6 +9795,7 @@ function HousingAssetForm({ rooms, locationOptions, saving, onSubmit }: { rooms:
 }
 
 function HousingInventoryForm({ rooms, locationOptions, saving, onSubmit }: { rooms: any[]; locationOptions: Array<{ key: string; label: string; building?: string; floor?: string; room?: string }>; saving: boolean; onSubmit: (formData: FormData) => void }) {
+  const roomOptions = rooms.slice(0, HOUSING_REFERENCE_LIMIT);
   const categories = ["Linen", "Pillows", "Blankets", "Cleaning materials", "Electrical spare parts", "Plumbing spare parts", "PPE items", "Office stationery", "Kitchen equipment", "Hygiene materials"];
   return (
     <HousingForm title="Add Housing Inventory" type="inventory" saving={saving} onSubmit={onSubmit}>
@@ -9795,7 +9807,7 @@ function HousingInventoryForm({ rooms, locationOptions, saving, onSubmit }: { ro
         {categories.map((category) => <option key={category} value={category}>{category}</option>)}
       </select>
       <textarea name="description" placeholder="Description / item specification" className="min-h-20 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />
-      <select name="roomId" className={HOUSING_FIELD_CLASS}><option value="">Room / store location</option>{rooms.map((room) => <option key={room.id} value={room.id}>{room.roomNumber} / {room.roomType}</option>)}</select>
+      <select name="roomId" className={HOUSING_FIELD_CLASS}><option value="">Room / store location</option>{roomOptions.map((room) => <option key={room.id} value={room.id}>{room.roomNumber} / {room.roomType}</option>)}</select>
       <input name="storeLocation" list="housing-inventory-locations" placeholder="Store / shelf / bin location" className={HOUSING_FIELD_CLASS} />
       <div className="grid gap-3 md:grid-cols-3">
         <input name="onHand" type="number" min="0" placeholder="Opening / adjusted stock" className={HOUSING_FIELD_CLASS} />
@@ -10488,6 +10500,10 @@ function DataTable({
 
 function PaginationControls({ page, totalPages, totalItems, onPageChange }: { page: number; totalPages: number; totalItems: number; onPageChange: (page: number) => void }) {
   if (totalItems === 0) return <p className="text-sm font-bold text-slate-500">No entries found.</p>;
+  const halfWindow = Math.floor(PAGINATION_WINDOW / 2);
+  const windowStart = Math.max(1, Math.min(page - halfWindow, totalPages - PAGINATION_WINDOW + 1));
+  const windowEnd = Math.min(totalPages, windowStart + PAGINATION_WINDOW - 1);
+  const visiblePages = Array.from({ length: windowEnd - windowStart + 1 }, (_, index) => windowStart + index);
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-slate-50 p-3">
@@ -10503,7 +10519,19 @@ function PaginationControls({ page, totalPages, totalItems, onPageChange }: { pa
         >
           Previous
         </button>
-        {Array.from({ length: totalPages }, (_, index) => index + 1).map((item) => (
+        {windowStart > 1 && (
+          <>
+            <button
+              type="button"
+              onClick={() => onPageChange(1)}
+              className="h-9 min-w-9 rounded-lg border border-slate-200 bg-white px-3 text-sm font-black text-slate-700"
+            >
+              1
+            </button>
+            {windowStart > 2 && <span className="grid h-9 place-items-center px-1 text-sm font-black text-slate-400">...</span>}
+          </>
+        )}
+        {visiblePages.map((item) => (
           <button
             type="button"
             key={item}
@@ -10513,6 +10541,18 @@ function PaginationControls({ page, totalPages, totalItems, onPageChange }: { pa
             {item}
           </button>
         ))}
+        {windowEnd < totalPages && (
+          <>
+            {windowEnd < totalPages - 1 && <span className="grid h-9 place-items-center px-1 text-sm font-black text-slate-400">...</span>}
+            <button
+              type="button"
+              onClick={() => onPageChange(totalPages)}
+              className="h-9 min-w-9 rounded-lg border border-slate-200 bg-white px-3 text-sm font-black text-slate-700"
+            >
+              {totalPages}
+            </button>
+          </>
+        )}
         <button
           type="button"
           disabled={page === totalPages}
