@@ -172,6 +172,58 @@ const housingSchema = z.object({
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
+  if (url.searchParams.get("type") === "references") {
+    const [properties, blocks, rooms, beds, residents, assets] = await Promise.all([
+      prisma.housingProperty.findMany({
+        select: { id: true, code: true, name: true, site: true, city: true },
+        orderBy: { name: "asc" },
+      }),
+      prisma.housingBlock.findMany({
+        select: { id: true, code: true, name: true, propertyId: true, property: { select: { id: true, code: true, name: true } } },
+        orderBy: { code: "asc" },
+      }),
+      prisma.housingRoom.findMany({
+        select: {
+          id: true,
+          code: true,
+          roomNumber: true,
+          floor: true,
+          roomType: true,
+          genderRestriction: true,
+          capacity: true,
+          occupancy: true,
+          status: true,
+          propertyId: true,
+          blockId: true,
+          property: { select: { id: true, code: true, name: true } },
+          block: { select: { id: true, code: true, name: true } },
+          beds: { select: { id: true, code: true, label: true, roomId: true, status: true } },
+        },
+        orderBy: [{ property: { name: "asc" } }, { roomNumber: "asc" }],
+      }),
+      prisma.housingBed.findMany({
+        select: {
+          id: true,
+          code: true,
+          label: true,
+          roomId: true,
+          status: true,
+          room: { select: { id: true, roomNumber: true, floor: true, roomType: true, property: { select: { id: true, name: true } }, block: { select: { id: true, name: true } } } },
+        },
+        orderBy: { code: "asc" },
+      }),
+      prisma.housingResident.findMany({
+        select: { id: true, residentNo: true, name: true, companyId: true, companyName: true, gender: true, nationality: true, departmentCode: true, status: true },
+        orderBy: { name: "asc" },
+      }),
+      prisma.housingAsset.findMany({
+        select: { id: true, tag: true, name: true, category: true, status: true, roomId: true, roomLocation: true, buildingLocation: true },
+        orderBy: { tag: "asc" },
+      }),
+    ]);
+    return NextResponse.json({ properties, blocks, rooms, beds, residents, assets });
+  }
+
   if (url.searchParams.get("type") === "assets") {
     const pageInput = Number(url.searchParams.get("page") || 1);
     const pageSizeInput = Number(url.searchParams.get("pageSize") || 100);
