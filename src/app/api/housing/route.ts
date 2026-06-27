@@ -251,8 +251,10 @@ export async function GET(request: Request) {
     const pageSize = Number.isFinite(pageSizeInput) ? Math.min(200, Math.max(25, Math.floor(pageSizeInput))) : 100;
     const query = url.searchParams.get("query")?.trim() || "";
     const status = url.searchParams.get("status")?.trim() || "";
+    const assetGroup = url.searchParams.get("assetGroup")?.trim() || "";
     const where: any = {
       ...(status && status !== "All" ? { status } : {}),
+      ...(assetGroup && assetGroup !== "All" ? { category: assetGroup } : {}),
     };
     if (query) {
       where.OR = [

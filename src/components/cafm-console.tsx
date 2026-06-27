@@ -324,6 +324,50 @@ const DEFAULT_NATIONALITIES = [
   "United States",
   "Other",
 ];
+const HOUSING_ASSET_GROUP_OPTIONS = [
+  "ACHA-2242",
+  "BUFT-6338",
+  "BEDF-2333",
+  "CHAI-2424",
+  "CBOR-2267",
+  "BUNB-2862",
+  "CMAT-2628",
+  "COFM-2636",
+  "COFT-2638",
+  "DMAT-3628",
+  "DLAM-3526",
+  "KETL-5385",
+  "KBED-5233",
+  "KHBD-5423",
+  "KMAT-5628",
+  "LAMP-5267",
+  "MICO-6426",
+  "MCUP-6287",
+  "MIRR-6477",
+  "MTAB-6822",
+  "PHTB-7482",
+  "QBED-7233",
+  "QMAT-7628",
+  "QHBD-7432",
+  "SCHA-7242",
+  "RTAB-7822",
+  "SCUP-7287",
+  "SIDT-7438",
+  "SLAP-7527",
+  "SHRK-7475",
+  "SRST-7778",
+  "SOFC-7632",
+  "SRWD-7793",
+  "SSTB-7782",
+  "STBB-7822",
+  "STBC-7822",
+  "STBL-7825",
+  "TVTD-8883",
+  "TCHR-8247",
+  "TVTB-8882",
+  "WTAB-9822",
+  "WARD-9273",
+];
 const HOUSING_FIELD_CLASS = "h-11 rounded-lg border border-slate-200 bg-white px-3 outline-none focus:border-lagoon";
 const FACILITY_FIELD_CLASS = "h-11 w-full min-w-0 rounded-lg border border-slate-200 bg-white px-3 outline-none focus:border-lagoon";
 const RESOURCE_EMPLOYEE_FIELD_CLASS = "h-11 w-full min-w-0 rounded-lg border border-slate-200 bg-white px-3 outline-none focus:border-lagoon";
@@ -8549,6 +8593,7 @@ function HousingOperations({
   const [buildingFilter, setBuildingFilter] = useState("All");
   const [floorFilter, setFloorFilter] = useState("All");
   const [categoryFilter, setCategoryFilter] = useState("All");
+  const [housingAssetGroupFilter, setHousingAssetGroupFilter] = useState("All");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [selected, setSelected] = useState<{ type: string; record: any } | null>(null);
@@ -8670,7 +8715,7 @@ function HousingOperations({
   });
   const visibleAssets = housingAssetRowsSource.filter((asset) => {
     const haystack = `${asset.tag} ${asset.name} ${asset.category} ${asset.status} ${asset.serialNumber} ${asset.room?.property?.name} ${asset.room?.block?.name} ${asset.room?.floor} ${asset.room?.roomNumber} ${asset.description} ${asset.brand} ${asset.model} ${asset.buildingLocation} ${asset.roomLocation} ${asset.custodianName}`.toLowerCase();
-    return (!search || haystack.includes(filterText)) && (status === "All" || asset.status === status);
+    return (!search || haystack.includes(filterText)) && (status === "All" || asset.status === status) && (housingAssetGroupFilter === "All" || asset.category === housingAssetGroupFilter);
   });
   const hasMoreHousingAssets = housingAssetRowsSource.length < housingAssetTotal;
   const housingAssetRows = visibleAssets.map((asset) => ({
@@ -8848,7 +8893,7 @@ function HousingOperations({
 
   useEffect(() => {
     setHousingAssetPage(1);
-  }, [search, status]);
+  }, [search, status, housingAssetGroupFilter]);
 
   useEffect(() => {
     if (activePanel !== "assets") return;
@@ -8862,6 +8907,7 @@ function HousingOperations({
           pageSize: String(PAGE_SIZE),
           query: search,
           status,
+          assetGroup: housingAssetGroupFilter,
         });
         const response = await fetch(`/api/housing?${params.toString()}`, { cache: "no-store", signal: controller.signal });
         if (response.ok) {
@@ -8879,7 +8925,7 @@ function HousingOperations({
       controller.abort();
       window.clearTimeout(timer);
     };
-  }, [activePanel, housingAssetPage, search, status]);
+  }, [activePanel, housingAssetPage, search, status, housingAssetGroupFilter]);
 
   return (
     <section className="grid gap-5">
@@ -9037,51 +9083,60 @@ function HousingOperations({
 
       {activePanel === "assets" && (
         <section className="grid gap-5 xl:grid-cols-[1fr_380px]">
-          <HousingTable
-            title="Housing Asset Management"
-            rows={housingAssetRows}
-            columns={[
-              ["tag", "TAG"],
-              ["site", "SITE"],
-              ["zone", "ZONE"],
-              ["building", "BLDG"],
-              ["floor", "FLOOR"],
-              ["roomDisplay", "ROOM"],
-              ["assetGroup", "ASSET GROUP"],
-              ["assetName", "ASSET NAME"],
-              ["assetDescription", "ASSET DESCRIPTION"],
-              ["additionalDescription", "ADDITIONAL DESCRIPTION"],
-              ["parentAsset", "PARENT ASSET"],
-              ["department", "DEPARTMENT"],
-              ["subDepCode", "SUB DEP CODE"],
-              ["location", "LOCATION"],
-              ["areaAbbrv", "ARREA ABBRV"],
-              ["manufacturer", "MANUFACTURER"],
-              ["model", "MODEL"],
-              ["installationDate", "INSTALLATION DATE"],
-              ["lifeSpanYears", "LIFE SPAN(YEARS)"],
-              ["warrantyPeriodYears", "WARRANTY PERIOD(YEARS)"],
-              ["region", "REGION"],
-              ["correctiveAction", "CORRECTIVE ACTION"],
-              ["preventiveAction", "PREVENTIVE ACTION"],
-            ]}
-            onSelect={(record) => setSelected({ type: "asset", record })}
-            reportType="housing-assets"
-            bulkSelectable={isAdmin}
-            onBulkDelete={async (rows) => { await Promise.all(rows.map((row) => deleteHousingAndRefresh("asset", row.id))); }}
-            scrollLoad
-            totalRows={housingAssetTotal}
-            loading={housingAssetLoading}
-            onLoadMore={loadMoreHousingAssets}
-            actions={(record) => canManage && (
-              <div className="flex flex-wrap gap-2">
-                <button type="button" onClick={(event) => { event.stopPropagation(); updateHousingAndRefresh("asset", record.id, { status: "INSTALLED", issuedAt: new Date().toISOString(), movementAction: "Asset issuance" }); }} className="rounded-lg bg-leaf px-3 py-2 text-xs font-black text-white">Issue</button>
-                <button type="button" onClick={(event) => { event.stopPropagation(); updateHousingAndRefresh("asset", record.id, { status: "TRANSFERRED", transferredAt: new Date().toISOString(), transferredFrom: record.roomLocation || record.room?.roomNumber || "", transferredTo: "Transfer pending location", movementAction: "Asset transfer" }); }} className="rounded-lg bg-lagoon px-3 py-2 text-xs font-black text-white">Transfer</button>
-                <button type="button" onClick={(event) => { event.stopPropagation(); updateHousingAndRefresh("asset", record.id, { status: "UNDER_REPAIR", replacementOf: record.tag, replacedAt: new Date().toISOString(), movementAction: "Asset replacement" }); }} className="rounded-lg bg-ink px-3 py-2 text-xs font-black text-white">Replace</button>
-                <button type="button" onClick={(event) => { event.stopPropagation(); updateHousingAndRefresh("asset", record.id, { status: "MISSING", movementAction: "Missing asset tracking" }); }} className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white">Missing</button>
-              </div>
-            )}
-          />
+          <div className="grid gap-3">
+            <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+              <span className="text-xs font-black uppercase text-slate-500">Asset group</span>
+              <select value={housingAssetGroupFilter} onChange={(event) => setHousingAssetGroupFilter(event.target.value)} className="h-10 min-w-[220px] rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold">
+                <option value="All">All asset groups</option>
+                {HOUSING_ASSET_GROUP_OPTIONS.map((group) => <option key={group} value={group}>{group}</option>)}
+              </select>
+            </div>
+            <HousingTable
+              title="Housing Asset Management"
+              rows={housingAssetRows}
+              columns={[
+                ["tag", "TAG"],
+                ["site", "SITE"],
+                ["zone", "ZONE"],
+                ["building", "BLDG"],
+                ["floor", "FLOOR"],
+                ["roomDisplay", "ROOM"],
+                ["assetGroup", "ASSET GROUP"],
+                ["assetName", "ASSET NAME"],
+                ["assetDescription", "ASSET DESCRIPTION"],
+                ["additionalDescription", "ADDITIONAL DESCRIPTION"],
+                ["parentAsset", "PARENT ASSET"],
+                ["department", "DEPARTMENT"],
+                ["subDepCode", "SUB DEP CODE"],
+                ["location", "LOCATION"],
+                ["areaAbbrv", "ARREA ABBRV"],
+                ["manufacturer", "MANUFACTURER"],
+                ["model", "MODEL"],
+                ["installationDate", "INSTALLATION DATE"],
+                ["lifeSpanYears", "LIFE SPAN(YEARS)"],
+                ["warrantyPeriodYears", "WARRANTY PERIOD(YEARS)"],
+                ["region", "REGION"],
+                ["correctiveAction", "CORRECTIVE ACTION"],
+                ["preventiveAction", "PREVENTIVE ACTION"],
+              ]}
+              onSelect={(record) => setSelected({ type: "asset", record })}
+              reportType="housing-assets"
+              bulkSelectable={isAdmin}
+              onBulkDelete={async (rows) => { await Promise.all(rows.map((row) => deleteHousingAndRefresh("asset", row.id))); }}
+              scrollLoad
+              totalRows={housingAssetTotal}
+              loading={housingAssetLoading}
+              onLoadMore={loadMoreHousingAssets}
+              actions={(record) => canManage && (
+                <div className="flex flex-wrap gap-2">
+                  <button type="button" onClick={(event) => { event.stopPropagation(); updateHousingAndRefresh("asset", record.id, { status: "INSTALLED", issuedAt: new Date().toISOString(), movementAction: "Asset issuance" }); }} className="rounded-lg bg-leaf px-3 py-2 text-xs font-black text-white">Issue</button>
+                  <button type="button" onClick={(event) => { event.stopPropagation(); updateHousingAndRefresh("asset", record.id, { status: "TRANSFERRED", transferredAt: new Date().toISOString(), transferredFrom: record.roomLocation || record.room?.roomNumber || "", transferredTo: "Transfer pending location", movementAction: "Asset transfer" }); }} className="rounded-lg bg-lagoon px-3 py-2 text-xs font-black text-white">Transfer</button>
+                  <button type="button" onClick={(event) => { event.stopPropagation(); updateHousingAndRefresh("asset", record.id, { status: "UNDER_REPAIR", replacementOf: record.tag, replacedAt: new Date().toISOString(), movementAction: "Asset replacement" }); }} className="rounded-lg bg-ink px-3 py-2 text-xs font-black text-white">Replace</button>
+                  <button type="button" onClick={(event) => { event.stopPropagation(); updateHousingAndRefresh("asset", record.id, { status: "MISSING", movementAction: "Missing asset tracking" }); }} className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white">Missing</button>
+                </div>
+              )}
+            />
+          </div>
           {canManage && <HousingAssetForm rooms={rooms} locationOptions={fallbackLocationOptions} saving={saving} onSubmit={submitHousingAndRefresh} />}
         </section>
       )}
