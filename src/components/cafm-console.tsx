@@ -429,6 +429,10 @@ const moduleActionPermissions: Record<string, string[]> = {
 function compactPermissions(permissions: Array<string | undefined>) {
   return permissions.filter((permission): permission is string => Boolean(permission));
 }
+function housingReferenceCount(housing?: ConsoleData["housing"]) {
+  if (!housing) return 0;
+  return (housing.properties?.length ?? 0) + (housing.blocks?.length ?? 0) + (housing.rooms?.length ?? 0) + (housing.beds?.length ?? 0) + (housing.assets?.length ?? 0) + (housing.inventory?.length ?? 0);
+}
 const statToneClasses: Record<string, string> = {
   coral: "text-coral",
   leaf: "text-leaf",
@@ -8468,6 +8472,7 @@ function HousingOperations({
   deleteHousing: (type: string, id: string) => Promise<void> | void;
   refreshData: () => Promise<void>;
 }) {
+  const [housingRecords, setHousingRecords] = useState<ConsoleData["housing"]>(housing);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("All");
   const [companyFilter, setCompanyFilter] = useState("All");
@@ -8482,15 +8487,17 @@ function HousingOperations({
   const [housingAssetTotal, setHousingAssetTotal] = useState((housing?.assets ?? []).length);
   const [housingAssetPage, setHousingAssetPage] = useState(1);
   const [housingAssetLoading, setHousingAssetLoading] = useState(false);
-  const rooms = housing?.rooms ?? [];
-  const bookings = housing?.bookings ?? [];
-  const inspections = housing?.inspections ?? [];
-  const assets = housing?.assets ?? [];
-  const inventory = housing?.inventory ?? [];
-  const approvals = housing?.approvals ?? [];
-  const notifications = housing?.notifications ?? [];
-  const notificationSettings = housing?.notificationSettings ?? [];
-  const history = housing?.history ?? [];
+  const rooms = housingRecords?.rooms ?? [];
+  const roomBedOptions = rooms.flatMap((room) => (room.beds ?? []).map((bed: any) => ({ ...bed, room: bed.room ?? room, roomId: bed.roomId ?? room.id })));
+  const beds = Array.from(new Map([...(housingRecords?.beds ?? []), ...roomBedOptions].map((bed) => [bed.id, bed])).values());
+  const bookings = housingRecords?.bookings ?? [];
+  const inspections = housingRecords?.inspections ?? [];
+  const assets = housingRecords?.assets ?? [];
+  const inventory = housingRecords?.inventory ?? [];
+  const approvals = housingRecords?.approvals ?? [];
+  const notifications = housingRecords?.notifications ?? [];
+  const notificationSettings = housingRecords?.notificationSettings ?? [];
+  const history = housingRecords?.history ?? [];
   const todayKey = new Date().toISOString().slice(0, 10);
   const roomBuilding = (room: any) => room?.block?.name || room?.property?.name || "Unassigned";
   const roomMatchesLocationFilters = (room: any) => {
@@ -8646,13 +8653,33 @@ function HousingOperations({
     const label = action === "RETURNED" ? "Return for correction" : action === "REJECTED" ? "Reject" : "Approve";
     const remarks = window.prompt(`${label} comments`, action === "APPROVED" ? "Reviewed and accepted" : "");
     if (remarks === null) return;
-    updateHousing("approval", approval.id, { action, remarks, status: action });
+    updateHousingAndRefresh("approval", approval.id, { action, remarks, status: action });
   };
   const runAlertChecks = async () => {
     setRunningAlerts(true);
     await fetch("/api/housing/alerts", { method: "POST" });
-    await refreshData();
+    await refreshHousingData();
     setRunningAlerts(false);
+  };
+  const refreshHousingData = async () => {
+    const response = await fetch("/api/housing", { cache: "no-store" });
+    if (response.ok) {
+      setHousingRecords(await response.json());
+    } else {
+      await refreshData();
+    }
+  };
+  const submitHousingAndRefresh = async (formData: FormData) => {
+    await submitHousing(formData);
+    await refreshHousingData();
+  };
+  const updateHousingAndRefresh = async (type: string, id: string, body: Record<string, unknown>) => {
+    await updateHousing(type, id, body);
+    await refreshHousingData();
+  };
+  const deleteHousingAndRefresh = async (type: string, id: string) => {
+    await deleteHousing(type, id);
+    await refreshHousingData();
   };
   const loadMoreHousingAssets = () => {
     if (hasMoreHousingAssets && !housingAssetLoading) {
@@ -8665,6 +8692,14 @@ function HousingOperations({
     setHousingAssetRowsSource(assets);
     setHousingAssetTotal((current) => Math.max(current, assets.length));
   }, [assets]);
+
+  useEffect(() => {
+    setHousingRecords((current) => (housingReferenceCount(housing) >= housingReferenceCount(current) ? housing : current));
+  }, [housing]);
+
+  useEffect(() => {
+    void refreshHousingData();
+  }, []);
 
   useEffect(() => {
     setHousingAssetPage(1);
@@ -8780,7 +8815,7 @@ function HousingOperations({
               onSelect={(record) => setSelected({ type: "room", record })}
               reportType="housing-rooms"
               bulkSelectable={isAdmin}
-              onBulkDelete={async (rows) => { await Promise.all(rows.map((row) => deleteHousing("room", row.id))); }}
+              onBulkDelete={async (rows) => { await Promise.all(rows.map((row) => deleteHousingAndRefresh("room", row.id))); }}
             />
             <div className="grid gap-5">
               <HousingSummaryTable title="Ticket Summary" rows={ticketSummary} />
@@ -8798,11 +8833,11 @@ function HousingOperations({
               onSelect={(record) => setSelected({ type: "booking", record })}
               reportType="housing-bookings"
               bulkSelectable={isAdmin}
-              onBulkDelete={async (rows) => { await Promise.all(rows.map((row) => deleteHousing("booking", row.id))); }}
+              onBulkDelete={async (rows) => { await Promise.all(rows.map((row) => deleteHousingAndRefresh("booking", row.id))); }}
             />
             <HousingAlerts notifications={notifications} approvals={dashboardApprovals} onApprove={(approval, action) => approvalAction(approval, action as any)} canApprove={canApprove} />
           </div>
-          {canManage && <HousingSetupForms properties={housing.properties ?? []} blocks={housing.blocks ?? []} rooms={rooms} saving={saving} onSubmit={submitHousing} />}
+          {canManage && <HousingSetupForms properties={housingRecords.properties ?? []} blocks={housingRecords.blocks ?? []} rooms={rooms} saving={saving} onSubmit={submitHousingAndRefresh} />}
         </section>
       )}
 
@@ -8811,9 +8846,9 @@ function HousingOperations({
           <div className="grid gap-3">
             {canManage && (
               <div className="flex flex-wrap gap-2 rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
-                <button type="button" onClick={() => visibleBookings.filter((booking) => booking.status === "APPROVED").forEach((booking) => updateHousing("booking", booking.id, { status: "CHECKED_IN", notes: "Bulk check-in completed" }))} className="rounded-lg bg-lagoon px-4 py-2 text-xs font-black text-white">Bulk Check-in Approved</button>
-                <button type="button" onClick={() => visibleBookings.filter((booking) => booking.status === "CHECKED_IN").forEach((booking) => updateHousing("booking", booking.id, { status: "CHECKED_OUT", checkOut: new Date().toISOString(), notes: "Bulk check-out completed" }))} className="rounded-lg bg-ink px-4 py-2 text-xs font-black text-white">Bulk Check-out Active</button>
-                <button type="button" onClick={() => visibleBookings.filter((booking) => booking.status === "PENDING_APPROVAL").forEach((booking) => updateHousing("booking", booking.id, { status: "NO_SHOW", noShowAt: new Date().toISOString(), notes: "Marked no-show in bulk review" }))} className="rounded-lg bg-amber-600 px-4 py-2 text-xs font-black text-white">Mark Pending No-show</button>
+                <button type="button" onClick={async () => { await Promise.all(visibleBookings.filter((booking) => booking.status === "APPROVED").map((booking) => updateHousingAndRefresh("booking", booking.id, { status: "CHECKED_IN", notes: "Bulk check-in completed" }))); }} className="rounded-lg bg-lagoon px-4 py-2 text-xs font-black text-white">Bulk Check-in Approved</button>
+                <button type="button" onClick={async () => { await Promise.all(visibleBookings.filter((booking) => booking.status === "CHECKED_IN").map((booking) => updateHousingAndRefresh("booking", booking.id, { status: "CHECKED_OUT", checkOut: new Date().toISOString(), notes: "Bulk check-out completed" }))); }} className="rounded-lg bg-ink px-4 py-2 text-xs font-black text-white">Bulk Check-out Active</button>
+                <button type="button" onClick={async () => { await Promise.all(visibleBookings.filter((booking) => booking.status === "PENDING_APPROVAL").map((booking) => updateHousingAndRefresh("booking", booking.id, { status: "NO_SHOW", noShowAt: new Date().toISOString(), notes: "Marked no-show in bulk review" }))); }} className="rounded-lg bg-amber-600 px-4 py-2 text-xs font-black text-white">Mark Pending No-show</button>
               </div>
             )}
             <HousingTable
@@ -8823,19 +8858,19 @@ function HousingOperations({
               onSelect={(record) => setSelected({ type: "booking", record })}
               reportType="housing-bookings"
               bulkSelectable={isAdmin}
-              onBulkDelete={async (rows) => { await Promise.all(rows.map((row) => deleteHousing("booking", row.id))); }}
+              onBulkDelete={async (rows) => { await Promise.all(rows.map((row) => deleteHousingAndRefresh("booking", row.id))); }}
               actions={(record) => canApprove && (
                 <div className="flex flex-wrap gap-2">
                   {currentApprovalFor(record) && <button type="button" onClick={(event) => { event.stopPropagation(); approvalAction(currentApprovalFor(record), "APPROVED"); }} className="rounded-lg bg-leaf px-3 py-2 text-xs font-black text-white">Approve Step</button>}
                   {currentApprovalFor(record) && <button type="button" onClick={(event) => { event.stopPropagation(); approvalAction(currentApprovalFor(record), "RETURNED"); }} className="rounded-lg bg-amber-600 px-3 py-2 text-xs font-black text-white">Return</button>}
-                  {canReceptionAllocate && record.status === "APPROVED" && <button type="button" onClick={(event) => { event.stopPropagation(); updateHousing("booking", record.id, { status: "CHECKED_IN", keyHandoverBy: "Reception Team", keyHandoverAt: new Date().toISOString() }); }} className="rounded-lg bg-lagoon px-3 py-2 text-xs font-black text-white">Allocate</button>}
-                  <button type="button" onClick={(event) => { event.stopPropagation(); updateHousing("booking", record.id, { status: "CHECKED_OUT", checkOut: new Date().toISOString() }); }} className="rounded-lg bg-ink px-3 py-2 text-xs font-black text-white">Check-out</button>
-                  <button type="button" onClick={(event) => { event.stopPropagation(); updateHousing("booking", record.id, { status: "CANCELLED", cancellationReason: "Cancelled by housing admin" }); }} className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white">Cancel</button>
+                  {canReceptionAllocate && record.status === "APPROVED" && <button type="button" onClick={(event) => { event.stopPropagation(); updateHousingAndRefresh("booking", record.id, { status: "CHECKED_IN", keyHandoverBy: "Reception Team", keyHandoverAt: new Date().toISOString() }); }} className="rounded-lg bg-lagoon px-3 py-2 text-xs font-black text-white">Allocate</button>}
+                  <button type="button" onClick={(event) => { event.stopPropagation(); updateHousingAndRefresh("booking", record.id, { status: "CHECKED_OUT", checkOut: new Date().toISOString() }); }} className="rounded-lg bg-ink px-3 py-2 text-xs font-black text-white">Check-out</button>
+                  <button type="button" onClick={(event) => { event.stopPropagation(); updateHousingAndRefresh("booking", record.id, { status: "CANCELLED", cancellationReason: "Cancelled by housing admin" }); }} className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white">Cancel</button>
                 </div>
               )}
             />
           </div>
-          {canManage && <HousingBookingForm rooms={rooms} beds={housing.beds ?? []} residents={housing.residents ?? []} saving={saving} onSubmit={submitHousing} />}
+          {canManage && <HousingBookingForm rooms={rooms} beds={beds} residents={housingRecords.residents ?? []} saving={saving} onSubmit={submitHousingAndRefresh} />}
         </section>
       )}
 
@@ -8848,10 +8883,10 @@ function HousingOperations({
             onSelect={(record) => setSelected({ type: "inspection", record })}
             reportType="housing-inspections"
             bulkSelectable={isAdmin}
-            onBulkDelete={async (rows) => { await Promise.all(rows.map((row) => deleteHousing("inspection", row.id))); }}
-            actions={(record) => canManage && <button type="button" onClick={(event) => { event.stopPropagation(); updateHousing("inspection", record.id, { status: "CLOSED", completedAt: new Date().toISOString() }); }} className="rounded-lg bg-lagoon px-3 py-2 text-xs font-black text-white">Close</button>}
+            onBulkDelete={async (rows) => { await Promise.all(rows.map((row) => deleteHousingAndRefresh("inspection", row.id))); }}
+            actions={(record) => canManage && <button type="button" onClick={(event) => { event.stopPropagation(); updateHousingAndRefresh("inspection", record.id, { status: "CLOSED", completedAt: new Date().toISOString() }); }} className="rounded-lg bg-lagoon px-3 py-2 text-xs font-black text-white">Close</button>}
           />
-          {canManage && <HousingInspectionForm rooms={rooms} beds={housing.beds ?? []} bookings={bookings} assets={assets} saving={saving} onSubmit={submitHousing} />}
+          {canManage && <HousingInspectionForm rooms={rooms} beds={beds} bookings={bookings} assets={assets} saving={saving} onSubmit={submitHousingAndRefresh} />}
         </section>
       )}
 
@@ -8888,21 +8923,21 @@ function HousingOperations({
             onSelect={(record) => setSelected({ type: "asset", record })}
             reportType="housing-assets"
             bulkSelectable={isAdmin}
-            onBulkDelete={async (rows) => { await Promise.all(rows.map((row) => deleteHousing("asset", row.id))); }}
+            onBulkDelete={async (rows) => { await Promise.all(rows.map((row) => deleteHousingAndRefresh("asset", row.id))); }}
             scrollLoad
             totalRows={housingAssetTotal}
             loading={housingAssetLoading}
             onLoadMore={loadMoreHousingAssets}
             actions={(record) => canManage && (
               <div className="flex flex-wrap gap-2">
-                <button type="button" onClick={(event) => { event.stopPropagation(); updateHousing("asset", record.id, { status: "INSTALLED", issuedAt: new Date().toISOString(), movementAction: "Asset issuance" }); }} className="rounded-lg bg-leaf px-3 py-2 text-xs font-black text-white">Issue</button>
-                <button type="button" onClick={(event) => { event.stopPropagation(); updateHousing("asset", record.id, { status: "TRANSFERRED", transferredAt: new Date().toISOString(), transferredFrom: record.roomLocation || record.room?.roomNumber || "", transferredTo: "Transfer pending location", movementAction: "Asset transfer" }); }} className="rounded-lg bg-lagoon px-3 py-2 text-xs font-black text-white">Transfer</button>
-                <button type="button" onClick={(event) => { event.stopPropagation(); updateHousing("asset", record.id, { status: "UNDER_REPAIR", replacementOf: record.tag, replacedAt: new Date().toISOString(), movementAction: "Asset replacement" }); }} className="rounded-lg bg-ink px-3 py-2 text-xs font-black text-white">Replace</button>
-                <button type="button" onClick={(event) => { event.stopPropagation(); updateHousing("asset", record.id, { status: "MISSING", movementAction: "Missing asset tracking" }); }} className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white">Missing</button>
+                <button type="button" onClick={(event) => { event.stopPropagation(); updateHousingAndRefresh("asset", record.id, { status: "INSTALLED", issuedAt: new Date().toISOString(), movementAction: "Asset issuance" }); }} className="rounded-lg bg-leaf px-3 py-2 text-xs font-black text-white">Issue</button>
+                <button type="button" onClick={(event) => { event.stopPropagation(); updateHousingAndRefresh("asset", record.id, { status: "TRANSFERRED", transferredAt: new Date().toISOString(), transferredFrom: record.roomLocation || record.room?.roomNumber || "", transferredTo: "Transfer pending location", movementAction: "Asset transfer" }); }} className="rounded-lg bg-lagoon px-3 py-2 text-xs font-black text-white">Transfer</button>
+                <button type="button" onClick={(event) => { event.stopPropagation(); updateHousingAndRefresh("asset", record.id, { status: "UNDER_REPAIR", replacementOf: record.tag, replacedAt: new Date().toISOString(), movementAction: "Asset replacement" }); }} className="rounded-lg bg-ink px-3 py-2 text-xs font-black text-white">Replace</button>
+                <button type="button" onClick={(event) => { event.stopPropagation(); updateHousingAndRefresh("asset", record.id, { status: "MISSING", movementAction: "Missing asset tracking" }); }} className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white">Missing</button>
               </div>
             )}
           />
-          {canManage && <HousingAssetForm rooms={rooms} saving={saving} onSubmit={submitHousing} />}
+          {canManage && <HousingAssetForm rooms={rooms} saving={saving} onSubmit={submitHousingAndRefresh} />}
         </section>
       )}
 
@@ -8915,17 +8950,17 @@ function HousingOperations({
             onSelect={(record) => setSelected({ type: "inventory", record })}
             reportType="housing-inventory"
             bulkSelectable={isAdmin}
-            onBulkDelete={async (rows) => { await Promise.all(rows.map((row) => deleteHousing("inventory", row.id))); }}
+            onBulkDelete={async (rows) => { await Promise.all(rows.map((row) => deleteHousingAndRefresh("inventory", row.id))); }}
             actions={(record) => canManage && (
               <div className="flex flex-wrap gap-2">
-                <button type="button" onClick={(event) => { event.stopPropagation(); updateHousing("inventory", record.id, { movementType: "RECEIPT", movementQty: 1 }); }} className="rounded-lg bg-leaf px-3 py-2 text-xs font-black text-white">Receipt +1</button>
-                <button type="button" onClick={(event) => { event.stopPropagation(); updateHousing("inventory", record.id, { movementType: "ISSUE", movementQty: 1 }); }} className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white">Issue -1</button>
-                <button type="button" onClick={(event) => { event.stopPropagation(); updateHousing("inventory", record.id, { movementType: "TRANSFER", movementQty: 0, transferFrom: record.storeLocation || record.room?.roomNumber || "", transferTo: "Transfer pending location" }); }} className="rounded-lg bg-lagoon px-3 py-2 text-xs font-black text-white">Transfer</button>
-                <button type="button" onClick={(event) => { event.stopPropagation(); updateHousing("inventory", record.id, { generatePurchaseRequest: true, purchaseRequestStatus: "REQUESTED" }); }} className="rounded-lg bg-ink px-3 py-2 text-xs font-black text-white">Create PR</button>
+                <button type="button" onClick={(event) => { event.stopPropagation(); updateHousingAndRefresh("inventory", record.id, { movementType: "RECEIPT", movementQty: 1 }); }} className="rounded-lg bg-leaf px-3 py-2 text-xs font-black text-white">Receipt +1</button>
+                <button type="button" onClick={(event) => { event.stopPropagation(); updateHousingAndRefresh("inventory", record.id, { movementType: "ISSUE", movementQty: 1 }); }} className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white">Issue -1</button>
+                <button type="button" onClick={(event) => { event.stopPropagation(); updateHousingAndRefresh("inventory", record.id, { movementType: "TRANSFER", movementQty: 0, transferFrom: record.storeLocation || record.room?.roomNumber || "", transferTo: "Transfer pending location" }); }} className="rounded-lg bg-lagoon px-3 py-2 text-xs font-black text-white">Transfer</button>
+                <button type="button" onClick={(event) => { event.stopPropagation(); updateHousingAndRefresh("inventory", record.id, { generatePurchaseRequest: true, purchaseRequestStatus: "REQUESTED" }); }} className="rounded-lg bg-ink px-3 py-2 text-xs font-black text-white">Create PR</button>
               </div>
             )}
           />
-          {canManage && <HousingInventoryForm rooms={rooms} saving={saving} onSubmit={submitHousing} />}
+          {canManage && <HousingInventoryForm rooms={rooms} saving={saving} onSubmit={submitHousingAndRefresh} />}
         </section>
       )}
 
@@ -8955,11 +8990,11 @@ function HousingOperations({
               onSelect={(record) => setSelected({ type: "notification", record })}
               reportType="housing-notifications"
               bulkSelectable={isAdmin}
-              onBulkDelete={async (rows) => { await Promise.all(rows.map((row) => deleteHousing("notification", row.id))); }}
-              actions={(record) => canManage && <button type="button" onClick={(event) => { event.stopPropagation(); updateHousing("notification", record.id, { read: true, status: "SENT" }); }} className="rounded-lg bg-leaf px-3 py-2 text-xs font-black text-white">Mark Sent</button>}
+              onBulkDelete={async (rows) => { await Promise.all(rows.map((row) => deleteHousingAndRefresh("notification", row.id))); }}
+              actions={(record) => canManage && <button type="button" onClick={(event) => { event.stopPropagation(); updateHousingAndRefresh("notification", record.id, { read: true, status: "SENT" }); }} className="rounded-lg bg-leaf px-3 py-2 text-xs font-black text-white">Mark Sent</button>}
             />
           </div>
-          <HousingNotificationSettings settings={notificationSettings} saving={saving} canManage={canManage} onSubmit={submitHousing} onUpdate={(id, body) => updateHousing("notification-setting", id, body)} />
+          <HousingNotificationSettings settings={notificationSettings} saving={saving} canManage={canManage} onSubmit={submitHousingAndRefresh} onUpdate={(id, body) => updateHousingAndRefresh("notification-setting", id, body)} />
         </section>
       )}
 
@@ -8975,7 +9010,7 @@ function HousingOperations({
           canDelete={isAdmin}
           onClose={() => setSelected(null)}
           onDelete={() => {
-            deleteHousing(selected.type, selected.record.id);
+            deleteHousingAndRefresh(selected.type, selected.record.id);
             setSelected(null);
           }}
         />
