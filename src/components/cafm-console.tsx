@@ -390,6 +390,43 @@ const sectionPermissionCatalog = moduleGroups.flatMap((group) => {
   }));
 });
 const permissionCatalog = [...sectionPermissionCatalog, ...actionPermissionCatalog];
+function sectionPermissionCode(groupLabel: string, itemLabel: string) {
+  return `section.${permissionSlug(groupLabel)}.${permissionSlug(itemLabel)}.view`;
+}
+
+const moduleSectionPermissions = moduleGroups.reduce((map: Record<string, string[]>, group) => {
+  group.items.forEach((item) => {
+    map[item.id] = [...(map[item.id] ?? []), sectionPermissionCode(group.label, item.label)];
+  });
+  return map;
+}, {});
+
+const moduleActionPermissions: Record<string, string[]> = {
+  assets: ["assets.manage", "assets.view"],
+  assetSetup: ["assets.manage", "assets.view"],
+  work: ["work.view", "work.manage", "work.execute", "work.assign", "work.verify"],
+  helpdesk: ["requests.view", "requests.manage", "requests.approve"],
+  ppm: ["ppm.manage"],
+  users: ["users.manage", "roles.manage"],
+  reports: ["reports.view"],
+  bulk: ["assets.manage", "requests.manage", "users.manage"],
+  templates: ["assets.manage"],
+  teams: ["requests.manage", "users.manage"],
+  jobPlans: ["work.manage"],
+  locations: ["requests.manage"],
+  inventory: ["assets.manage", "assets.view"],
+  hse: ["reports.view"],
+  iot: ["reports.view"],
+  documents: ["documents.upload"],
+  incidents: ["requests.view", "requests.manage", "requests.approve"],
+  resource: ["requests.manage", "users.manage"],
+  audit: ["reports.view"],
+  housing: ["housing.view", "housing.manage", "housing.approve"],
+  compliance: ["compliance.view", "compliance.manage"],
+};
+function compactPermissions(permissions: Array<string | undefined>) {
+  return permissions.filter((permission): permission is string => Boolean(permission));
+}
 const statToneClasses: Record<string, string> = {
   coral: "text-coral",
   leaf: "text-leaf",
@@ -657,9 +694,20 @@ export function CafmConsole({ data, user, deferInitialData = false }: { data: Co
     return new Set(records.rolePermissions.filter((item) => item.role === user.role).map((item) => item.permission.code));
   }, [records.rolePermissions, user.role]);
   const isReadOnlyUser = roleKindLabel(user.role) === "readonly";
-  const readOnlyModules = new Set(["command", "dashboard", "assets", "work", "ppm", "requests", "reports", "housing", "compliance", "documents", "incidents"]);
-  const can = (permission?: string) => user.role === "Admin" || !permission || (!isReadOnlyUser && permissionCodes.has(permission));
-  const canOpenModule = (moduleId: string) => (isReadOnlyUser && readOnlyModules.has(moduleId)) || can(modulePermissions[moduleId]);
+  const readOnlyModules = new Set(["command", "dashboard", "assets", "work", "helpdesk", "jobPlans", "ppm", "reports", "housing", "compliance", "documents", "incidents"]);
+  const hasPermission = (permission?: string) => user.role === "Admin" || !permission || (!isReadOnlyUser && permissionCodes.has(permission));
+  const hasAnyPermission = (permissions: string[] = []) => user.role === "Admin" || (!isReadOnlyUser && permissions.some((permission) => permissionCodes.has(permission)));
+  const can = hasPermission;
+  const canOpenModule = (moduleId: string) => {
+    if (moduleId === "command") return true;
+    if (isReadOnlyUser && readOnlyModules.has(moduleId)) return true;
+    return hasAnyPermission(compactPermissions([...(moduleSectionPermissions[moduleId] ?? []), ...(moduleActionPermissions[moduleId] ?? []), modulePermissions[moduleId]]));
+  };
+  const canOpenItem = (group: ModuleGroup, item: ModuleItem) => {
+    if (item.id === "command") return true;
+    if (isReadOnlyUser && readOnlyModules.has(item.id)) return true;
+    return hasAnyPermission(compactPermissions([sectionPermissionCode(group.label, item.label), ...(moduleActionPermissions[item.id] ?? []), modulePermissions[item.id]]));
+  };
   const canViewActive = canOpenModule(active);
   const isAdmin = roleKindLabel(user.role) === "admin";
   const actionPermissions = {
@@ -948,7 +996,7 @@ export function CafmConsole({ data, user, deferInitialData = false }: { data: Co
 
           <nav className="grid flex-1 content-start gap-1 px-4 pb-4">
             {moduleGroups.map((group) => {
-              const visibleItems = group.items.filter((item) => canOpenModule(item.id));
+              const visibleItems = group.items.filter((item) => canOpenItem(group, item));
               if (!visibleItems.length) return null;
               if ("flat" in group && group.flat) {
                 const item = visibleItems[0];
