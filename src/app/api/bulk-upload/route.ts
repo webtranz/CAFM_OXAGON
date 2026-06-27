@@ -547,14 +547,24 @@ async function importHousingAsset(row: Row) {
   const buildingLocation = value(row, "BLDG", "buildingLocation", "Building Location", "building", "Building") || room?.block?.name || room?.property?.name || "";
   const description = value(row, "ASSET DESCRIPTION", "description", "Description", "notes", "Notes") || "";
   const additionalDescription = value(row, "ADDITIONAL DESCRIPTION");
+  const csvDetails = [
+    ["Site", value(row, "SITE")],
+    ["Zone", value(row, "ZONE")],
+    ["Floor", value(row, "FLOOR")],
+    ["Location", value(row, "LOCATION")],
+    ["Area Abbrv", value(row, "ARREA ABBRV", "AREA ABBRV", "AREA ABBR")],
+    ["Region", value(row, "REGION")],
+    ["Corrective Action", value(row, "CORRECTIVE ACTION")],
+    ["Preventive Action", value(row, "PREVENTIVE ACTION")],
+  ].filter(([, detail]) => detail);
   const payload = {
     name: value(row, "ASSET NAME", "name", "Asset Name") || description || tag,
     category: value(row, "ASSET GROUP", "category", "Category") || "Furniture",
-    description: [description, additionalDescription].filter(Boolean).join("\n"),
+    description: [description, additionalDescription, ...csvDetails.map(([label, detail]) => `${label}: ${detail}`)].filter(Boolean).join("\n"),
     brand: value(row, "MANUFACTURER", "brand", "Brand") || "",
     model: value(row, "MODEL", "model", "Model") || "",
     purchaseDate: purchaseDate || undefined,
-    supplierName: value(row, "REGION", "supplierName", "Supplier Name") || "",
+    supplierName: value(row, "supplierName", "Supplier Name", "SUPPLIER NAME") || "",
     assetValue,
     buildingLocation,
     roomLocation,

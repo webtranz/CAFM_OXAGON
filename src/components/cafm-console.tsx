@@ -8476,6 +8476,43 @@ function ResourceShiftsTable({ rows }: { rows: any[] }) {
   );
 }
 
+function housingAssetCsvMeta(description: string | null | undefined) {
+  const meta: Record<string, string> = {};
+  const freeText: string[] = [];
+  const metadataKeys = new Set(["site", "zone", "floor", "location", "areaabbrv", "region", "correctiveaction", "preventiveaction"]);
+  String(description || "").split("\n").forEach((line) => {
+    const trimmed = line.trim();
+    if (!trimmed) return;
+    const match = trimmed.match(/^([^:]+):\s*(.*)$/);
+    if (!match) {
+      freeText.push(trimmed);
+      return;
+    }
+    const key = match[1].trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
+    if (!metadataKeys.has(key)) {
+      freeText.push(trimmed);
+      return;
+    }
+    const value = match[2].trim();
+    if (value) meta[key] = value;
+  });
+  return {
+    site: meta.site || "",
+    zone: meta.zone || "",
+    floor: meta.floor || "",
+    location: meta.location || "",
+    areaAbbrv: meta.areaabbrv || "",
+    region: meta.region || "",
+    correctiveAction: meta.correctiveaction || "",
+    preventiveAction: meta.preventiveaction || "",
+    additionalDescription: freeText.slice(1).join("\n"),
+  };
+}
+
+function housingAssetDescriptionText(description: string | null | undefined) {
+  return String(description || "").split("\n").find((line) => line.trim() && !line.includes(":"))?.trim() || "";
+}
+
 function HousingOperations({
   housing,
   facilityLocations,
@@ -8638,27 +8675,31 @@ function HousingOperations({
   const hasMoreHousingAssets = housingAssetRowsSource.length < housingAssetTotal;
   const housingAssetRows = visibleAssets.map((asset) => ({
     ...asset,
-    site: asset.room?.property?.name ?? "",
-    zone: asset.room?.block?.name ?? "",
+    csvMeta: housingAssetCsvMeta(asset.description),
+    assetDescriptionText: housingAssetDescriptionText(asset.description),
+  })).map((asset) => ({
+    ...asset,
+    site: asset.csvMeta.site || asset.room?.property?.name || "",
+    zone: asset.csvMeta.zone || asset.room?.block?.name || "",
     building: asset.buildingLocation || asset.room?.block?.name || asset.room?.property?.name || "",
-    floor: asset.room?.floor ?? "",
+    floor: asset.csvMeta.floor || asset.room?.floor || "",
     roomDisplay: asset.roomLocation || asset.room?.roomNumber || "",
     assetGroup: asset.category,
     assetName: asset.name,
-    assetDescription: String(asset.description || "").split("\n")[0] || "",
-    additionalDescription: String(asset.description || "").split("\n").slice(1).join("\n"),
+    assetDescription: asset.assetDescriptionText || "",
+    additionalDescription: asset.csvMeta.additionalDescription || "",
     parentAsset: asset.replacementOf || "",
     department: asset.custodianName || "",
     subDepCode: asset.custodianContact || "",
-    location: asset.roomLocation || asset.room?.code || asset.room?.roomNumber || "",
-    areaAbbrv: asset.room?.block?.code || asset.room?.block?.name || "",
+    location: asset.csvMeta.location || asset.roomLocation || asset.room?.code || asset.room?.roomNumber || "",
+    areaAbbrv: asset.csvMeta.areaAbbrv || asset.room?.block?.code || asset.room?.block?.name || "",
     manufacturer: asset.brand,
     installationDate: formatDateCell(asset.purchaseDate),
     lifeSpanYears: "",
     warrantyPeriodYears: yearsBetweenDisplay(asset.purchaseDate, asset.warrantyExpiry),
-    region: asset.room?.property?.city || asset.buildingLocation || "",
-    correctiveAction: ["UNDER_REPAIR", "DAMAGED", "MISSING"].includes(asset.status) ? asset.status : "",
-    preventiveAction: asset.pmSchedule || "",
+    region: asset.csvMeta.region || asset.room?.property?.city || asset.buildingLocation || "",
+    correctiveAction: asset.csvMeta.correctiveAction || (["UNDER_REPAIR", "DAMAGED", "MISSING"].includes(asset.status) ? asset.status : ""),
+    preventiveAction: asset.csvMeta.preventiveAction || asset.pmSchedule || "",
   }));
   const visibleInventory = inventory.filter((item) => {
     const haystack = `${item.sku} ${item.name} ${item.category} ${item.room?.roomNumber} ${item.qrCode}`.toLowerCase();
