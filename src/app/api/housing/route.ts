@@ -204,7 +204,6 @@ export async function GET(request: Request) {
           beds: { select: { id: true, code: true, label: true, roomId: true, status: true } },
         },
         orderBy: [{ property: { name: "asc" } }, { roomNumber: "asc" }],
-        take: HOUSING_REFERENCE_LIMIT,
       }),
       prisma.housingBed.findMany({
         select: {
@@ -216,7 +215,6 @@ export async function GET(request: Request) {
           room: { select: { id: true, roomNumber: true, floor: true, roomType: true, property: { select: { id: true, name: true } }, block: { select: { id: true, name: true } } } },
         },
         orderBy: { code: "asc" },
-        take: HOUSING_REFERENCE_LIMIT,
       }),
       prisma.housingResident.findMany({
         select: { id: true, residentNo: true, name: true, companyId: true, companyName: true, gender: true, nationality: true, departmentCode: true, status: true },
@@ -231,7 +229,6 @@ export async function GET(request: Request) {
       prisma.location.findMany({
         select: { id: true, code: true, description: true, site: true, building: true, floor: true, room: true, type: true, parentLocation: true },
         orderBy: { code: "asc" },
-        take: HOUSING_REFERENCE_LIMIT,
       }),
       prisma.space.findMany({
         select: { id: true, name: true, floor: true, type: true, building: { select: { code: true, name: true, site: { select: { name: true } } } } },
@@ -662,13 +659,17 @@ async function createBooking(input: z.infer<typeof housingSchema>, actor: string
   if (bed && bed.roomId !== room.id) throw new Error("Selected bed does not belong to the selected room.");
   if (bed && ["RESERVED", "OCCUPIED"].includes(bed.status)) throw new Error("Occupied beds cannot be assigned twice.");
 
-  const duplicate = await prisma.housingBooking.findFirst({
+  const activeRoomBookings = await prisma.housingBooking.findMany({
     where: {
+      roomId: room.id,
       status: { in: activeBookingStatuses as any },
-      OR: [{ roomId: room.id, bedId: null }, ...(bed ? [{ bedId: bed.id }] : [])],
     },
+    select: { id: true, bookingNo: true, bedId: true },
   });
-  if (duplicate && (room.capacity <= 1 || duplicate.bedId === bed?.id)) {
+  const hasRoomLevelBooking = activeRoomBookings.some((booking) => !booking.bedId);
+  const hasSameBedBooking = Boolean(bed && activeRoomBookings.some((booking) => booking.bedId === bed.id));
+  const bookedBedCount = new Set(activeRoomBookings.map((booking) => booking.bedId).filter(Boolean)).size;
+  if (hasRoomLevelBooking || hasSameBedBooking || (room.capacity <= 1 && activeRoomBookings.length > 0) || bookedBedCount >= room.capacity) {
     throw new Error("Duplicate room or bed allocation is not allowed.");
   }
 

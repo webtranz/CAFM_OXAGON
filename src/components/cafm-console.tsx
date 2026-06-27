@@ -8752,7 +8752,7 @@ function HousingOperations({
         room: room || "",
       });
     });
-    return Array.from(optionMap.values()).slice(0, HOUSING_LOCATION_OPTION_LIMIT);
+    return Array.from(optionMap.values());
   }, [facilityLocations, housingRecords.locations, housingRecords.spaces, housingRecords.cafmAssets]);
   const loadMoreHousingAssets = () => {
     if (hasMoreHousingAssets && !housingAssetLoading) {
@@ -9623,8 +9623,12 @@ function HousingBookingForm({ rooms, beds, residents, locationOptions, saving, o
   const allocatableRooms = rooms.filter((room) => !["BLOCKED", "MAINTENANCE"].includes(room.status));
   const allocatableBeds = beds.filter((bed) => bed.status === "AVAILABLE");
   const residentOptions = residents.slice(0, HOUSING_REFERENCE_LIMIT);
-  const roomOptions = allocatableRooms.slice(0, HOUSING_REFERENCE_LIMIT);
-  const bedOptions = allocatableBeds.slice(0, HOUSING_REFERENCE_LIMIT);
+  const bedOptionsByRoom = new Map<string, any[]>();
+  allocatableBeds.forEach((bed) => {
+    const roomId = bed.roomId || bed.room?.id;
+    if (!roomId) return;
+    bedOptionsByRoom.set(roomId, [...(bedOptionsByRoom.get(roomId) ?? []), bed]);
+  });
   return (
     <HousingForm title="Accommodation & Booking Management" type="booking" saving={saving} onSubmit={onSubmit}>
       <HousingLocationDatalist id="housing-booking-locations" options={locationOptions} />
@@ -9665,11 +9669,22 @@ function HousingBookingForm({ rooms, beds, residents, locationOptions, saving, o
       </div>
       <select name="roomId" className={HOUSING_FIELD_CLASS}>
         <option value="">Select room by company / building / floor</option>
-        {roomOptions.map((room) => <option key={room.id} value={room.id}>{room.property?.name} / {room.block?.name} / Floor {room.floor} / Room {room.roomNumber} / {room.roomType} / {room.genderRestriction || "MIXED"} ({room.occupancy}/{room.capacity})</option>)}
+        {allocatableRooms.map((room) => {
+          const availableBeds = bedOptionsByRoom.get(room.id)?.length ?? 0;
+          return <option key={room.id} value={room.id}>{room.property?.name} / {room.block?.name} / Floor {room.floor} / Room {room.roomNumber} / {room.roomType} / {room.genderRestriction || "MIXED"} / Beds {availableBeds} available of {room.capacity}</option>;
+        })}
       </select>
       <select name="bedId" className={HOUSING_FIELD_CLASS}>
         <option value="">Auto-assign available bed</option>
-        {bedOptions.map((bed) => <option key={bed.id} value={bed.id}>{bed.room?.roomNumber || "Room"} / {bed.label} / available</option>)}
+        {allocatableRooms.map((room) => {
+          const roomBeds = bedOptionsByRoom.get(room.id) ?? [];
+          if (!roomBeds.length) return null;
+          return (
+            <optgroup key={room.id} label={`${room.property?.name || "Housing"} / ${room.block?.name || "Building"} / Floor ${room.floor} / Room ${room.roomNumber}`}>
+              {roomBeds.map((bed) => <option key={bed.id} value={bed.id}>{bed.label} / available</option>)}
+            </optgroup>
+          );
+        })}
       </select>
       <div className="grid gap-3 md:grid-cols-2">
         <input name="buildingNumber" list="housing-booking-locations" placeholder="Building number / override" className={HOUSING_FIELD_CLASS} />
