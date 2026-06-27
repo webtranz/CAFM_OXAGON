@@ -25,6 +25,7 @@ const housingSchema = z.object({
   manager: z.string().optional(),
   propertyId: z.string().optional(),
   blockId: z.string().optional(),
+  facilityLocationCode: z.string().optional(),
   roomId: z.string().optional(),
   bedId: z.string().optional(),
   roomNumber: z.string().optional(),
@@ -448,6 +449,7 @@ async function createHousingRecord(input: z.infer<typeof housingSchema>, actor: 
 
   if (input.type === "inspection") {
     const room = await firstRoom(input.roomId);
+    const facilityLocation = await selectedFacilityLocation(input);
     const checklist = inspectionChecklist(input);
     const count = await prisma.housingInspection.count();
     const inspectionNo = input.code || `HIN-${String(count + 1).padStart(5, "0")}`;
@@ -459,7 +461,7 @@ async function createHousingRecord(input: z.infer<typeof housingSchema>, actor: 
         occupantId: input.occupantId || input.residentId || undefined,
         occupantName: input.occupantName || input.residentName || input.name || "",
         assetId: input.assetId || undefined,
-        workOrderRef: input.workOrderRef || "",
+        workOrderRef: input.workOrderRef || facilityLocation?.code || "",
         inspector: input.inspector || actor,
         inspectionType: input.inspectionType || input.category || "Room Condition",
         status: (input.status as any) || "SCHEDULED",
@@ -488,9 +490,10 @@ async function createHousingRecord(input: z.infer<typeof housingSchema>, actor: 
 
   if (input.type === "asset") {
     const room = input.roomId ? await prisma.housingRoom.findUnique({ where: { id: input.roomId } }) : await prisma.housingRoom.findFirst();
+    const facilityLocation = await selectedFacilityLocation(input);
     const count = await prisma.housingAsset.count();
     const tag = input.tag || input.code || `HSA-${String(count + 1).padStart(5, "0")}`;
-    const assetData = housingAssetData(input, tag, room?.id);
+    const assetData = housingAssetData(input, tag, room?.id, facilityLocation);
     const asset = await prisma.housingAsset.upsert({
       where: { tag },
       update: assetData,
@@ -502,11 +505,12 @@ async function createHousingRecord(input: z.infer<typeof housingSchema>, actor: 
 
   if (input.type === "inventory") {
     const room = input.roomId ? await prisma.housingRoom.findUnique({ where: { id: input.roomId } }) : null;
+    const facilityLocation = await selectedFacilityLocation(input);
     const count = await prisma.housingInventory.count();
     const sku = input.sku || input.code || `HSI-${String(count + 1).padStart(5, "0")}`;
     const current = await prisma.housingInventory.findUnique({ where: { sku } });
     const stock = inventoryStock(input, current?.onHand ?? input.onHand ?? 0);
-    const data = inventoryData(input, sku, room?.id, stock.onHand, actor, stock.movementType, stock.movementQty);
+    const data = inventoryData(input, sku, room?.id, stock.onHand, actor, stock.movementType, stock.movementQty, facilityLocation);
     const item = await prisma.housingInventory.upsert({
       where: { sku },
       update: data,
@@ -641,6 +645,7 @@ async function handleInspectionOutputs(inspection: any, input: z.infer<typeof ho
 
 async function createBooking(input: z.infer<typeof housingSchema>, actor: string) {
   const room = await firstRoom(input.roomId);
+  const facilityLocation = await selectedFacilityLocation(input);
   if (["BLOCKED", "MAINTENANCE"].includes(room.status)) {
     throw new Error("Blocked or under-maintenance rooms cannot be allocated.");
   }
@@ -682,9 +687,9 @@ async function createBooking(input: z.infer<typeof housingSchema>, actor: string
         nationality: input.nationality || resident?.nationality || "",
         contactNumber: input.contactNumber || input.phone || resident?.phone || "",
         gender: occupantGender || "",
-        buildingNumber: input.buildingNumber || room.block?.name || room.property?.name || "",
-        floorNumber: input.floorNumber || room.floor,
-        roomNumber: input.roomNumber || room.roomNumber,
+        buildingNumber: input.buildingNumber || facilityLocation?.building || facilityLocation?.zone || room.block?.name || room.property?.name || "",
+        floorNumber: input.floorNumber || facilityLocation?.floor || room.floor,
+        roomNumber: input.roomNumber || facilityLocation?.room || room.roomNumber,
         bedNumber: input.bedNumber || bed?.label || "",
         bookingType: input.bookingType || "TEMPORARY",
         allocationType: input.allocationType || "STANDARD",
@@ -743,6 +748,23 @@ async function createBooking(input: z.infer<typeof housingSchema>, actor: string
   return booking;
 }
 
+async function selectedFacilityLocation(input: z.infer<typeof housingSchema>) {
+  const code = input.facilityLocationCode?.trim();
+  if (!code) return null;
+  return prisma.location.findFirst({
+    where: {
+      code,
+      active: true,
+      outOfService: false,
+    },
+  });
+}
+
+function facilityLocationLabel(location?: Awaited<ReturnType<typeof selectedFacilityLocation>>) {
+  if (!location) return "";
+  return [location.code, location.description, location.building, location.floor, location.room].filter(Boolean).join(" / ");
+}
+
 async function resolveResident(input: z.infer<typeof housingSchema>) {
   if (input.residentId) return prisma.housingResident.findUnique({ where: { id: input.residentId } });
   const employeeId = input.employeeId || input.residentNo;
@@ -770,7 +792,7 @@ function residentData(input: z.infer<typeof housingSchema>, residentNo: string) 
   };
 }
 
-function inventoryData(input: z.infer<typeof housingSchema>, sku: string, roomId: string | undefined, onHand: number, actor: string, movementType: string, movementQty: number) {
+function inventoryData(input: z.infer<typeof housingSchema>, sku: string, roomId: string | undefined, onHand: number, actor: string, movementType: string, movementQty: number, facilityLocation?: Awaited<ReturnType<typeof selectedFacilityLocation>>) {
   const shouldGeneratePurchaseRequest = Boolean(input.generatePurchaseRequest || onHand <= (input.minimumStock ?? input.reorderPoint ?? 0));
   const purchaseRequestNo = input.purchaseRequestNo || (shouldGeneratePurchaseRequest ? `HPR-${Date.now()}` : undefined);
   return {
@@ -779,7 +801,7 @@ function inventoryData(input: z.infer<typeof housingSchema>, sku: string, roomId
     category: input.category || "Linen",
     description: input.description || input.notes || "",
     roomId,
-    storeLocation: input.storeLocation || "",
+    storeLocation: input.storeLocation || facilityLocationLabel(facilityLocation),
     onHand,
     minimumStock: input.minimumStock ?? 0,
     reorderPoint: input.reorderPoint ?? 0,
@@ -833,7 +855,7 @@ async function handleInventoryOutputs(item: any, input: z.infer<typeof housingSc
   }
 }
 
-function housingAssetData(input: z.infer<typeof housingSchema>, tag: string, roomId?: string) {
+function housingAssetData(input: z.infer<typeof housingSchema>, tag: string, roomId?: string, facilityLocation?: Awaited<ReturnType<typeof selectedFacilityLocation>>) {
   const assetValue = input.assetValue ?? 0;
   const depreciationRate = input.depreciationRate ?? 0;
   const purchaseDate = input.purchaseDate ? new Date(input.purchaseDate) : null;
@@ -849,8 +871,8 @@ function housingAssetData(input: z.infer<typeof housingSchema>, tag: string, roo
     purchaseDate: purchaseDate || undefined,
     supplierName: input.supplierName || "",
     assetValue,
-    buildingLocation: input.buildingLocation || roomId || "",
-    roomLocation: input.roomLocation || "",
+    buildingLocation: input.buildingLocation || facilityLocation?.building || facilityLocation?.zone || roomId || "",
+    roomLocation: input.roomLocation || facilityLocationLabel(facilityLocation),
     custodianName: input.custodianName || "",
     custodianContact: input.custodianContact || "",
     issuedTo: input.issuedTo || "",

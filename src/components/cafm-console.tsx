@@ -1315,6 +1315,7 @@ export function CafmConsole({ data, user, deferInitialData = false }: { data: Co
           {canViewActive && active === "housing" && (
             <HousingOperations
               housing={records.housing}
+              facilityLocations={records.locations}
               view={activeView}
               saving={saving}
               canManage={can("housing.manage")}
@@ -8455,6 +8456,7 @@ function ResourceShiftsTable({ rows }: { rows: any[] }) {
 
 function HousingOperations({
   housing,
+  facilityLocations,
   view,
   saving,
   canManage,
@@ -8467,6 +8469,7 @@ function HousingOperations({
   refreshData,
 }: {
   housing: ConsoleData["housing"];
+  facilityLocations: any[];
   view: string;
   saving: boolean;
   canManage: boolean;
@@ -8700,11 +8703,25 @@ function HousingOperations({
     await refreshHousingData();
   };
   const fallbackLocationOptions = useMemo(() => {
-    const optionMap = new Map<string, { key: string; label: string; building?: string; floor?: string; room?: string }>();
+    const optionMap = new Map<string, { key: string; value?: string; label: string; building?: string; floor?: string; room?: string }>();
+    facilityLocations
+      .filter((location) => location.active !== false && location.outOfService !== true && location.code)
+      .forEach((location) => {
+        const key = `facility-location-${location.id || location.code}`;
+        optionMap.set(key, {
+          key,
+          value: location.code,
+          label: `${location.code} / ${location.description || location.site || "Location"} / ${location.building || "-"} / ${location.floor || "-"} / ${location.room || "-"}`,
+          building: location.building || location.zone || location.site || "",
+          floor: location.floor || "",
+          room: location.room || "",
+        });
+      });
     (housingRecords.locations ?? []).forEach((location) => {
       const key = `location-${location.id || location.code}`;
       optionMap.set(key, {
         key,
+        value: location.code,
         label: `${location.code || "Location"} / ${location.description || location.room || location.floor || location.building || location.site || "Location"}`,
         building: location.building || location.parentLocation || location.site || "",
         floor: location.floor || "",
@@ -8715,6 +8732,7 @@ function HousingOperations({
       const key = `space-${space.id || space.code}`;
       optionMap.set(key, {
         key,
+        value: space.id,
         label: `${space.building?.name || space.building?.code || "Building"} / Floor ${space.floor || "-"} / ${space.roomNumber || space.name || space.code}`,
         building: space.building?.name || space.building?.code || "",
         floor: space.floor || "",
@@ -8727,6 +8745,7 @@ function HousingOperations({
       const key = `asset-${asset.id || asset.tag}`;
       optionMap.set(key, {
         key,
+        value: asset.locationCode || asset.tag,
         label: `${asset.tag || "Asset"} / ${asset.assetDescription || asset.name || "Asset"} / ${asset.buildingCode || "-"} / ${asset.floor || "-"} / ${room || "-"}`,
         building: asset.buildingCode || "",
         floor: asset.floor || "",
@@ -8734,7 +8753,7 @@ function HousingOperations({
       });
     });
     return Array.from(optionMap.values()).slice(0, HOUSING_LOCATION_OPTION_LIMIT);
-  }, [housingRecords.locations, housingRecords.spaces, housingRecords.cafmAssets]);
+  }, [facilityLocations, housingRecords.locations, housingRecords.spaces, housingRecords.cafmAssets]);
   const loadMoreHousingAssets = () => {
     if (hasMoreHousingAssets && !housingAssetLoading) {
       setHousingAssetLoading(true);
@@ -9581,7 +9600,9 @@ function HousingSetupForms({ properties, blocks, rooms, saving, onSubmit }: { pr
   );
 }
 
-function HousingLocationDatalist({ id, options }: { id: string; options: Array<{ key: string; label: string; building?: string; floor?: string; room?: string }> }) {
+type HousingLocationOption = { key: string; value?: string; label: string; building?: string; floor?: string; room?: string };
+
+function HousingLocationDatalist({ id, options }: { id: string; options: HousingLocationOption[] }) {
   return (
     <datalist id={id}>
       {options.map((option) => <option key={option.key} value={option.label} />)}
@@ -9589,7 +9610,16 @@ function HousingLocationDatalist({ id, options }: { id: string; options: Array<{
   );
 }
 
-function HousingBookingForm({ rooms, beds, residents, locationOptions, saving, onSubmit }: { rooms: any[]; beds: any[]; residents: any[]; locationOptions: Array<{ key: string; label: string; building?: string; floor?: string; room?: string }>; saving: boolean; onSubmit: (formData: FormData) => void }) {
+function HousingLocationSelect({ options, className = HOUSING_FIELD_CLASS }: { options: HousingLocationOption[]; className?: string }) {
+  return (
+    <select name="facilityLocationCode" className={className}>
+      <option value="">Facility Booking location</option>
+      {options.map((option) => <option key={option.key} value={option.value || option.label}>{option.label}</option>)}
+    </select>
+  );
+}
+
+function HousingBookingForm({ rooms, beds, residents, locationOptions, saving, onSubmit }: { rooms: any[]; beds: any[]; residents: any[]; locationOptions: HousingLocationOption[]; saving: boolean; onSubmit: (formData: FormData) => void }) {
   const allocatableRooms = rooms.filter((room) => !["BLOCKED", "MAINTENANCE"].includes(room.status));
   const allocatableBeds = beds.filter((bed) => bed.status === "AVAILABLE");
   const residentOptions = residents.slice(0, HOUSING_REFERENCE_LIMIT);
@@ -9602,6 +9632,7 @@ function HousingBookingForm({ rooms, beds, residents, locationOptions, saving, o
         <option value="">New employee / select existing</option>
         {residentOptions.map((resident) => <option key={resident.id} value={resident.id}>{resident.residentNo} - {resident.name} - {resident.companyName || resident.companyId || "Company"}</option>)}
       </select>
+      <HousingLocationSelect options={locationOptions} />
       <div className="grid gap-3 md:grid-cols-2">
         <input name="employeeId" placeholder="Employee ID" className={HOUSING_FIELD_CLASS} />
         <input name="residentName" placeholder="Employee name" className={HOUSING_FIELD_CLASS} />
@@ -9661,7 +9692,7 @@ function HousingBookingForm({ rooms, beds, residents, locationOptions, saving, o
   );
 }
 
-function HousingInspectionForm({ rooms, beds, bookings, assets, locationOptions, saving, onSubmit }: { rooms: any[]; beds: any[]; bookings: any[]; assets: any[]; locationOptions: Array<{ key: string; label: string; building?: string; floor?: string; room?: string }>; saving: boolean; onSubmit: (formData: FormData) => void }) {
+function HousingInspectionForm({ rooms, beds, bookings, assets, locationOptions, saving, onSubmit }: { rooms: any[]; beds: any[]; bookings: any[]; assets: any[]; locationOptions: HousingLocationOption[]; saving: boolean; onSubmit: (formData: FormData) => void }) {
   const roomOptions = rooms.slice(0, HOUSING_REFERENCE_LIMIT);
   const bedOptions = beds.slice(0, HOUSING_REFERENCE_LIMIT);
   const bookingOptions = bookings.slice(0, HOUSING_REFERENCE_LIMIT);
@@ -9687,6 +9718,7 @@ function HousingInspectionForm({ rooms, beds, bookings, assets, locationOptions,
   return (
     <HousingForm title="Room Inspection Management" type="inspection" saving={saving} onSubmit={onSubmit}>
       <HousingLocationDatalist id="housing-inspection-locations" options={locationOptions} />
+      <HousingLocationSelect options={locationOptions} />
       <select name="inspectionType" className={HOUSING_FIELD_CLASS}>
         <option>Pre-check-in inspection</option>
         <option>Occupied room inspection</option>
@@ -9733,13 +9765,14 @@ function HousingInspectionForm({ rooms, beds, bookings, assets, locationOptions,
   );
 }
 
-function HousingAssetForm({ rooms, locationOptions, saving, onSubmit }: { rooms: any[]; locationOptions: Array<{ key: string; label: string; building?: string; floor?: string; room?: string }>; saving: boolean; onSubmit: (formData: FormData) => void }) {
+function HousingAssetForm({ rooms, locationOptions, saving, onSubmit }: { rooms: any[]; locationOptions: HousingLocationOption[]; saving: boolean; onSubmit: (formData: FormData) => void }) {
   const roomOptions = rooms.slice(0, HOUSING_REFERENCE_LIMIT);
   const categories = ["Furniture", "Beds", "Mattresses", "TVs", "Refrigerators", "Air conditioners", "Curtains", "Water dispensers", "Fire extinguishers", "Smoke detectors", "Office equipment", "Housekeeping tools", "Electrical items"];
   const statuses = ["AVAILABLE", "INSTALLED", "UNDER_REPAIR", "MISSING", "DAMAGED", "SCRAPPED", "TRANSFERRED"];
   return (
     <HousingForm title="Housing Asset Management" type="asset" saving={saving} onSubmit={onSubmit}>
       <HousingLocationDatalist id="housing-asset-locations" options={locationOptions} />
+      <HousingLocationSelect options={locationOptions} />
       <input name="tag" placeholder="Asset code" className={HOUSING_FIELD_CLASS} />
       <input name="qrCode" placeholder="Barcode / QR code" className={HOUSING_FIELD_CLASS} />
       <textarea name="description" placeholder="Asset description" className="min-h-20 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />
@@ -9794,12 +9827,13 @@ function HousingAssetForm({ rooms, locationOptions, saving, onSubmit }: { rooms:
   );
 }
 
-function HousingInventoryForm({ rooms, locationOptions, saving, onSubmit }: { rooms: any[]; locationOptions: Array<{ key: string; label: string; building?: string; floor?: string; room?: string }>; saving: boolean; onSubmit: (formData: FormData) => void }) {
+function HousingInventoryForm({ rooms, locationOptions, saving, onSubmit }: { rooms: any[]; locationOptions: HousingLocationOption[]; saving: boolean; onSubmit: (formData: FormData) => void }) {
   const roomOptions = rooms.slice(0, HOUSING_REFERENCE_LIMIT);
   const categories = ["Linen", "Pillows", "Blankets", "Cleaning materials", "Electrical spare parts", "Plumbing spare parts", "PPE items", "Office stationery", "Kitchen equipment", "Hygiene materials"];
   return (
     <HousingForm title="Add Housing Inventory" type="inventory" saving={saving} onSubmit={onSubmit}>
       <HousingLocationDatalist id="housing-inventory-locations" options={locationOptions} />
+      <HousingLocationSelect options={locationOptions} />
       <input name="sku" placeholder="SKU / barcode" className={HOUSING_FIELD_CLASS} />
       <input name="name" placeholder="Item name" className={HOUSING_FIELD_CLASS} />
       <select name="category" className={HOUSING_FIELD_CLASS}>
