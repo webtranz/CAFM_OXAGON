@@ -1316,6 +1316,7 @@ export function CafmConsole({ data, user, deferInitialData = false }: { data: Co
             <HousingOperations
               housing={records.housing}
               facilityLocations={records.locations}
+              employees={records.employees}
               view={activeView}
               saving={saving}
               canManage={can("housing.manage")}
@@ -8457,6 +8458,7 @@ function ResourceShiftsTable({ rows }: { rows: any[] }) {
 function HousingOperations({
   housing,
   facilityLocations,
+  employees,
   view,
   saving,
   canManage,
@@ -8470,6 +8472,7 @@ function HousingOperations({
 }: {
   housing: ConsoleData["housing"];
   facilityLocations: any[];
+  employees: any[];
   view: string;
   saving: boolean;
   canManage: boolean;
@@ -8754,6 +8757,12 @@ function HousingOperations({
     });
     return Array.from(optionMap.values());
   }, [facilityLocations, housingRecords.locations, housingRecords.spaces, housingRecords.cafmAssets]);
+  const nationalityOptions = useMemo(() => {
+    return Array.from(new Set([
+      ...(housingRecords.residents ?? []).map((resident) => resident.nationality),
+      ...employees.map((employee) => employee.nationality || employee.nationalityType),
+    ].map((item) => String(item || "").trim()).filter((item) => item && !["Not specified", "Unspecified"].includes(item)))).sort();
+  }, [employees, housingRecords.residents]);
   const loadMoreHousingAssets = () => {
     if (hasMoreHousingAssets && !housingAssetLoading) {
       setHousingAssetLoading(true);
@@ -8910,7 +8919,7 @@ function HousingOperations({
             />
             <HousingAlerts notifications={notifications} approvals={dashboardApprovals} onApprove={(approval, action) => approvalAction(approval, action as any)} canApprove={canApprove} />
           </div>
-          {canManage && <HousingSetupForms properties={housingRecords.properties ?? []} blocks={housingRecords.blocks ?? []} rooms={rooms} saving={saving} onSubmit={submitHousingAndRefresh} />}
+          {canManage && <HousingSetupForms properties={housingRecords.properties ?? []} blocks={housingRecords.blocks ?? []} rooms={rooms} nationalityOptions={nationalityOptions} saving={saving} onSubmit={submitHousingAndRefresh} />}
         </section>
       )}
 
@@ -8943,7 +8952,7 @@ function HousingOperations({
               )}
             />
           </div>
-          {canManage && <HousingBookingForm rooms={rooms} beds={beds} residents={housingRecords.residents ?? []} locationOptions={fallbackLocationOptions} saving={saving} onSubmit={submitHousingAndRefresh} />}
+          {canManage && <HousingBookingForm rooms={rooms} beds={beds} residents={housingRecords.residents ?? []} locationOptions={fallbackLocationOptions} nationalityOptions={nationalityOptions} saving={saving} onSubmit={submitHousingAndRefresh} />}
         </section>
       )}
 
@@ -9504,7 +9513,7 @@ function HousingNotificationSettings({ settings, saving, canManage, onSubmit, on
   );
 }
 
-function HousingSetupForms({ properties, blocks, rooms, saving, onSubmit }: { properties: any[]; blocks: any[]; rooms: any[]; saving: boolean; onSubmit: (formData: FormData) => void }) {
+function HousingSetupForms({ properties, blocks, rooms, nationalityOptions, saving, onSubmit }: { properties: any[]; blocks: any[]; rooms: any[]; nationalityOptions: string[]; saving: boolean; onSubmit: (formData: FormData) => void }) {
   const [setupType, setSetupType] = useState("room");
   return (
     <Panel title="Housing Setup & Master Data" icon={Building2}>
@@ -9590,7 +9599,7 @@ function HousingSetupForms({ properties, blocks, rooms, saving, onSubmit }: { pr
             <input name="companyId" placeholder="Company ID" className={HOUSING_FIELD_CLASS} />
             <input name="companyName" placeholder="Company name" className={HOUSING_FIELD_CLASS} />
             <select name="gender" className={HOUSING_FIELD_CLASS}><option value="">Gender</option><option>MALE</option><option>FEMALE</option></select>
-            <input name="nationality" placeholder="Nationality" className={HOUSING_FIELD_CLASS} />
+            <NationalityInput options={nationalityOptions} />
             <input name="departmentCode" placeholder="Department code" className={HOUSING_FIELD_CLASS} />
             <select name="status" className={HOUSING_FIELD_CLASS}><option>ACTIVE</option><option>BLACKLISTED</option><option>INACTIVE</option></select>
           </div>
@@ -9619,7 +9628,18 @@ function HousingLocationSelect({ options, className = HOUSING_FIELD_CLASS }: { o
   );
 }
 
-function HousingBookingForm({ rooms, beds, residents, locationOptions, saving, onSubmit }: { rooms: any[]; beds: any[]; residents: any[]; locationOptions: HousingLocationOption[]; saving: boolean; onSubmit: (formData: FormData) => void }) {
+function NationalityInput({ options }: { options: string[] }) {
+  return (
+    <>
+      <input name="nationality" list="housing-nationalities" placeholder="Nationality" className={HOUSING_FIELD_CLASS} />
+      <datalist id="housing-nationalities">
+        {options.map((nationality) => <option key={nationality} value={nationality} />)}
+      </datalist>
+    </>
+  );
+}
+
+function HousingBookingForm({ rooms, beds, residents, locationOptions, nationalityOptions, saving, onSubmit }: { rooms: any[]; beds: any[]; residents: any[]; locationOptions: HousingLocationOption[]; nationalityOptions: string[]; saving: boolean; onSubmit: (formData: FormData) => void }) {
   const allocatableRooms = rooms.filter((room) => !["BLOCKED", "MAINTENANCE"].includes(room.status));
   const allocatableBeds = beds.filter((bed) => bed.status === "AVAILABLE");
   const residentOptions = residents.slice(0, HOUSING_REFERENCE_LIMIT);
@@ -9642,7 +9662,7 @@ function HousingBookingForm({ rooms, beds, residents, locationOptions, saving, o
         <input name="residentName" placeholder="Employee name" className={HOUSING_FIELD_CLASS} />
         <input name="companyName" placeholder="Company name" className={HOUSING_FIELD_CLASS} />
         <input name="departmentCode" placeholder="Department" className={HOUSING_FIELD_CLASS} />
-        <input name="nationality" placeholder="Nationality" className={HOUSING_FIELD_CLASS} />
+        <NationalityInput options={nationalityOptions} />
         <input name="contactNumber" placeholder="Contact number" className={HOUSING_FIELD_CLASS} />
       </div>
       <div className="grid gap-3 md:grid-cols-2">
