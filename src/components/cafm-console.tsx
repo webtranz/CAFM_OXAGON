@@ -46,6 +46,7 @@ import {
   YAxis,
 } from "recharts";
 import { moduleStats } from "@/lib/demo-data";
+import { predefinedPermissionsForRole } from "@/lib/role-permission-presets";
 
 type ConsoleData = {
   live: boolean;
@@ -691,7 +692,8 @@ export function CafmConsole({ data, user, deferInitialData = false }: { data: Co
   }, [bulkUploadProgress?.jobId]);
 
   const permissionCodes = useMemo(() => {
-    return new Set(records.rolePermissions.filter((item) => item.role === user.role).map((item) => item.permission.code));
+    const savedPermissions = records.rolePermissions.filter((item) => item.role === user.role).map((item) => item.permission.code);
+    return new Set([...predefinedPermissionsForRole(user.role), ...savedPermissions]);
   }, [records.rolePermissions, user.role]);
   const isReadOnlyUser = roleKindLabel(user.role) === "readonly";
   const readOnlyModules = new Set(["command", "dashboard", "assets", "work", "helpdesk", "jobPlans", "ppm", "reports", "housing", "compliance", "documents", "incidents"]);
@@ -7497,13 +7499,19 @@ function UsersRoles({
   const selectedRoleRecord = roles.find((item) => item.name === role);
   const roleAssignedUsers = users.filter((user) => user.role === role).length;
   const canDeleteRole = !defaultRoleNames.includes(role) && !selectedRoleRecord?.standard && roleAssignedUsers === 0;
+  const savedRolePermissions = (roleName: string) => rolePermissions.filter((item) => item.role === roleName).map((item) => item.permission.code);
+  const permissionsForRole = (roleName: string) => {
+    const savedPermissions = savedRolePermissions(roleName);
+    return Array.from(new Set([...predefinedPermissionsForRole(roleName), ...savedPermissions]));
+  };
+  const predefinedPermissions = predefinedPermissionsForRole(role);
   const [selectedPermissions, setSelectedPermissions] = useState<string[]>(
-    rolePermissions.filter((item) => item.role === "Admin").map((item) => item.permission.code),
+    permissionsForRole("Admin"),
   );
 
   function changeRole(nextRole: string) {
     setRole(nextRole);
-    const nextPermissions = rolePermissions.filter((item) => item.role === nextRole).map((item) => item.permission.code);
+    const nextPermissions = permissionsForRole(nextRole);
     setSelectedPermissions(nextRole === "Admin" ? nextPermissions : nextPermissions.filter((code) => code !== "documents.upload"));
   }
 
@@ -7604,6 +7612,10 @@ function UsersRoles({
     saveRolePermissions(role, allowedPermissions);
   }
 
+  function applyPredefinedPermissions() {
+    setSelectedPermissions(role === "Admin" ? predefinedPermissions : predefinedPermissions.filter((code) => code !== "documents.upload"));
+  }
+
   function deleteSelectedRole() {
     if (!canDeleteRole) {
       setToast(roleAssignedUsers > 0 ? "Assign users to another role before deleting this role." : "Standard roles cannot be deleted.");
@@ -7669,6 +7681,7 @@ function UsersRoles({
             <select value={role} onChange={(event) => changeRole(event.target.value)} className="h-10 rounded-lg border border-slate-200 px-3">
               {roleOptions(roles).map((item) => <option key={item}>{item}</option>)}
             </select>
+            <button disabled={!predefinedPermissions.length} onClick={applyPredefinedPermissions} className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-black text-slate-700 disabled:text-slate-300">Apply Predefined</button>
             <button onClick={saveVisiblePermissions} className="rounded-lg bg-ink px-4 py-2 text-sm font-black text-white">Save Permissions</button>
             {isAdmin && (
               <button

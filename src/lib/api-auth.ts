@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { accessRole } from "@/lib/access-control";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { predefinedPermissionsForRole } from "@/lib/role-permission-presets";
 
 export function authError(message = "Authentication required.", status = 401) {
   return NextResponse.json({ message }, { status });
@@ -26,6 +27,9 @@ export async function requirePermission(code: string) {
   const { user, error } = await requireUser();
   if (error) return { user: null, error };
   if (accessRole(user) === "admin") return { user, error: null };
+  if (predefinedPermissionsForRole(user.role || "").includes(code)) {
+    return { user, error: null };
+  }
   const allowed = await prisma.rolePermission.findFirst({
     where: { role: user.role || "", permission: { code } },
     select: { id: true },
@@ -38,6 +42,9 @@ export async function requireAnyPermission(codes: string[]) {
   const { user, error } = await requireUser();
   if (error) return { user: null, error };
   if (accessRole(user) === "admin") return { user, error: null };
+  if (predefinedPermissionsForRole(user.role || "").some((code) => codes.includes(code))) {
+    return { user, error: null };
+  }
   const allowed = await prisma.rolePermission.findFirst({
     where: { role: user.role || "", permission: { code: { in: codes } } },
     select: { id: true },
