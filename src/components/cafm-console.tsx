@@ -369,6 +369,7 @@ const actionPermissionCatalog = [
   { code: "assets.view", name: "View Assets", module: "Assets Management", description: "View asset register, history and location drill-down" },
   { code: "documents.upload", name: "Upload Document Files", module: "Document Management", description: "Upload files to document management folders. Admin only.", adminOnly: true },
   { code: "users.manage", name: "Manage Users", module: "Users Management", description: "Create users and assign roles" },
+  { code: "users.edit", name: "Edit Users", module: "Users Management", description: "Update user profiles, roles, departments, teams and active status" },
   { code: "roles.manage", name: "Manage Roles", module: "Users Management", description: "Create custom roles and permission sets" },
   { code: "reports.view", name: "View Reports", module: "Utilities", description: "Preview and download reports" },
   { code: "reception.manage", name: "Reception Desk", module: "Reception", description: "Create resident requests and view front-desk queue" },
@@ -408,7 +409,7 @@ const moduleActionPermissions: Record<string, string[]> = {
   work: ["work.view", "work.manage", "work.execute", "work.assign", "work.verify"],
   helpdesk: ["requests.view", "requests.manage", "requests.approve"],
   ppm: ["ppm.manage"],
-  users: ["users.manage", "roles.manage"],
+  users: ["users.manage", "users.edit", "roles.manage"],
   reports: ["reports.view"],
   bulk: ["assets.manage", "requests.manage", "users.manage"],
   templates: ["assets.manage"],
@@ -718,6 +719,8 @@ export function CafmConsole({ data, user, deferInitialData = false }: { data: Co
     manageWork: can("work.manage"),
     executeWork: can("work.execute"),
     verifyWork: can("work.verify"),
+    manageUsers: can("users.manage"),
+    editUsers: can("users.manage") || can("users.edit"),
   };
 
   function navigate(moduleId: string, menuKey: string, view = moduleId) {
@@ -1254,6 +1257,8 @@ export function CafmConsole({ data, user, deferInitialData = false }: { data: Co
               permissions={records.permissions}
               rolePermissions={records.rolePermissions}
               saving={saving}
+              canCreateUsers={actionPermissions.manageUsers}
+              canEditUsers={actionPermissions.editUsers}
               submitUser={(formData) => postRecord("/api/users", formData, "User", false)}
               submitRole={(formData) => postRecord("/api/roles", formData, "Custom role")}
               updateUser={(id, formData) => patchRecord(`/api/users/${id}`, Object.fromEntries(formData.entries()) as Record<string, string>, "User updated.", false)}
@@ -7456,6 +7461,8 @@ function UsersRoles({
   saveRolePermissions,
   saving,
   setToast,
+  canCreateUsers,
+  canEditUsers,
 }: {
   users: any[];
   teams: any[];
@@ -7474,6 +7481,8 @@ function UsersRoles({
   refreshData: () => void;
   saving: boolean;
   setToast: (message: string) => void;
+  canCreateUsers: boolean;
+  canEditUsers: boolean;
 }) {
   const [editingUser, setEditingUser] = useState<any | null>(null);
   const [role, setRole] = useState("Admin");
@@ -7650,7 +7659,7 @@ function UsersRoles({
                   <p className="text-sm text-slate-600">{account.email} / {account.role} / {account.department}</p>
                 </div>
                 <div className="flex gap-2">
-                  <button onClick={() => setEditingUser(account)} className="rounded-lg bg-lagoon px-3 py-2 text-xs font-black text-white">Edit</button>
+                  {canEditUsers && <button onClick={() => setEditingUser(account)} className="rounded-lg bg-lagoon px-3 py-2 text-xs font-black text-white">Edit</button>}
                   {isAdmin && (
                     <button
                       disabled={account.id === currentUser.id || account.email === currentUser.email}
@@ -7736,7 +7745,7 @@ function UsersRoles({
       </div>
       <div className="space-y-5">
         <RoleForm onSubmit={submitRole} saving={saving} />
-        <UserForm title="Create User" teams={teams} departments={departments} users={userRows} roles={roles} onSubmit={submitUserAndRefresh} saving={saving} />
+        {canCreateUsers && <UserForm title="Create User" teams={teams} departments={departments} users={userRows} roles={roles} onSubmit={submitUserAndRefresh} saving={saving} />}
         {editingUser && <UserForm title="Edit User" user={editingUser} teams={teams} departments={departments} users={userRows} roles={roles} onSubmit={(formData) => updateUserAndRefresh(editingUser.id, formData)} saving={saving} />}
       </div>
     </section>
@@ -7815,7 +7824,7 @@ function UserForm({ title, user, teams, departments, users, roles, onSubmit, sav
             <label className="flex items-center gap-2 text-sm font-bold text-slate-600"><input name="notifyFacilityBooking" type="checkbox" defaultChecked={user?.notifyFacilityBooking ?? false} /> Facility Booking</label>
           </div>
         </div>
-        <button disabled={saving} className="h-11 rounded-lg bg-ink font-black text-white disabled:bg-slate-400 md:col-span-2">{saving ? "Saving..." : "Create Now"}</button>
+        <button disabled={saving} className="h-11 rounded-lg bg-ink font-black text-white disabled:bg-slate-400 md:col-span-2">{saving ? "Saving..." : user ? "Save Changes" : "Create Now"}</button>
       </div>
     </form>
   );

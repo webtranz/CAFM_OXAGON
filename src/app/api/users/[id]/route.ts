@@ -2,7 +2,7 @@ import bcrypt from "bcryptjs";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { apiError } from "@/lib/api-response";
-import { requireAdmin, requirePermission } from "@/lib/api-auth";
+import { requireAdmin, requireAnyPermission } from "@/lib/api-auth";
 import { auditAction } from "@/lib/audit";
 import { prisma } from "@/lib/prisma";
 
@@ -22,7 +22,7 @@ const schema = z.object({
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const { error, user } = await requirePermission("users.manage");
+    const { error, user } = await requireAnyPermission(["users.manage", "users.edit"]);
     if (error) return error;
     const { id } = await params;
     const input = schema.parse(await request.json());
