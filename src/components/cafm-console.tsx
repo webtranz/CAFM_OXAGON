@@ -9808,7 +9808,10 @@ function HousingBookingForm({ rooms, beds, residents, locationOptions, nationali
         <input name="contactNumber" placeholder="Contact number" className={HOUSING_FIELD_CLASS} />
         <input name="designation" placeholder="Designation" className={HOUSING_FIELD_CLASS} />
         <input name="insurance" placeholder="Insurance" className={HOUSING_FIELD_CLASS} />
-        <input name="iqamaExpiry" type="date" aria-label="Iqama expiry" title="Iqama expiry" className={HOUSING_FIELD_CLASS} />
+        <label className="grid gap-1 text-xs font-black uppercase text-slate-500">
+          Iqama Expiry
+          <input name="iqamaExpiry" type="date" className={HOUSING_FIELD_CLASS} />
+        </label>
         <select name="contractorType" value={contractorType} onChange={(event) => setContractorType(event.target.value)} className={HOUSING_FIELD_CLASS}>
           <option value="CONTRACTOR">Contractor</option>
           <option value="SUBCONTRACTOR">Subcontractor</option>
