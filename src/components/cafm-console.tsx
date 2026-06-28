@@ -8557,6 +8557,24 @@ function housingAssetDescriptionText(description: string | null | undefined) {
   return String(description || "").split("\n").find((line) => line.trim() && !line.includes(":"))?.trim() || "";
 }
 
+function bookingDetailMeta(notes: string | null | undefined) {
+  const meta: Record<string, string> = {};
+  String(notes || "").split("\n").forEach((line) => {
+    const match = line.trim().match(/^([^:]+):\s*(.*)$/);
+    if (!match) return;
+    const key = match[1].trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
+    const value = match[2].trim();
+    if (value) meta[key] = value;
+  });
+  return {
+    designation: meta.designation || "",
+    insurance: meta.insurance || "",
+    iqamaExpiry: meta.iqamaexpiry || "",
+    contractorType: meta.contractortype || "",
+    ajeerNumber: meta.ajeernumber || "",
+  };
+}
+
 function HousingOperations({
   housing,
   facilityLocations,
@@ -8705,6 +8723,7 @@ function HousingOperations({
     const haystack = `${booking.bookingNo} ${booking.residentName} ${booking.departmentCode} ${booking.status} ${booking.room?.roomNumber} ${booking.bed?.label}`.toLowerCase();
     return (!search || haystack.includes(filterText)) && (status === "All" || booking.status === status);
   });
+  const bookingRows = visibleBookings.map((booking) => ({ ...booking, ...bookingDetailMeta(booking.notes) }));
   const visibleRooms = rooms.filter((room) => {
     const haystack = `${room.code} ${room.roomNumber} ${room.property?.name} ${room.block?.name} ${room.floor} ${room.roomType} ${room.status}`.toLowerCase();
     return (!search || haystack.includes(filterText)) && (status === "All" || room.status === status);
@@ -9044,8 +9063,8 @@ function HousingOperations({
             )}
             <HousingTable
               title="Accommodation & Booking Management"
-              rows={visibleBookings}
-              columns={[["bookingNo", "Booking"], ["employeeId", "Employee ID"], ["residentName", "Employee"], ["companyName", "Company"], ["gender", "Gender"], ["buildingNumber", "Building"], ["floorNumber", "Floor"], ["roomNumber", "Room"], ["bedNumber", "Bed"], ["bookingType", "Type"], ["allocationType", "Allocation"], ["status", "Status"], ["priority", "Priority"]]}
+              rows={bookingRows}
+              columns={[["bookingNo", "Booking"], ["employeeId", "Employee ID"], ["residentName", "Employee"], ["companyName", "Company"], ["designation", "Designation"], ["insurance", "Insurance"], ["iqamaExpiry", "Iqama Expiry"], ["contractorType", "Contractor"], ["ajeerNumber", "Ajeer No"], ["gender", "Gender"], ["buildingNumber", "Building"], ["floorNumber", "Floor"], ["roomNumber", "Room"], ["bedNumber", "Bed"], ["bookingType", "Type"], ["allocationType", "Allocation"], ["status", "Status"], ["priority", "Priority"]]}
               onSelect={(record) => setSelected({ type: "booking", record })}
               reportType="housing-bookings"
               bulkSelectable={isAdmin}
@@ -9762,6 +9781,7 @@ function NationalityInput({ options }: { options: string[] }) {
 }
 
 function HousingBookingForm({ rooms, beds, residents, locationOptions, nationalityOptions, saving, onSubmit }: { rooms: any[]; beds: any[]; residents: any[]; locationOptions: HousingLocationOption[]; nationalityOptions: string[]; saving: boolean; onSubmit: (formData: FormData) => void }) {
+  const [contractorType, setContractorType] = useState("CONTRACTOR");
   const allocatableRooms = rooms.filter((room) => !["BLOCKED", "MAINTENANCE"].includes(room.status));
   const allocatableBeds = beds.filter((bed) => bed.status === "AVAILABLE");
   const residentOptions = residents.slice(0, HOUSING_REFERENCE_LIMIT);
@@ -9786,6 +9806,14 @@ function HousingBookingForm({ rooms, beds, residents, locationOptions, nationali
         <input name="departmentCode" placeholder="Department" className={HOUSING_FIELD_CLASS} />
         <NationalityInput options={nationalityOptions} />
         <input name="contactNumber" placeholder="Contact number" className={HOUSING_FIELD_CLASS} />
+        <input name="designation" placeholder="Designation" className={HOUSING_FIELD_CLASS} />
+        <input name="insurance" placeholder="Insurance" className={HOUSING_FIELD_CLASS} />
+        <input name="iqamaExpiry" type="date" aria-label="Iqama expiry" title="Iqama expiry" className={HOUSING_FIELD_CLASS} />
+        <select name="contractorType" value={contractorType} onChange={(event) => setContractorType(event.target.value)} className={HOUSING_FIELD_CLASS}>
+          <option value="CONTRACTOR">Contractor</option>
+          <option value="SUBCONTRACTOR">Subcontractor</option>
+        </select>
+        {contractorType === "SUBCONTRACTOR" && <input name="ajeerNumber" placeholder="Ajeer number" className={HOUSING_FIELD_CLASS} />}
       </div>
       <div className="grid gap-3 md:grid-cols-2">
         <select name="gender" className={HOUSING_FIELD_CLASS}>

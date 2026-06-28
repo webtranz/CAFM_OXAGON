@@ -42,6 +42,11 @@ const housingSchema = z.object({
   phone: z.string().optional(),
   companyId: z.string().optional(),
   companyName: z.string().optional(),
+  designation: z.string().optional(),
+  insurance: z.string().optional(),
+  iqamaExpiry: z.string().optional(),
+  contractorType: z.string().optional(),
+  ajeerNumber: z.string().optional(),
   gender: z.string().optional(),
   nationality: z.string().optional(),
   contactNumber: z.string().optional(),
@@ -678,6 +683,7 @@ async function createBooking(input: z.infer<typeof housingSchema>, actor: string
   const count = await prisma.housingBooking.count();
   const bookingNo = input.code || `HBK-${String(count + 1).padStart(5, "0")}`;
   const requestedStatus = bookingStatuses.includes(input.status || "") ? input.status as any : "PENDING_APPROVAL";
+  const bookingNotes = bookingNotesWithDetails(input);
   const booking = await prisma.$transaction(async (tx) => {
     const created = await tx.housingBooking.create({
       data: {
@@ -706,7 +712,7 @@ async function createBooking(input: z.infer<typeof housingSchema>, actor: string
         approvedBy: input.approvedBy || "",
         approvalLevel: ["APPROVED", "CHECKED_IN"].includes(requestedStatus) ? bookingApprovalSteps[3].level : bookingApprovalSteps[0].level,
         attachmentUrls: input.attachmentUrls || "",
-        notes: input.notes || "",
+        notes: bookingNotes,
         keyHandoverBy: input.keyHandoverBy || "",
         keyHandoverAt: input.keyHandoverAt ? new Date(input.keyHandoverAt) : undefined,
         campIdNumber: input.campIdNumber || "",
@@ -749,6 +755,21 @@ async function createBooking(input: z.infer<typeof housingSchema>, actor: string
   await refreshRoomOccupancy(room.id);
   await housingHistory("booking", booking.id, actor, "Booking created", booking.notes, { roomId: room.id, bookingId: booking.id });
   return booking;
+}
+
+function bookingNotesWithDetails(input: z.infer<typeof housingSchema>) {
+  const contractorType = String(input.contractorType || "").trim();
+  const details = [
+    ["Designation", input.designation],
+    ["Insurance", input.insurance],
+    ["Iqama Expiry", input.iqamaExpiry],
+    ["Contractor Type", contractorType],
+    ...(contractorType.toUpperCase() === "SUBCONTRACTOR" ? [["Ajeer Number", input.ajeerNumber] as [string, string | undefined]] : []),
+  ]
+    .map(([label, value]) => [label, String(value || "").trim()] as const)
+    .filter(([, value]) => value)
+    .map(([label, value]) => `${label}: ${value}`);
+  return [input.notes || "", ...details].filter(Boolean).join("\n");
 }
 
 async function selectedFacilityLocation(input: z.infer<typeof housingSchema>) {
