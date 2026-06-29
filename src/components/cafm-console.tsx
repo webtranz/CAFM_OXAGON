@@ -7434,6 +7434,7 @@ function JobPlans({ jobPlans, jobPlansTotal, services, departments, submitJobPla
 
 function BulkUpload({ saving, onSubmit, initialModule }: { saving: boolean; onSubmit: (formData: FormData) => void; initialModule: string }) {
   const [module, setModule] = useState(initialModule);
+  const [importMode, setImportMode] = useState("keepExisting");
   const [manualProgress, setManualProgress] = useState("");
   const [manualUploading, setManualUploading] = useState(false);
 
@@ -7468,6 +7469,7 @@ function BulkUpload({ saving, onSubmit, initialModule }: { saving: boolean; onSu
       const csvFile = formData.get("file");
       const uploadData = new FormData();
       uploadData.set("module", module);
+      uploadData.set("importMode", importMode);
       if (csvFile instanceof File) uploadData.set("file", csvFile);
       await onSubmit(uploadData);
     } else {
@@ -7504,6 +7506,16 @@ function BulkUpload({ saving, onSubmit, initialModule }: { saving: boolean; onSu
               <option value="departments">Departments</option>
               <option value="employees">Employees</option>
             </select>
+          </label>
+          <label className="grid gap-1 text-sm font-bold text-slate-600">
+            Existing Data Handling
+            <select name="importMode" value={importMode} onChange={(event) => setImportMode(event.target.value)} className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon">
+              <option value="keepExisting">Keep existing data unchanged</option>
+              <option value="replaceExisting">Replace / update matching old data</option>
+            </select>
+            <span className="text-xs font-bold text-slate-500">
+              Keep existing is safest: matching records are skipped and old data stays the same. Replace updates records with the same code, tag, SKU, ticket, or other module key.
+            </span>
           </label>
           <label className="grid gap-1 text-sm font-bold text-slate-600">
             CSV File
