@@ -39,6 +39,7 @@ export async function GET(request: Request) {
   const parentLocation = url.searchParams.get("parentLocation")?.trim() || "";
   const locationClass = url.searchParams.get("locationClass")?.trim() || "";
   const residential = url.searchParams.get("residential")?.trim() || "";
+  const locationScope = url.searchParams.get("locationScope")?.trim() || "";
   const pageInput = Number(url.searchParams.get("page") || 1);
   const pageSizeInput = Number(url.searchParams.get("pageSize") || 100);
   const page = Number.isFinite(pageInput) ? Math.max(1, Math.floor(pageInput)) : 1;
@@ -55,11 +56,44 @@ export async function GET(request: Request) {
       { description: { contains: query, mode: "insensitive" } },
       { parentLocation: { contains: query, mode: "insensitive" } },
       { locationClass: { contains: query, mode: "insensitive" } },
+      { type: { contains: query, mode: "insensitive" } },
       { site: { contains: query, mode: "insensitive" } },
+      { zone: { contains: query, mode: "insensitive" } },
       { building: { contains: query, mode: "insensitive" } },
       { floor: { contains: query, mode: "insensitive" } },
       { room: { contains: query, mode: "insensitive" } },
     ];
+  }
+  if (locationScope) {
+    const housingTerms = ["housing", "accommodation", "accomodation", "bedroom", "bed", "room"];
+    const nonHousingTerms = ["non housing", "non-housing", "catering", "landscaping", "recreation", "gym", "kitchen", "dining", "laundry"];
+    const housingFilter = {
+      OR: [
+        { residential: true },
+        ...housingTerms.flatMap((term) => [
+          { code: { contains: term, mode: "insensitive" } },
+          { description: { contains: term, mode: "insensitive" } },
+          { type: { contains: term, mode: "insensitive" } },
+          { locationClass: { contains: term, mode: "insensitive" } },
+          { building: { contains: term, mode: "insensitive" } },
+          { room: { contains: term, mode: "insensitive" } },
+        ]),
+      ],
+    };
+    const nonHousingFilter = {
+      OR: [
+        ...nonHousingTerms.flatMap((term) => [
+          { code: { contains: term, mode: "insensitive" } },
+          { description: { contains: term, mode: "insensitive" } },
+          { type: { contains: term, mode: "insensitive" } },
+          { locationClass: { contains: term, mode: "insensitive" } },
+          { building: { contains: term, mode: "insensitive" } },
+        ]),
+        { NOT: housingFilter },
+      ],
+    };
+    const scopeFilter = locationScope.toLowerCase().includes("non") ? nonHousingFilter : housingFilter;
+    where.AND = [...(Array.isArray(where.AND) ? where.AND : []), scopeFilter];
   }
   const [total, locations] = await Promise.all([
     prisma.location.count({ where }),

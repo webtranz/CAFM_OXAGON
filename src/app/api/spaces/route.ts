@@ -40,13 +40,58 @@ async function resolveBuilding(input: z.infer<typeof schema>) {
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
+  const query = url.searchParams.get("query")?.trim() || "";
+  const locationScope = url.searchParams.get("locationScope")?.trim() || "";
   const pageInput = Number(url.searchParams.get("page") || 1);
   const pageSizeInput = Number(url.searchParams.get("pageSize") || 100);
   const page = Number.isFinite(pageInput) ? Math.max(1, Math.floor(pageInput)) : 1;
   const pageSize = Number.isFinite(pageSizeInput) ? Math.min(200, Math.max(25, Math.floor(pageSizeInput))) : 100;
+  const andFilters: any[] = [];
+  if (query) {
+    andFilters.push({
+      OR: [
+        { name: { contains: query, mode: "insensitive" } },
+        { floor: { contains: query, mode: "insensitive" } },
+        { type: { contains: query, mode: "insensitive" } },
+        { building: { code: { contains: query, mode: "insensitive" } } },
+        { building: { name: { contains: query, mode: "insensitive" } } },
+        { building: { site: { name: { contains: query, mode: "insensitive" } } } },
+        { building: { site: { city: { contains: query, mode: "insensitive" } } } },
+      ],
+    });
+  }
+  if (locationScope && locationScope !== "All") {
+    const housingFilter = {
+      OR: [
+        { building: { code: { contains: "W-A", mode: "insensitive" } } },
+        { building: { code: { contains: "W-B", mode: "insensitive" } } },
+        { building: { code: { contains: "E-A", mode: "insensitive" } } },
+        { building: { code: { contains: "E-B", mode: "insensitive" } } },
+        { building: { name: { contains: "housing", mode: "insensitive" } } },
+        { building: { name: { contains: "accommodation", mode: "insensitive" } } },
+        { building: { name: { contains: "accomodation", mode: "insensitive" } } },
+        { name: { contains: "bedroom", mode: "insensitive" } },
+        { type: { contains: "bed", mode: "insensitive" } },
+      ],
+    };
+    const nonHousingFilter = {
+      OR: [
+        { building: { code: { contains: "CB-", mode: "insensitive" } } },
+        { type: { contains: "non housing", mode: "insensitive" } },
+        { type: { contains: "catering", mode: "insensitive" } },
+        { type: { contains: "landscaping", mode: "insensitive" } },
+        { type: { contains: "recreation", mode: "insensitive" } },
+        { type: { contains: "gym", mode: "insensitive" } },
+        { NOT: housingFilter },
+      ],
+    };
+    andFilters.push(locationScope.toLowerCase().includes("non") ? nonHousingFilter : housingFilter);
+  }
+  const where = andFilters.length ? { AND: andFilters } : {};
   const [total, spaces] = await Promise.all([
-    prisma.space.count(),
+    prisma.space.count({ where }),
     prisma.space.findMany({
+      where,
       include: { building: { include: { site: true } } },
       orderBy: [{ building: { code: "asc" } }, { floor: "asc" }, { name: "asc" }],
       skip: (page - 1) * pageSize,

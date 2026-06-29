@@ -96,6 +96,7 @@ export async function GET(request: Request) {
   const filterValue = url.searchParams.get("filterValue")?.trim() || "";
   const locationCode = url.searchParams.get("locationCode")?.trim() || "";
   const locationQuery = url.searchParams.get("locationQuery")?.trim() || "";
+  const locationScope = url.searchParams.get("locationScope")?.trim() || "";
   const classValue = url.searchParams.get("class")?.trim() || "";
   const status = url.searchParams.get("status")?.trim() || "";
   const pageInput = Number(url.searchParams.get("page") || 1);
@@ -177,13 +178,51 @@ export async function GET(request: Request) {
         { category: { contains: query, mode: "insensitive" } },
         { assetGroup: { contains: query, mode: "insensitive" } },
         { classCode: { contains: query, mode: "insensitive" } },
+        { classDesc: { contains: query, mode: "insensitive" } },
+        { categoryDesc: { contains: query, mode: "insensitive" } },
         { locationCode: { contains: query, mode: "insensitive" } },
         { locationDesc: { contains: query, mode: "insensitive" } },
+        { siteCode: { contains: query, mode: "insensitive" } },
+        { zone: { contains: query, mode: "insensitive" } },
+        { buildingCode: { contains: query, mode: "insensitive" } },
+        { floor: { contains: query, mode: "insensitive" } },
+        { room: { contains: query, mode: "insensitive" } },
+        { departmentCode: { contains: query, mode: "insensitive" } },
+        { departmentDesc: { contains: query, mode: "insensitive" } },
         { serialNumber: { contains: query, mode: "insensitive" } },
         { manufacturer: { contains: query, mode: "insensitive" } },
         { model: { contains: query, mode: "insensitive" } },
+        { primarySystem: { contains: query, mode: "insensitive" } },
+        { system: { contains: query, mode: "insensitive" } },
+        { remarks: { contains: query, mode: "insensitive" } },
       ],
     });
+  }
+  if (locationScope) {
+    const housingFilter = {
+      OR: [
+        { buildingCode: { contains: "W-A", mode: "insensitive" } },
+        { buildingCode: { contains: "W-B", mode: "insensitive" } },
+        { buildingCode: { contains: "E-A", mode: "insensitive" } },
+        { buildingCode: { contains: "E-B", mode: "insensitive" } },
+        { locationDesc: { contains: "housing", mode: "insensitive" } },
+        { locationDesc: { contains: "accommodation", mode: "insensitive" } },
+        { locationDesc: { contains: "accomodation", mode: "insensitive" } },
+        { locationDesc: { contains: "bedroom", mode: "insensitive" } },
+      ],
+    };
+    const nonHousingFilter = {
+      OR: [
+        { buildingCode: { contains: "CB-", mode: "insensitive" } },
+        { locationDesc: { contains: "non housing", mode: "insensitive" } },
+        { locationDesc: { contains: "catering", mode: "insensitive" } },
+        { locationDesc: { contains: "landscaping", mode: "insensitive" } },
+        { locationDesc: { contains: "recreation", mode: "insensitive" } },
+        { locationDesc: { contains: "gym", mode: "insensitive" } },
+        { NOT: housingFilter },
+      ],
+    };
+    andFilters.push(locationScope.toLowerCase().includes("non") ? nonHousingFilter : housingFilter);
   }
   if (filterField && filterValue) {
     const mappedFilter = columnFilter(filterField, filterValue);

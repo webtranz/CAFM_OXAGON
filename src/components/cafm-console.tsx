@@ -1912,6 +1912,7 @@ function Assets({
   const [filterValue, setFilterValue] = useState("");
   const [locationFilter, setLocationFilter] = useState("");
   const [locationSearch, setLocationSearch] = useState("");
+  const [locationScopeFilter, setLocationScopeFilter] = useState("");
   const [classFilter, setClassFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
@@ -1979,7 +1980,7 @@ function Assets({
   useEffect(() => {
     setPage(1);
     assetScrollRef.current?.scrollTo({ top: 0 });
-  }, [query, filterField, filterValue, locationFilter, locationSearch, classFilter, statusFilter, columnFilters]);
+  }, [query, filterField, filterValue, locationFilter, locationSearch, locationScopeFilter, classFilter, statusFilter, columnFilters]);
 
   useEffect(() => {
     setAssetRowsSource(assets);
@@ -2003,6 +2004,7 @@ function Assets({
           filterValue,
           locationCode: locationFilter,
           locationQuery: locationSearch,
+          locationScope: locationScopeFilter,
           class: classFilter,
           status: statusFilter,
         });
@@ -2028,7 +2030,7 @@ function Assets({
       controller.abort();
       window.clearTimeout(timer);
     };
-  }, [page, query, filterField, filterValue, locationFilter, locationSearch, classFilter, statusFilter, columnFilters]);
+  }, [page, query, filterField, filterValue, locationFilter, locationSearch, locationScopeFilter, classFilter, statusFilter, columnFilters]);
 
   function handleAssetScroll(event: UIEvent<HTMLDivElement>) {
     const element = event.currentTarget;
@@ -2131,13 +2133,18 @@ function Assets({
             </div>
           </div>
         )}
-        <div className="mb-4 grid gap-3 rounded-lg bg-slate-50 p-3 md:grid-cols-5">
+        <div className="mb-4 grid gap-3 rounded-lg bg-slate-50 p-3 md:grid-cols-6">
           <select value={locationFilter} onChange={(event) => setLocationFilter(event.target.value)} className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold">
             <option value="">LOCATION</option>
             <option value="__unassigned__">Unassigned</option>
             {locationOptions.map((location) => <option key={location.value} value={location.value}>{location.label}</option>)}
           </select>
           <input value={locationSearch} onChange={(event) => setLocationSearch(event.target.value)} placeholder="Search location code / description" className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold outline-none focus:border-lagoon" />
+          <select value={locationScopeFilter} onChange={(event) => setLocationScopeFilter(event.target.value)} className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold">
+            <option value="">HOUSING / NON HOUSING</option>
+            <option value="housing">Housing</option>
+            <option value="nonHousing">Non Housing</option>
+          </select>
           <select value={classFilter} onChange={(event) => setClassFilter(event.target.value)} className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold">
             <option value="">CLASS / CATEGORY</option>
             {classOptions.map((assetClass) => <option key={assetClass} value={assetClass}>{assetClass}</option>)}
@@ -2146,7 +2153,7 @@ function Assets({
             <option value="">ASSETSTATUS</option>
             {statusOptions.map((status) => <option key={status} value={status}>{status}</option>)}
           </select>
-          <button type="button" onClick={() => { setLocationFilter(""); setLocationSearch(""); setClassFilter(""); setStatusFilter(""); setColumnFilters({}); setFilterValue(""); }} className="h-11 rounded-lg bg-white px-3 text-sm font-black text-lagoon">Clear Filters</button>
+          <button type="button" onClick={() => { setLocationFilter(""); setLocationSearch(""); setLocationScopeFilter(""); setClassFilter(""); setStatusFilter(""); setColumnFilters({}); setFilterValue(""); }} className="h-11 rounded-lg bg-white px-3 text-sm font-black text-lagoon">Clear Filters</button>
         </div>
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-sm font-black text-slate-600">
           <span>Showing {visibleAssets.length.toLocaleString()} of {assetTotal.toLocaleString()} assets / Selected {selectedAssetIds.size.toLocaleString()} / Column filters {activeColumnFilterCount}</span>
@@ -6254,6 +6261,9 @@ function ScrollableRowsTable({
   totalRows,
   loading = false,
   onLoadMore,
+  filters,
+  setFilters,
+  moduleOptions,
 }: {
   rows: any[];
   columns: [string, string][];
@@ -6264,27 +6274,35 @@ function ScrollableRowsTable({
   totalRows?: number;
   loading?: boolean;
   onLoadMore?: () => Promise<void> | void;
+  filters?: { keyword: string; dateFrom: string; dateTo: string; module: string };
+  setFilters?: (filters: { keyword: string; dateFrom: string; dateTo: string; module: string }) => void;
+  moduleOptions?: string[];
 }) {
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [selectedRowKeys, setSelectedRowKeys] = useState<Set<string>>(new Set());
-  const visibleRows = rows.slice(0, visibleCount);
+  const [internalFilters, setInternalFilters] = useState({ keyword: "", dateFrom: "", dateTo: "", module: "All" });
+  const activeFilters = filters ?? internalFilters;
+  const updateFilters = setFilters ?? setInternalFilters;
+  const activeModuleOptions = useMemo(() => moduleOptions ?? Array.from(new Set(rows.map(rowModuleValue).filter(Boolean))).sort(), [moduleOptions, rows]);
+  const filteredRows = useMemo(() => filterRowsByControls(rows, activeFilters), [rows, activeFilters]);
+  const visibleRows = filteredRows.slice(0, visibleCount);
   const rowKey = (row: any, index: number) => String(row.id ?? row.reference ?? row.title ?? index);
   const visibleRowKeys = visibleRows.map((row, index) => rowKey(row, index));
-  const selectedRows = rows.filter((row, index) => selectedRowKeys.has(rowKey(row, index)));
+  const selectedRows = filteredRows.filter((row, index) => selectedRowKeys.has(rowKey(row, index)));
   const selectedVisibleKeys = visibleRowKeys.filter((key) => selectedRowKeys.has(key));
   const allVisibleSelected = bulkSelectable && Boolean(visibleRowKeys.length) && selectedVisibleKeys.length === visibleRowKeys.length;
   const someVisibleSelected = bulkSelectable && selectedVisibleKeys.length > 0 && !allVisibleSelected;
-  const displayTotal = totalRows ?? rows.length;
-  const hasMoreRows = onLoadMore ? rows.length < displayTotal : visibleRows.length < rows.length;
+  const displayTotal = totalRows ?? filteredRows.length;
+  const hasMoreRows = onLoadMore ? rows.length < displayTotal : visibleRows.length < filteredRows.length;
 
   useEffect(() => {
     setVisibleCount(PAGE_SIZE);
-  }, [rows.length]);
+  }, [rows.length, activeFilters]);
 
   useEffect(() => {
-    const allKeys = new Set(rows.map((row, index) => rowKey(row, index)));
+    const allKeys = new Set(filteredRows.map((row, index) => rowKey(row, index)));
     setSelectedRowKeys((current) => new Set(Array.from(current).filter((key) => allKeys.has(key))));
-  }, [rows]);
+  }, [filteredRows]);
 
   function handleScroll(event: UIEvent<HTMLDivElement>) {
     const element = event.currentTarget;
@@ -6294,7 +6312,7 @@ function ScrollableRowsTable({
         void onLoadMore();
         return;
       }
-      setVisibleCount((current) => Math.min(rows.length, current + PAGE_SIZE));
+      setVisibleCount((current) => Math.min(filteredRows.length, current + PAGE_SIZE));
     }
   }
 
@@ -6327,6 +6345,7 @@ function ScrollableRowsTable({
 
   return (
     <div className="grid gap-3">
+      <TableFilterControls filters={activeFilters} setFilters={updateFilters} moduleOptions={activeModuleOptions} label={bulkLabel} />
       {bulkSelectable && (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm font-black text-slate-600">
           <span>Selected {selectedRowKeys.size.toLocaleString()} {bulkLabel}</span>
@@ -6669,6 +6688,7 @@ function AssetHierarchySetup({
   const [setupTotals, setSetupTotals] = useState({ sites: sites.length, buildings: buildings.length, spaces: spaces.length, categories: categories.length });
   const [setupPages, setSetupPages] = useState({ sites: 1, buildings: 1, spaces: 1, categories: 1 });
   const [setupLoading, setSetupLoading] = useState("");
+  const [setupFilters, setSetupFilters] = useState({ keyword: "", dateFrom: "", dateTo: "", module: "All" });
   const setupKey = view === "asset-sites" ? "sites" : view === "asset-buildings" ? "buildings" : view === "asset-spaces" ? "spaces" : view === "asset-categories" ? "categories" : "";
   const setupEndpoint = setupKey === "sites" ? "/api/sites" : setupKey === "buildings" ? "/api/buildings" : setupKey === "spaces" ? "/api/spaces" : setupKey === "categories" ? "/api/asset-categories" : "";
   const setupResponseKey = setupKey === "categories" ? "categories" : setupKey;
@@ -6689,7 +6709,10 @@ function AssetHierarchySetup({
     async function loadFirstPage() {
       setSetupLoading(setupKey);
       try {
-        const response = await fetch(`${setupEndpoint}?page=1&pageSize=${PAGE_SIZE}`, { cache: "no-store", signal: controller.signal });
+        const params = new URLSearchParams({ page: "1", pageSize: String(PAGE_SIZE) });
+        if (setupFilters.keyword.trim()) params.set("query", setupFilters.keyword.trim());
+        if (setupFilters.module !== "All") params.set("locationScope", setupFilters.module);
+        const response = await fetch(`${setupEndpoint}?${params.toString()}`, { cache: "no-store", signal: controller.signal });
         if (response.ok) {
           const result = await response.json();
           setSetupRows((current) => ({ ...current, [setupKey]: result[setupResponseKey] ?? [] }));
@@ -6704,7 +6727,11 @@ function AssetHierarchySetup({
     }
     void loadFirstPage();
     return () => controller.abort();
-  }, [setupEndpoint, setupKey, setupResponseKey]);
+  }, [setupEndpoint, setupKey, setupResponseKey, setupFilters.keyword, setupFilters.module]);
+
+  useEffect(() => {
+    setSetupFilters({ keyword: "", dateFrom: "", dateTo: "", module: "All" });
+  }, [view]);
 
   async function loadMoreSetupRows() {
     if (!setupEndpoint || !setupKey || setupLoading) return;
@@ -6714,7 +6741,10 @@ function AssetHierarchySetup({
     const nextPage = setupPages[setupKey as keyof typeof setupPages] + 1;
     setSetupLoading(setupKey);
     try {
-      const response = await fetch(`${setupEndpoint}?page=${nextPage}&pageSize=${PAGE_SIZE}`, { cache: "no-store" });
+      const params = new URLSearchParams({ page: String(nextPage), pageSize: String(PAGE_SIZE) });
+      if (setupFilters.keyword.trim()) params.set("query", setupFilters.keyword.trim());
+      if (setupFilters.module !== "All") params.set("locationScope", setupFilters.module);
+      const response = await fetch(`${setupEndpoint}?${params.toString()}`, { cache: "no-store" });
       if (response.ok) {
         const result = await response.json();
         const nextRows = result[setupResponseKey] ?? [];
@@ -6734,11 +6764,13 @@ function AssetHierarchySetup({
   const buildingRows = setupRows.buildings.map((building) => ({
     ...building,
     siteName: building.site?.name || setupRows.sites.find((site) => site.id === building.siteId)?.name || "",
+    locationScope: locationScopeValue(building),
   }));
   const spaceRows = setupRows.spaces.map((space) => ({
     ...space,
     buildingCode: space.building?.code || setupRows.buildings.find((building) => building.id === space.buildingId)?.code || "",
     siteName: space.building?.site?.name || "",
+    locationScope: locationScopeValue(space),
   }));
   const showSites = view === "asset-sites";
   const showBuildings = view === "asset-buildings";
@@ -6756,12 +6788,12 @@ function AssetHierarchySetup({
         )}
         {showBuildings && (
           <Panel title="Buildings" icon={Building2}>
-            <ScrollableRowsTable rows={buildingRows} totalRows={setupTotals.buildings} loading={setupLoading === "buildings"} onLoadMore={loadMoreSetupRows} columns={[["code", "Code"], ["name", "Building"], ["siteName", "Site"], ["floors", "Floors"], ["areaSqm", "Area sqm"]]} />
+            <ScrollableRowsTable rows={buildingRows} totalRows={setupTotals.buildings} loading={setupLoading === "buildings"} onLoadMore={loadMoreSetupRows} filters={setupFilters} setFilters={setSetupFilters} moduleOptions={["Housing", "Non Housing"]} columns={[["code", "Code"], ["name", "Building"], ["siteName", "Site"], ["locationScope", "Housing Type"], ["floors", "Floors"], ["areaSqm", "Area sqm"]]} />
           </Panel>
         )}
         {showSpaces && (
           <Panel title="Spaces" icon={Boxes}>
-            <ScrollableRowsTable rows={spaceRows} totalRows={setupTotals.spaces} loading={setupLoading === "spaces"} onLoadMore={loadMoreSetupRows} columns={[["name", "Space"], ["buildingCode", "Building"], ["floor", "Floor"], ["type", "Type"], ["capacity", "Capacity"], ["areaSqm", "Area sqm"], ["occupancy", "Occupancy"]]} />
+            <ScrollableRowsTable rows={spaceRows} totalRows={setupTotals.spaces} loading={setupLoading === "spaces"} onLoadMore={loadMoreSetupRows} filters={setupFilters} setFilters={setSetupFilters} moduleOptions={["Housing", "Non Housing"]} columns={[["name", "Space"], ["buildingCode", "Building"], ["siteName", "Site"], ["floor", "Floor"], ["type", "Type"], ["locationScope", "Housing Type"], ["capacity", "Capacity"], ["areaSqm", "Area sqm"], ["occupancy", "Occupancy"]]} />
           </Panel>
         )}
         {showDepartments && (
@@ -6989,6 +7021,7 @@ function Locations({ locations, submitLocation, deleteLocation, isAdmin, saving 
   const [parentFilter, setParentFilter] = useState("");
   const [classFilter, setClassFilter] = useState("");
   const [residentialFilter, setResidentialFilter] = useState("");
+  const [locationScopeFilter, setLocationScopeFilter] = useState("");
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
   const [locationRowsSource, setLocationRowsSource] = useState<any[]>(locations);
@@ -7003,6 +7036,7 @@ function Locations({ locations, submitLocation, deleteLocation, isAdmin, saving 
     classDisplay: location.locationClass || location.type || "",
     outOfServiceDisplay: location.outOfService ? "YES" : "NO",
     residentialDisplay: location.residential ? "YES" : "NO",
+    locationScope: locationScopeValue(location),
   }));
   const parentOptions = Array.from(new Set(locationRows.map((location) => location.parentLocationDisplay).filter(Boolean)));
   const classOptions = Array.from(new Set(locationRows.map((location) => location.classDisplay).filter(Boolean)));
@@ -7025,7 +7059,7 @@ function Locations({ locations, submitLocation, deleteLocation, isAdmin, saving 
   useEffect(() => {
     setPage(1);
     locationScrollRef.current?.scrollTo({ top: 0 });
-  }, [query, parentFilter, classFilter, residentialFilter]);
+  }, [query, parentFilter, classFilter, residentialFilter, locationScopeFilter]);
 
   useEffect(() => {
     setLocationRowsSource(locations);
@@ -7048,6 +7082,7 @@ function Locations({ locations, submitLocation, deleteLocation, isAdmin, saving 
           parentLocation: parentFilter,
           locationClass: classFilter,
           residential: residentialFilter,
+          locationScope: locationScopeFilter,
         });
         const response = await fetch(`/api/locations?${params.toString()}`, { cache: "no-store", signal: controller.signal });
         if (response.ok) {
@@ -7067,7 +7102,7 @@ function Locations({ locations, submitLocation, deleteLocation, isAdmin, saving 
       controller.abort();
       window.clearTimeout(timer);
     };
-  }, [page, query, parentFilter, classFilter, residentialFilter]);
+  }, [page, query, parentFilter, classFilter, residentialFilter, locationScopeFilter]);
 
   function handleLocationScroll(event: UIEvent<HTMLDivElement>) {
     const element = event.currentTarget;
@@ -7109,8 +7144,13 @@ function Locations({ locations, submitLocation, deleteLocation, isAdmin, saving 
     <section className="grid gap-5 xl:grid-cols-[1fr_420px]">
       <Panel title="Location Register" icon={MapPinned}>
         <ReportButtons type="locations" label="Locations report" />
-        <div className="mb-4 grid gap-3 rounded-lg bg-slate-50 p-3 md:grid-cols-[1fr_220px_180px_160px_auto]">
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search location, description, parent or class" className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-lagoon" />
+        <div className="mb-4 grid gap-3 rounded-lg bg-slate-50 p-3 md:grid-cols-[1fr_180px_180px_180px_160px_auto]">
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search any location field, heading, building, floor, room or keyword" className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm outline-none focus:border-lagoon" />
+          <select value={locationScopeFilter} onChange={(event) => setLocationScopeFilter(event.target.value)} className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold">
+            <option value="">Housing Type</option>
+            <option value="Housing">Housing</option>
+            <option value="Non Housing">Non Housing</option>
+          </select>
           <select value={parentFilter} onChange={(event) => setParentFilter(event.target.value)} className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold">
             <option value="">All parents</option>
             {parentOptions.map((parentLocation) => <option key={parentLocation} value={parentLocation}>{parentLocation}</option>)}
@@ -7124,7 +7164,7 @@ function Locations({ locations, submitLocation, deleteLocation, isAdmin, saving 
             <option value="YES">YES</option>
             <option value="NO">NO</option>
           </select>
-          <button type="button" onClick={() => { setQuery(""); setParentFilter(""); setClassFilter(""); setResidentialFilter(""); }} className="h-11 rounded-lg bg-white px-3 text-sm font-black text-lagoon">Clear</button>
+          <button type="button" onClick={() => { setQuery(""); setLocationScopeFilter(""); setParentFilter(""); setClassFilter(""); setResidentialFilter(""); }} className="h-11 rounded-lg bg-white px-3 text-sm font-black text-lagoon">Clear</button>
         </div>
         <div className="mb-4 grid gap-3 md:grid-cols-4">
           <div className="rounded-lg bg-lagoon/10 p-3"><p className="text-xs font-black uppercase text-lagoon">Locations</p><p className="text-2xl font-black">{locationTotal}</p></div>
@@ -7162,7 +7202,7 @@ function Locations({ locations, submitLocation, deleteLocation, isAdmin, saving 
                     />
                   </th>
                 )}
-                {["Location", "Description", "Class", "Parent Location", "Out of Service", "Residential", ...(isAdmin ? ["Actions"] : [])].map((label) => <th key={label} className="px-3 py-3">{label}</th>)}
+                {["Location", "Description", "Class", "Housing Type", "Parent Location", "Out of Service", "Residential", ...(isAdmin ? ["Actions"] : [])].map((label) => <th key={label} className="px-3 py-3">{label}</th>)}
               </tr>
             </thead>
             <tbody>
@@ -7180,6 +7220,7 @@ function Locations({ locations, submitLocation, deleteLocation, isAdmin, saving 
                   <td className="px-3 py-3 font-black text-lagoon">{location.locationCode}</td>
                   <td className="px-3 py-3">{displayValue(location.description)}</td>
                   <td className="px-3 py-3">{displayValue(location.classDisplay)}</td>
+                  <td className="px-3 py-3">{location.locationScope}</td>
                   <td className="px-3 py-3">{displayValue(location.parentLocationDisplay)}</td>
                   <td className="px-3 py-3">{location.outOfServiceDisplay}</td>
                   <td className="px-3 py-3">{location.residentialDisplay}</td>
@@ -10611,7 +10652,16 @@ function rowFilterDate(row: any) {
 }
 
 function rowModuleValue(row: any) {
-  return String(row?.module ?? row?.source ?? row?.type ?? row?.entity ?? row?.category ?? row?.status ?? "").trim();
+  return String(row?.locationScope ?? row?.module ?? row?.source ?? row?.type ?? row?.entity ?? row?.category ?? row?.status ?? "").trim();
+}
+
+function locationScopeValue(row: any) {
+  const text = rowSearchText(row);
+  const nonHousingMarkers = ["non housing", "non-housing", "catering", "landscaping", "recreation", "gym", "kitchen", "dining", "laundry", "cb-"];
+  const housingMarkers = ["housing", "accommodation", "accomodation", "bedroom", "bed ", " room ", "room-", "w-a", "w-b", "e-a", "e-b"];
+  if (nonHousingMarkers.some((marker) => text.includes(marker))) return "Non Housing";
+  if (row?.residential || housingMarkers.some((marker) => ` ${text} `.includes(marker))) return "Housing";
+  return "Non Housing";
 }
 
 function filterRowsByControls(rows: any[], filters: { keyword: string; dateFrom: string; dateTo: string; module: string }) {
