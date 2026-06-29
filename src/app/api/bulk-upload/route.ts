@@ -154,7 +154,7 @@ async function processRows(
     try {
       const imported = await importRow(module, row, context);
       entries.push({ row: rowNumber, status: "SUCCESS", module, ...imported });
-      if (imported.action === "EXISTS") skipped += 1;
+      if (imported.action === "EXISTS" || imported.action === "SKIPPED") skipped += 1;
       else created += 1;
     } catch (error) {
       const message = error instanceof Error && error.message ? error.message : "Import failed for this row.";
@@ -363,9 +363,25 @@ function existingResult(recordType: string, record: { id?: string } | null | und
   return importResult(recordType, "EXISTS", record, recordKey, displayName);
 }
 
+function normalizeImportText(input: string, fallback = "") {
+  const normalized = String(input || "").replace(/^\uFEFF/, "").replace(/^-+/, "").trim();
+  if (isImportHeaderValue(normalized)) return fallback;
+  return normalized || fallback;
+}
+
+function normalizeBuildingCode(input: string) {
+  const normalized = normalizeImportText(input, "FBC").toUpperCase().replace(/\s+/g, "-");
+  return normalized || "FBC";
+}
+
+function isImportHeaderValue(input: string) {
+  return ["", "CODE", "SITE", "SITECODE", "SITE CODE", "BLDG", "BUILDING", "BUILDING CODE", "NAME"].includes(String(input || "").trim().toUpperCase());
+}
+
 async function ensureSite(row: Row = {}, context: ImportContext = {}) {
-  const name = value(row, "site", "siteName", "name", "Site") || "Fadhili Bachelor Camp";
-  const city = value(row, "city", "City") || "Fadhili";
+  const rawName = value(row, "site", "siteName", "siteCode", "SITE", "Site");
+  const name = normalizeImportText(rawName === "169" ? "0169" : rawName, "Fadhili Bachelor Camp");
+  const city = normalizeImportText(value(row, "city", "City"), "OXAGON");
   const country = value(row, "country", "Country") || "Saudi Arabia";
   const type = value(row, "type", "siteType", "Type") || "Accommodation Camp";
   const areaSqm = integer(value(row, "areaSqm", "area", "AreaSqm"), 0);
@@ -380,8 +396,8 @@ async function ensureSite(row: Row = {}, context: ImportContext = {}) {
 
 async function ensureBuilding(row: Row = {}, siteInput?: { id: string }, context: ImportContext = {}) {
   const site = siteInput || await ensureSite(row, context);
-  const code = value(row, "buildingCode", "code", "building", "Building", "BLDG") || "FBC";
-  const name = value(row, "buildingName", "name", "description", "Description") || code;
+  const code = normalizeBuildingCode(value(row, "buildingCode", "code", "building", "Building", "BLDG"));
+  const name = normalizeImportText(value(row, "buildingName", "name", "description", "Description"), code);
   const floors = integer(value(row, "floors", "floorCount"), 1);
   const areaSqm = integer(value(row, "areaSqm", "area", "AreaSqm"), 0);
   const existing = await prisma.building.findUnique({ where: { code } });
@@ -411,8 +427,9 @@ async function siteAndBuildingForAsset(location: { site?: string | null; buildin
 }
 
 async function importSite(row: Row, context: ImportContext = {}) {
-  const name = value(row, "site", "siteName", "name", "Site") || "Fadhili Bachelor Camp";
-  const city = value(row, "city", "City") || "Fadhili";
+  const rawName = value(row, "site", "siteName", "name", "Site");
+  const name = normalizeImportText(rawName === "169" ? "0169" : rawName, "Fadhili Bachelor Camp");
+  const city = normalizeImportText(value(row, "city", "City"), "OXAGON");
   const country = value(row, "country", "Country") || "Saudi Arabia";
   const existing = await prisma.site.findUnique({ where: { name_city_country: { name, city, country } } });
   if (existing && !shouldReplace(context)) return existingResult("site", existing, existing.name, existing.name);
@@ -421,7 +438,8 @@ async function importSite(row: Row, context: ImportContext = {}) {
 }
 
 async function importBuilding(row: Row, context: ImportContext = {}) {
-  const code = value(row, "buildingCode", "code", "building", "Building", "BLDG") || "FBC";
+  const code = normalizeBuildingCode(value(row, "buildingCode", "code", "building", "Building", "BLDG"));
+  if (isImportHeaderValue(code)) return importResult("building", "SKIPPED", null, code, "Header row skipped");
   const existing = await prisma.building.findUnique({ where: { code } });
   if (existing && !shouldReplace(context)) return existingResult("building", existing, code, existing.name);
   const site = await ensureSite(row, context);
