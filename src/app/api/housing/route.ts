@@ -6,7 +6,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { ensureHousingNotificationSettings } from "@/lib/housing-alerts";
 import { prisma } from "@/lib/prisma";
 
-const HOUSING_REFERENCE_LIMIT = 300;
+const HOUSING_REFERENCE_LIMIT = 2000;
 const activeBookingStatuses = ["REQUESTED", "PENDING_APPROVAL", "APPROVED", "CHECKED_IN"];
 const bookingStatuses = ["REQUESTED", "PENDING_APPROVAL", "APPROVED", "CHECKED_IN", "CHECKED_OUT", "REJECTED", "CANCELLED", "NO_SHOW", "TRANSFERRED"];
 const bookingApprovalSteps = [

@@ -25,6 +25,7 @@ function departmentValues(user: OperatingUser) {
 
 const INITIAL_LOAD_LIMIT = 100;
 const INITIAL_REFERENCE_LIMIT = 200;
+const LOCATION_REFERENCE_LIMIT = 20000;
 
 export async function getOperatingData(user: OperatingUser = null) {
   if (!process.env.DATABASE_URL) {
@@ -108,7 +109,7 @@ export async function getOperatingData(user: OperatingUser = null) {
       prisma.department.findMany({ orderBy: { code: "asc" } }),
       prisma.employee.findMany({ where: kind === "admin" ? {} : { departmentCode: { in: departmentsForUser } }, orderBy: { name: "asc" }, take: INITIAL_LOAD_LIMIT }),
       prisma.rolePermission.findMany({ include: { permission: true }, orderBy: { role: "asc" } }),
-      prisma.location.findMany({ orderBy: [{ code: "asc" }], take: INITIAL_REFERENCE_LIMIT }),
+      prisma.location.findMany({ orderBy: [{ code: "asc" }], take: LOCATION_REFERENCE_LIMIT }),
       prisma.jobPlan.findMany({ where: visibleJobPlanWhere, orderBy: { code: "asc" }, take: INITIAL_LOAD_LIMIT }),
       prisma.jobPlan.count({ where: visibleJobPlanWhere }),
       prisma.role.findMany({ orderBy: { name: "asc" } }),
