@@ -2279,6 +2279,7 @@ function AssetCreateForm({ teams, users, locations, onSubmit, saving }: { teams:
     const category = String(formData.get("category") ?? "").trim();
     const primarySystem = String(formData.get("primarySystem") ?? "").trim();
     const locationCode = String(formData.get("locationCode") ?? "").trim();
+    const roomValue = String(formData.get("room") ?? "").trim();
 
     formData.set("name", equipmentDesc || equipmentNo);
     formData.set("assetDescription", equipmentDesc || equipmentNo);
@@ -2287,7 +2288,7 @@ function AssetCreateForm({ teams, users, locations, onSubmit, saving }: { teams:
     formData.set("system", primarySystem || classCode || category || "General");
     formData.set("criticality", "MEDIUM");
     formData.set("conditionScore", "85");
-    formData.set("room", locationCode);
+    formData.set("room", locationCode || roomValue);
     formData.set("purchaseCost", String(formData.get("equipmentValue") || ""));
     formData.set("remarks", String(formData.get("additionalNote") || ""));
 
@@ -2398,15 +2399,66 @@ function AssetLocationCodeSelect({
 }) {
   const fieldClass = "h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold outline-none focus:border-lagoon";
   const options = Array.from(new Map(locations.filter((location) => location.code).map((location) => [location.code, location])).values());
+  const initialLocation = options.find((location) => location.code === defaultValue) || findLocationBySearch(options, defaultValue);
+  const [selectedCode, setSelectedCode] = useState(initialLocation?.code || defaultValue);
+  const [siteCode, setSiteCode] = useState(initialLocation?.site || "");
+  const [buildingCode, setBuildingCode] = useState(initialLocation?.building || "");
+  const [floor, setFloor] = useState(initialLocation?.floor || "");
+  const [room, setRoom] = useState(initialLocation?.room || initialLocation?.code || defaultValue);
+  const siteOptions = useMemo(() => uniqueLocationOptions(options, (location) => location.site, (location, value) => [value, location.description].filter(Boolean).join(" - ")), [options]);
+  const buildingRows = useMemo(() => options.filter((location) => !siteCode || location.site === siteCode), [options, siteCode]);
+  const buildingOptions = useMemo(() => uniqueLocationOptions(buildingRows, (location) => location.building, (location, value) => [value, location.description].filter(Boolean).join(" - ")), [buildingRows]);
+  const floorRows = useMemo(() => buildingRows.filter((location) => !buildingCode || location.building === buildingCode), [buildingRows, buildingCode]);
+  const floorOptions = useMemo(() => uniqueLocationOptions(floorRows, (location) => location.floor, (location, value) => [value, location.description].filter(Boolean).join(" - ")), [floorRows]);
+  const roomRows = useMemo(() => floorRows.filter((location) => !floor || location.floor === floor), [floorRows, floor]);
+  const roomOptions = useMemo(
+    () => roomRows.map((location) => ({ value: location.code, label: locationSelectLabel(location) })).sort((first, second) => first.label.localeCompare(second.label, undefined, { numeric: true, sensitivity: "base" })),
+    [roomRows],
+  );
+
+  function applyLocation(location: any) {
+    if (!location) return;
+    setSelectedCode(location.code || "");
+    setSiteCode(location.site || "");
+    setBuildingCode(location.building || "");
+    setFloor(location.floor || "");
+    setRoom(location.room || location.code || "");
+  }
 
   return (
-    <label className="grid gap-1 text-sm font-bold text-slate-600">
-      LOCATION
-      <input name="locationCode" defaultValue={defaultValue} list="asset-location-codes" placeholder="Type or select LOCATION code" className={fieldClass} />
-      <datalist id="asset-location-codes">
-        {options.map((location) => <option key={location.id ?? location.code} value={location.code}>{location.description || location.code}</option>)}
-      </datalist>
-    </label>
+    <div className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+      <input type="hidden" name="locationCode" value={selectedCode} />
+      <input type="hidden" name="siteCode" value={siteCode} />
+      <input type="hidden" name="buildingCode" value={buildingCode} />
+      <input type="hidden" name="floor" value={floor} />
+      <input type="hidden" name="room" value={room || selectedCode} />
+      <label className="grid gap-1 text-sm font-bold text-slate-600">
+        LOCATION
+        <SearchableDropdownField
+          value={selectedCode}
+          placeholder="1. Select combined location code"
+          options={roomOptions.length ? roomOptions : options.map((location) => ({ value: location.code, label: locationSelectLabel(location) }))}
+          onInput={(value) => {
+            const selected = findLocationBySearch(options, value);
+            setSelectedCode(value);
+            if (selected) applyLocation(selected);
+          }}
+          onSelect={(option) => {
+            const selected = options.find((location) => location.code === option.value);
+            if (selected) applyLocation(selected);
+          }}
+        />
+      </label>
+      <div className="grid gap-3 sm:grid-cols-4">
+        <SearchableDropdownField value={siteCode} placeholder="2. Site" options={siteOptions} onInput={(value) => { setSiteCode(value); setBuildingCode(""); setFloor(""); setRoom(""); setSelectedCode(""); }} onSelect={(option) => { setSiteCode(option.value); setBuildingCode(""); setFloor(""); setRoom(""); setSelectedCode(""); }} />
+        <SearchableDropdownField value={buildingCode} placeholder="3. Building" options={buildingOptions} onInput={(value) => { setBuildingCode(value); setFloor(""); setRoom(""); setSelectedCode(""); }} onSelect={(option) => { setBuildingCode(option.value); setFloor(""); setRoom(""); setSelectedCode(""); }} />
+        <SearchableDropdownField value={floor} placeholder="4. Floor" options={floorOptions} onInput={(value) => { setFloor(value); setRoom(""); setSelectedCode(""); }} onSelect={(option) => { setFloor(option.value); setRoom(""); setSelectedCode(""); }} />
+        <SearchableDropdownField value={room} placeholder="5. Room" options={roomOptions} onInput={(value) => { setRoom(value); setSelectedCode(value); }} onSelect={(option) => {
+          const selected = options.find((location) => location.code === option.value);
+          if (selected) applyLocation(selected);
+        }} />
+      </div>
+    </div>
   );
 }
 
@@ -2522,12 +2574,13 @@ function AssetEditForm({ asset, teams, users, locations, saving, onSubmit }: { a
     const category = String(formData.get("category") ?? "").trim();
     const primarySystem = String(formData.get("primarySystem") ?? "").trim();
     const locationCode = String(formData.get("locationCode") ?? "").trim();
+    const roomValue = String(formData.get("room") ?? "").trim();
     formData.set("name", equipmentDesc || equipmentNo);
     formData.set("assetDescription", equipmentDesc || equipmentNo);
     formData.set("assetGroup", classCode || category || "General");
     formData.set("category", category || String(formData.get("categoryDesc") || classCode || "General"));
     formData.set("system", primarySystem || classCode || category || "General");
-    formData.set("room", locationCode);
+    formData.set("room", locationCode || roomValue);
     formData.set("purchaseCost", String(formData.get("equipmentValue") || ""));
     formData.set("remarks", String(formData.get("additionalNote") || ""));
     await onSubmit(formData);
@@ -6989,8 +7042,8 @@ function SiteForm({ onSubmit, saving }: { onSubmit: (formData: FormData) => void
     <form onSubmit={handleSubmit} className="rounded-lg border border-white/80 bg-white p-5 shadow-lift">
       <h3 className="text-xl font-black">Add Site</h3>
       <div className="mt-4 grid min-w-0 gap-3">
-        <input name="name" placeholder="Site name" className={FACILITY_FIELD_CLASS} />
-        <input name="city" placeholder="City" className={FACILITY_FIELD_CLASS} />
+        <input name="name" placeholder="1. Site name" className={FACILITY_FIELD_CLASS} />
+        <input name="city" placeholder="2. City" className={FACILITY_FIELD_CLASS} />
         <input name="country" defaultValue="Saudi Arabia" placeholder="Country" className={FACILITY_FIELD_CLASS} />
         <input name="type" placeholder="Site type" className={FACILITY_FIELD_CLASS} />
         <input name="areaSqm" type="number" min="0" placeholder="Area sqm" className={FACILITY_FIELD_CLASS} />
@@ -7012,13 +7065,15 @@ function BuildingForm({ sites, onSubmit, saving }: { sites: any[]; onSubmit: (fo
     <form onSubmit={handleSubmit} className="min-w-0 rounded-lg border border-white/80 bg-white p-5 shadow-lift">
       <h3 className="text-xl font-black">Add Building</h3>
       <div className="mt-4 grid min-w-0 gap-3">
-        <input name="code" placeholder="Building code" className={FACILITY_FIELD_CLASS} />
-        <input name="name" placeholder="Building name" className={FACILITY_FIELD_CLASS} />
-        <select name="siteId" className={FACILITY_FIELD_CLASS}>
-          <option value="">Select site</option>
-          {sites.map((site) => <option key={site.id} value={site.id}>{site.name}</option>)}
-        </select>
-        <input name="site" placeholder="Or new site name" className={FACILITY_FIELD_CLASS} />
+        <div className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 md:grid-cols-3">
+          <select name="siteId" className={FACILITY_FIELD_CLASS}>
+            <option value="">1. Select site</option>
+            {sites.map((site) => <option key={site.id} value={site.id}>{site.name}</option>)}
+          </select>
+          <input name="code" placeholder="2. Building code" className={FACILITY_FIELD_CLASS} />
+          <input name="name" placeholder="3. Building name" className={FACILITY_FIELD_CLASS} />
+        </div>
+        <input name="site" placeholder="Or type new site name" className={FACILITY_FIELD_CLASS} />
         <input name="floors" type="number" min="0" placeholder="Floors" className={FACILITY_FIELD_CLASS} />
         <input name="areaSqm" type="number" min="0" placeholder="Area sqm" className={FACILITY_FIELD_CLASS} />
         <button disabled={saving} className="h-11 rounded-lg bg-ink font-black text-white disabled:bg-slate-400">{saving ? "Saving..." : "Save Building"}</button>
@@ -7039,13 +7094,15 @@ function SpaceForm({ buildings, onSubmit, saving }: { buildings: any[]; onSubmit
     <form onSubmit={handleSubmit} className="min-w-0 rounded-lg border border-white/80 bg-white p-5 shadow-lift">
       <h3 className="text-xl font-black">Add Space</h3>
       <div className="mt-4 grid min-w-0 gap-3">
-        <input name="name" placeholder="Space / room name" className={FACILITY_FIELD_CLASS} />
-        <select name="buildingId" className={FACILITY_FIELD_CLASS}>
-          <option value="">Select building</option>
-          {buildings.map((building) => <option key={building.id} value={building.id}>{building.code} - {building.name}</option>)}
-        </select>
+        <div className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 md:grid-cols-3">
+          <select name="buildingId" className={FACILITY_FIELD_CLASS}>
+            <option value="">1. Select building</option>
+            {buildings.map((building) => <option key={building.id} value={building.id}>{building.code} - {building.name}</option>)}
+          </select>
+          <input name="floor" placeholder="2. Floor" className={FACILITY_FIELD_CLASS} />
+          <input name="name" placeholder="3. Room / space name" className={FACILITY_FIELD_CLASS} />
+        </div>
         <input name="buildingCode" placeholder="Or building code" className={FACILITY_FIELD_CLASS} />
-        <input name="floor" placeholder="Floor" className={FACILITY_FIELD_CLASS} />
         <input name="type" placeholder="Space type" className={FACILITY_FIELD_CLASS} />
         <input name="capacity" type="number" min="0" placeholder="Capacity" className={FACILITY_FIELD_CLASS} />
         <input name="areaSqm" type="number" min="0" placeholder="Area sqm" className={FACILITY_FIELD_CLASS} />
@@ -7397,9 +7454,82 @@ function Locations({ locations, submitLocation, deleteLocation, isAdmin, saving 
         <Panel title="Location Hierarchy" icon={MapPinned}>
           <DataTable rows={hierarchyRows} columns={[["parentLocation", "Parent Location"], ["locations", "Locations"], ["classes", "Classes"], ["residential", "Residential"], ["outOfService", "Out of Service"]]} />
         </Panel>
-        <ActionForm title="Add Location" onSubmit={submitLocation} fields={["location", "description", "locationClass", "parentLocation", "outOfService", "residential"]} saving={saving} />
+        <LocationCreateForm onSubmit={submitLocation} saving={saving} />
       </div>
     </section>
+  );
+}
+
+function locationCodePart(value: string) {
+  return String(value || "")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function LocationCreateForm({ onSubmit, saving }: { onSubmit: (formData: FormData) => void; saving: boolean }) {
+  const [site, setSite] = useState("");
+  const [building, setBuilding] = useState("");
+  const [floor, setFloor] = useState("");
+  const [room, setRoom] = useState("");
+  const generatedCode = [site, building, floor, room].map(locationCodePart).filter(Boolean).join("-");
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+    const code = String(formData.get("location") ?? "").trim() || generatedCode;
+    const description = String(formData.get("description") ?? "").trim() || [site, building, floor, room].filter(Boolean).join(" / ");
+    formData.set("location", code);
+    formData.set("code", code);
+    formData.set("site", site);
+    formData.set("building", building);
+    formData.set("floor", floor);
+    formData.set("room", room);
+    formData.set("parentLocation", [site, building].filter(Boolean).join(" / "));
+    formData.set("description", description);
+    await onSubmit(formData);
+    form.reset();
+    setSite("");
+    setBuilding("");
+    setFloor("");
+    setRoom("");
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="rounded-lg border border-white/80 bg-white p-5 shadow-lift">
+      <h3 className="text-xl font-black">Add Location</h3>
+      <div className="mt-4 grid gap-3">
+        <input name="location" value={generatedCode} readOnly placeholder="Combined location code" className={FACILITY_FIELD_CLASS} />
+        <div className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 md:grid-cols-4">
+          <input value={site} onChange={(event) => setSite(event.target.value)} placeholder="1. Site" className={FACILITY_FIELD_CLASS} />
+          <input value={building} onChange={(event) => setBuilding(event.target.value)} placeholder="2. Building" className={FACILITY_FIELD_CLASS} />
+          <input value={floor} onChange={(event) => setFloor(event.target.value)} placeholder="3. Floor" className={FACILITY_FIELD_CLASS} />
+          <input value={room} onChange={(event) => setRoom(event.target.value)} placeholder="4. Room" className={FACILITY_FIELD_CLASS} />
+        </div>
+        <input name="description" placeholder="Description" className={FACILITY_FIELD_CLASS} />
+        <select name="locationClass" defaultValue="Facility Location" className={FACILITY_FIELD_CLASS}>
+          <option>Facility Location</option>
+          <option>Housing Location</option>
+          <option>Non Housing Location</option>
+          <option>Room</option>
+          <option>Building</option>
+          <option>Service Area</option>
+        </select>
+        <div className="grid gap-3 md:grid-cols-2">
+          <select name="outOfService" defaultValue="NO" className={FACILITY_FIELD_CLASS}>
+            <option value="NO">In service</option>
+            <option value="YES">Out of service</option>
+          </select>
+          <select name="residential" defaultValue="NO" className={FACILITY_FIELD_CLASS}>
+            <option value="NO">Non residential</option>
+            <option value="YES">Residential / housing</option>
+          </select>
+        </div>
+        <button disabled={saving || !generatedCode} className="h-11 rounded-lg bg-ink font-black text-white disabled:bg-slate-400">{saving ? "Saving..." : "Save Location"}</button>
+      </div>
+    </form>
   );
 }
 
