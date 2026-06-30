@@ -3955,6 +3955,7 @@ function ServiceRequestForm({ title, request, services, categories, departments,
   const initialLocationCode = useMemo(() => resolveLocationCode(activeLocations, request?.location ?? ""), [activeLocations, request?.location]);
   const initialLocation = activeLocations.find((location) => location.code === initialLocationCode);
   const formClass = mode === "modal" ? "" : "rounded-lg border border-white/80 bg-white p-5 shadow-lift";
+  const compact = mode === "modal";
   const [priority, setPriority] = useState(request?.priority ?? "MEDIUM");
   const [departmentCode, setDepartmentCode] = useState(request?.departmentCode ?? "");
   const [serviceCode, setServiceCode] = useState(request?.serviceCode ?? "");
@@ -4084,21 +4085,21 @@ function ServiceRequestForm({ title, request, services, categories, departments,
   return (
     <form onSubmit={handleSubmit} className={formClass}>
       {title ? <h3 className="text-xl font-black">{title}</h3> : null}
-      <div className={`${title ? "mt-4" : ""} grid gap-4`}>
-        <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 text-center text-sm font-bold text-slate-500">
+      <div className={`${title ? compact ? "mt-2" : "mt-4" : ""} grid ${compact ? "gap-2 xl:grid-cols-2" : "gap-4"}`}>
+        <div className={`${compact ? "hidden" : "rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 text-sm"} text-center font-bold text-slate-500`}>
           Upload images or files by drag and drop, or paste links below.
         </div>
-        <label className="flex items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm font-black text-amber-800">
+        <label className={`flex items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 ${compact ? "p-2 text-xs" : "p-3 text-sm"} font-black text-amber-800`}>
           <span>Incident / Case</span>
           <input type="hidden" name="isIncidentCase" value="false" />
           <input type="checkbox" name="isIncidentCase" value="true" defaultChecked={Boolean(request?.isIncidentCase)} />
         </label>
         <input name="title" defaultValue={request?.title ?? ""} placeholder="Title" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
-        <label className="grid gap-2 text-sm font-bold text-slate-600">
+        <label className={`grid gap-1 text-sm font-bold text-slate-600 ${compact ? "xl:col-span-2" : ""}`}>
           Description
-          <textarea name="description" defaultValue={request?.description ?? ""} placeholder="Describe the issue" className="min-h-24 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />
+          <textarea name="description" defaultValue={request?.description ?? ""} placeholder="Describe the issue" className={`${compact ? "min-h-16" : "min-h-24"} rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon`} />
         </label>
-        <div className="flex flex-wrap items-center gap-2 rounded-lg bg-slate-50 p-3">
+        <div className={`flex flex-wrap items-center gap-2 rounded-lg bg-slate-50 ${compact ? "p-2 xl:col-span-2" : "p-3"}`}>
           <span className="text-sm font-black text-slate-600">Priority</span>
           {priorities.map((item) => (
             <button
@@ -4113,7 +4114,7 @@ function ServiceRequestForm({ title, request, services, categories, departments,
         </div>
         <input type="hidden" name="priority" value={priority} />
         <input type="hidden" name="location" value={locationValue} />
-        <div className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 md:grid-cols-3">
+        <div className={`grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 md:grid-cols-3 ${compact ? "xl:col-span-2" : ""}`}>
           <SearchableDropdownField
             value={siteValue}
             placeholder="1. Site"
@@ -4195,7 +4196,7 @@ function ServiceRequestForm({ title, request, services, categories, departments,
             {filteredServices.map((service) => <option key={service.id} value={service.code}>{service.code} - {service.name}</option>)}
           </select>
         </div>
-        <label className="grid gap-2 text-sm font-bold text-slate-600">
+        <label className={`grid gap-1 text-sm font-bold text-slate-600 ${compact ? "xl:col-span-2" : ""}`}>
           Related Asset
           <LocationAssetSelect
             name="assetTag"
@@ -4216,9 +4217,11 @@ function ServiceRequestForm({ title, request, services, categories, departments,
         )}
         {!request && <input type="hidden" name="status" value="NEW" />}
         <input type="hidden" name="assignedTeamCode" value={selectedTeamCode || request?.assignedTeamCode || ""} />
-        <ImageUploadField name="attachmentUrls" defaultValue={request?.attachmentUrls ?? ""} />
+        <div className={compact ? "xl:col-span-2" : ""}>
+          <ImageUploadField name="attachmentUrls" defaultValue={request?.attachmentUrls ?? ""} />
+        </div>
         {request && <textarea name="rejectionReason" defaultValue={request?.rejectionReason ?? ""} placeholder="Reject / close reason" className="min-h-20 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />}
-        <div className="flex justify-end gap-3">
+        <div className={`flex justify-end gap-3 ${compact ? "xl:col-span-2" : ""}`}>
           <button type="submit" disabled={saving} className="h-11 rounded-lg bg-ink px-5 font-black text-white disabled:bg-slate-400">{saving ? "Saving..." : "Save"}</button>
         </div>
       </div>
@@ -4228,15 +4231,15 @@ function ServiceRequestForm({ title, request, services, categories, departments,
 
 function RequestModalShell({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/45 p-4 pt-20 backdrop-blur-sm">
-      <div className="max-h-[86vh] w-full max-w-5xl overflow-hidden rounded-lg border border-slate-200 bg-white shadow-2xl">
-        <div className="flex items-center justify-between bg-ink px-4 py-3 text-white">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-hidden bg-slate-900/45 p-2 pt-8 backdrop-blur-sm lg:p-4 lg:pt-10">
+      <div className="max-h-[94vh] w-full max-w-[min(1500px,98vw)] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-2xl">
+        <div className="flex items-center justify-between bg-ink px-4 py-2.5 text-white">
           <h3 className="text-sm font-black">{title}</h3>
           <div className="flex gap-2">
             <button type="button" onClick={onClose} className="rounded-lg border border-cyan-400 px-3 py-2 text-xs font-black text-cyan-300">Cancel</button>
           </div>
         </div>
-        <div className="max-h-[calc(86vh-56px)] overflow-auto p-5">{children}</div>
+        <div className="max-h-[calc(94vh-44px)] overflow-y-auto overflow-x-hidden p-3 lg:p-4">{children}</div>
       </div>
     </div>
   );
@@ -9398,7 +9401,7 @@ function HousingOperations({
       )}
 
       {activePanel === "bookings" && (
-        <section className="grid gap-5 xl:grid-cols-[1fr_380px]">
+        <section className="grid gap-5 xl:grid-cols-[1fr_minmax(500px,0.72fr)]">
           <div className="grid gap-3">
             {canManage && (
               <div className="flex flex-wrap gap-2 rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
@@ -10263,7 +10266,7 @@ function HousingBookingForm({ rooms, beds, residents, locationOptions, nationali
       </div>
       <select name="priority" className={HOUSING_FIELD_CLASS}><option>LOW</option><option>MEDIUM</option><option>HIGH</option><option>CRITICAL</option></select>
       <ImageUploadField name="attachmentUrls" />
-      <textarea name="notes" placeholder="Booking request, transfer reason, blacklist/no-show comments, approval justification" className="min-h-24 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />
+      <textarea name="notes" placeholder="Booking request, transfer reason, blacklist/no-show comments, approval justification" className="min-h-16 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />
     </HousingForm>
   );
 }
@@ -10474,11 +10477,11 @@ function HousingForm({ title, type, saving, onSubmit, children }: { title: strin
     form.reset();
   }
   return (
-    <form onSubmit={handleSubmit} className="rounded-lg border border-white/80 bg-white p-5 shadow-lift">
+    <form onSubmit={handleSubmit} className="rounded-lg border border-white/80 bg-white p-4 shadow-lift">
       <input type="hidden" name="type" value={type} />
-      <h3 className="text-xl font-black">{title}</h3>
-      <p className="mt-1 text-sm font-bold text-slate-500">Fields are flexible; fill what is available and the system completes IDs/status.</p>
-      <div className="mt-4 grid gap-3">
+      <h3 className="text-lg font-black leading-tight">{title}</h3>
+      <p className="mt-1 text-xs font-bold text-slate-500">Fields are flexible; fill what is available and the system completes IDs/status.</p>
+      <div className="mt-3 grid gap-2.5">
         {children}
         <button disabled={saving} className="h-11 rounded-lg bg-ink font-black text-white disabled:bg-slate-400">{saving ? "Saving..." : "Save"}</button>
       </div>

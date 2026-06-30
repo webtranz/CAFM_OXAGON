@@ -26,6 +26,7 @@ function departmentValues(user: OperatingUser) {
 const INITIAL_LOAD_LIMIT = 100;
 const INITIAL_REFERENCE_LIMIT = 200;
 const LOCATION_REFERENCE_LIMIT = 20000;
+const FACILITY_REFERENCE_LIMIT = 20000;
 
 export async function getOperatingData(user: OperatingUser = null) {
   if (!process.env.DATABASE_URL) {
@@ -64,9 +65,9 @@ export async function getOperatingData(user: OperatingUser = null) {
     const visibleUsersWhere = kind === "admin" ? {} : { OR: [{ department: { in: departmentsForUser } }, { id: user?.id || "" }] };
 
     const [sites, buildings, spaces, assets, requests, workOrders, workOrdersTotal, inventory, inspections, alerts, teams, services, categories, ppms, ppmsTotal, users, permissions, departments, employees, rolePermissions, locations, jobPlans, jobPlansTotal, roles, auditLogs, complianceCertificates, documentUploads, shifts, rotations, roster, housingProperties, housingBlocks, housingRooms, housingBeds, housingResidents, housingBookings, housingInspections, housingAssets, housingInventory, housingApprovals, housingNotifications, housingNotificationSettings, housingHistory] = await Promise.all([
-      prisma.site.findMany({ include: { buildings: { take: 10, orderBy: { code: "asc" } } }, orderBy: { name: "asc" }, take: INITIAL_REFERENCE_LIMIT }),
-      prisma.building.findMany({ include: { site: true }, orderBy: { code: "asc" }, take: INITIAL_REFERENCE_LIMIT }),
-      prisma.space.findMany({ include: { building: { include: { site: true } } }, orderBy: [{ building: { code: "asc" } }, { floor: "asc" }, { name: "asc" }], take: INITIAL_REFERENCE_LIMIT }),
+      prisma.site.findMany({ include: { buildings: { take: 1000, orderBy: { code: "asc" } } }, orderBy: { name: "asc" }, take: FACILITY_REFERENCE_LIMIT }),
+      prisma.building.findMany({ include: { site: true }, orderBy: { code: "asc" }, take: FACILITY_REFERENCE_LIMIT }),
+      prisma.space.findMany({ include: { building: { include: { site: true } } }, orderBy: [{ building: { code: "asc" } }, { floor: "asc" }, { name: "asc" }], take: FACILITY_REFERENCE_LIMIT }),
       prisma.asset.findMany({
         where: visibleAssetWhere,
         orderBy: [{ tag: "asc" }],
