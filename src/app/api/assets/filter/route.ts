@@ -98,6 +98,8 @@ export async function GET(request: Request) {
   const locationQuery = url.searchParams.get("locationQuery")?.trim() || "";
   const locationScope = url.searchParams.get("locationScope")?.trim() || "";
   const classValue = url.searchParams.get("class")?.trim() || "";
+  const assetGroup = url.searchParams.get("assetGroup")?.trim() || "";
+  const department = url.searchParams.get("department")?.trim() || "";
   const status = url.searchParams.get("status")?.trim() || "";
   const pageInput = Number(url.searchParams.get("page") || 1);
   const pageSizeInput = Number(url.searchParams.get("pageSize") || 100);
@@ -134,6 +136,28 @@ export async function GET(request: Request) {
     ...(status ? { assetStatusText: status } : {}),
     ...(role === "supervisor" || role === "technician" ? { departmentCode: user?.department || "__none__" } : {}),
   };
+  if (url.searchParams.get("facets") === "1") {
+    const scopedWhere = role === "supervisor" || role === "technician" ? { departmentCode: user?.department || "__none__" } : {};
+    const [groupRows, categoryRows, classRows, departmentRows, departmentDescRows, statusRows] = await Promise.all([
+      prisma.asset.findMany({ where: scopedWhere, distinct: ["assetGroup"], select: { assetGroup: true }, orderBy: { assetGroup: "asc" }, take: 20000 }),
+      prisma.asset.findMany({ where: scopedWhere, distinct: ["category"], select: { category: true }, orderBy: { category: "asc" }, take: 20000 }),
+      prisma.asset.findMany({ where: scopedWhere, distinct: ["classCode"], select: { classCode: true }, orderBy: { classCode: "asc" }, take: 20000 }),
+      prisma.asset.findMany({ where: scopedWhere, distinct: ["departmentCode"], select: { departmentCode: true }, orderBy: { departmentCode: "asc" }, take: 20000 }),
+      prisma.asset.findMany({ where: scopedWhere, distinct: ["departmentDesc"], select: { departmentDesc: true }, orderBy: { departmentDesc: "asc" }, take: 20000 }),
+      prisma.asset.findMany({ where: scopedWhere, distinct: ["assetStatusText"], select: { assetStatusText: true }, orderBy: { assetStatusText: "asc" }, take: 20000 }),
+    ]);
+    const assetGroups = Array.from(new Set([
+      ...groupRows.map((row) => row.assetGroup),
+      ...categoryRows.map((row) => row.category),
+      ...classRows.map((row) => row.classCode),
+    ].map((item) => String(item || "").trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }));
+    const departments = Array.from(new Set([
+      ...departmentRows.map((row) => row.departmentCode),
+      ...departmentDescRows.map((row) => row.departmentDesc),
+    ].map((item) => String(item || "").trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }));
+    const statuses = Array.from(new Set(statusRows.map((row) => String(row.assetStatusText || "").trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }));
+    return NextResponse.json({ assetGroups, departments, statuses });
+  }
   const andFilters: any[] = [];
   const wantsUndefinedLocation = locationCode === "__unassigned__" || locationCode.toLowerCase() === "unassigned" || locationQuery.toLowerCase() === "unassigned";
   if (wantsUndefinedLocation) {
@@ -236,6 +260,12 @@ export async function GET(request: Request) {
   });
   if (classValue) {
     andFilters.push({ OR: [{ classCode: classValue }, { category: classValue }, { assetGroup: classValue }] });
+  }
+  if (assetGroup) {
+    andFilters.push({ OR: [{ assetGroup }, { category: assetGroup }, { classCode: assetGroup }] });
+  }
+  if (department) {
+    andFilters.push({ OR: [{ departmentCode: department }, { departmentDesc: { contains: department, mode: "insensitive" } }] });
   }
   if (andFilters.length) where.AND = andFilters;
   const [total, assets] = await Promise.all([

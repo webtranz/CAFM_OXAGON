@@ -1203,6 +1203,7 @@ export function CafmConsole({ data, user, deferInitialData = false }: { data: Co
               teams={records.teams}
               users={records.users}
               locations={records.locations}
+              departments={records.departments}
               canManageAssets={can("assets.manage")}
               isAdmin={isAdmin}
               deleteAsset={(id) => deleteRecord(`/api/assets/${id}`, "Asset deleted.")}
@@ -1880,6 +1881,7 @@ function Assets({
   teams,
   users,
   locations,
+  departments,
   canManageAssets,
   isAdmin,
   deleteAsset,
@@ -1898,6 +1900,7 @@ function Assets({
   teams: any[];
   users: any[];
   locations: any[];
+  departments: any[];
   canManageAssets: boolean;
   isAdmin: boolean;
   deleteAsset: (id: string) => void;
@@ -1914,8 +1917,11 @@ function Assets({
   const [locationSearch, setLocationSearch] = useState("");
   const [locationScopeFilter, setLocationScopeFilter] = useState("");
   const [classFilter, setClassFilter] = useState("");
+  const [assetGroupFilter, setAssetGroupFilter] = useState("");
+  const [departmentFilter, setDepartmentFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
+  const [assetFacets, setAssetFacets] = useState<{ assetGroups: string[]; departments: string[]; statuses: string[] }>({ assetGroups: [], departments: [], statuses: [] });
   const [selectedAssetIds, setSelectedAssetIds] = useState<Set<string>>(new Set());
   const [page, setPage] = useState(1);
   const [assetRowsSource, setAssetRowsSource] = useState<any[]>(assets);
@@ -1975,12 +1981,39 @@ function Assets({
   ];
   const locationOptions = Array.from(new Map(locationOptionEntries).values());
   const classOptions = Array.from(new Set([...assetRows.map((asset) => asset.classCode || asset.category).filter(Boolean)]));
-  const statusOptions = Array.from(new Set(assetRows.map((asset) => asset.assetStatusText).filter(Boolean)));
+  const assetGroupOptions = Array.from(new Set([
+    ...assetFacets.assetGroups,
+    ...assetRows.flatMap((asset) => [asset.assetGroup, asset.category, asset.classCode]).filter(Boolean),
+  ])).sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: "base" }));
+  const departmentOptions = Array.from(new Set([
+    ...departments.flatMap((department) => [department.code, department.name]).filter(Boolean),
+    ...assetFacets.departments,
+    ...assetRows.flatMap((asset) => [asset.departmentCode, asset.departmentDesc]).filter(Boolean),
+  ])).sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: "base" }));
+  const statusOptions = Array.from(new Set([...assetFacets.statuses, ...assetRows.map((asset) => asset.assetStatusText).filter(Boolean)]));
 
   useEffect(() => {
     setPage(1);
     assetScrollRef.current?.scrollTo({ top: 0 });
-  }, [query, filterField, filterValue, locationFilter, locationSearch, locationScopeFilter, classFilter, statusFilter, columnFilters]);
+  }, [query, filterField, filterValue, locationFilter, locationSearch, locationScopeFilter, classFilter, assetGroupFilter, departmentFilter, statusFilter, columnFilters]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch("/api/assets/filter?facets=1", { cache: "no-store", signal: controller.signal })
+      .then((response) => response.ok ? response.json() : null)
+      .then((result) => {
+        if (!result) return;
+        setAssetFacets({
+          assetGroups: Array.isArray(result.assetGroups) ? result.assetGroups : [],
+          departments: Array.isArray(result.departments) ? result.departments : [],
+          statuses: Array.isArray(result.statuses) ? result.statuses : [],
+        });
+      })
+      .catch((error) => {
+        if (!(error instanceof DOMException && error.name === "AbortError")) console.error(error);
+      });
+    return () => controller.abort();
+  }, []);
 
   useEffect(() => {
     setAssetRowsSource(assets);
@@ -2006,6 +2039,8 @@ function Assets({
           locationQuery: locationSearch,
           locationScope: locationScopeFilter,
           class: classFilter,
+          assetGroup: assetGroupFilter,
+          department: departmentFilter,
           status: statusFilter,
         });
         Object.entries(columnFilters).forEach(([field, value]) => {
@@ -2030,7 +2065,7 @@ function Assets({
       controller.abort();
       window.clearTimeout(timer);
     };
-  }, [page, query, filterField, filterValue, locationFilter, locationSearch, locationScopeFilter, classFilter, statusFilter, columnFilters]);
+  }, [page, query, filterField, filterValue, locationFilter, locationSearch, locationScopeFilter, classFilter, assetGroupFilter, departmentFilter, statusFilter, columnFilters]);
 
   function handleAssetScroll(event: UIEvent<HTMLDivElement>) {
     const element = event.currentTarget;
@@ -2133,7 +2168,7 @@ function Assets({
             </div>
           </div>
         )}
-        <div className="mb-4 grid gap-3 rounded-lg bg-slate-50 p-3 md:grid-cols-6">
+        <div className="mb-4 grid gap-3 rounded-lg bg-slate-50 p-3 md:grid-cols-2 xl:grid-cols-8">
           <select value={locationFilter} onChange={(event) => setLocationFilter(event.target.value)} className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold">
             <option value="">LOCATION</option>
             <option value="__unassigned__">Unassigned</option>
@@ -2149,11 +2184,19 @@ function Assets({
             <option value="">CLASS / CATEGORY</option>
             {classOptions.map((assetClass) => <option key={assetClass} value={assetClass}>{assetClass}</option>)}
           </select>
+          <select value={assetGroupFilter} onChange={(event) => setAssetGroupFilter(event.target.value)} className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold">
+            <option value="">ASSET GROUP</option>
+            {assetGroupOptions.map((group) => <option key={group} value={group}>{group}</option>)}
+          </select>
+          <select value={departmentFilter} onChange={(event) => setDepartmentFilter(event.target.value)} className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold">
+            <option value="">DEPARTMENT</option>
+            {departmentOptions.map((department) => <option key={department} value={department}>{department}</option>)}
+          </select>
           <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold">
             <option value="">ASSETSTATUS</option>
             {statusOptions.map((status) => <option key={status} value={status}>{status}</option>)}
           </select>
-          <button type="button" onClick={() => { setLocationFilter(""); setLocationSearch(""); setLocationScopeFilter(""); setClassFilter(""); setStatusFilter(""); setColumnFilters({}); setFilterValue(""); }} className="h-11 rounded-lg bg-white px-3 text-sm font-black text-lagoon">Clear Filters</button>
+          <button type="button" onClick={() => { setLocationFilter(""); setLocationSearch(""); setLocationScopeFilter(""); setClassFilter(""); setAssetGroupFilter(""); setDepartmentFilter(""); setStatusFilter(""); setColumnFilters({}); setFilterValue(""); }} className="h-11 rounded-lg bg-white px-3 text-sm font-black text-lagoon">Clear Filters</button>
         </div>
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2 text-sm font-black text-slate-600">
           <span>Showing {visibleAssets.length.toLocaleString()} of {assetTotal.toLocaleString()} assets / Selected {selectedAssetIds.size.toLocaleString()} / Column filters {activeColumnFilterCount}</span>
