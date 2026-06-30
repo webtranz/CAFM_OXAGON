@@ -3723,6 +3723,15 @@ function locationSelectLabel(location: any) {
   return [serviceRequestLocationLabel(location), location.locationClass || location.type].filter(Boolean).join(" / ");
 }
 
+function shortLocationLabel(location: any) {
+  const detail = [location.room, location.floor, location.description]
+    .map((part) => String(part || "").trim())
+    .filter((part, index, rows) => part && part.toLowerCase() !== "unassigned" && rows.indexOf(part) === index)
+    .slice(0, 2)
+    .join(" / ");
+  return [location.code, detail].filter(Boolean).join(" - ");
+}
+
 function locationOptionDetail(location: any) {
   return [location.building, location.floor, location.room, location.description, location.locationClass || location.type].filter(Boolean).join(" / ");
 }
@@ -3998,14 +4007,15 @@ function ServiceRequestForm({ title, request, services, categories, departments,
     () => activeLocations
       .filter((location) =>
         (!siteValue || location.site === siteValue) &&
-        (!parentLocationValue || location.parentLocation === parentLocationValue || location.zone === parentLocationValue || location.code === parentLocationValue) &&
-        (!buildingValue || location.building === buildingValue) &&
-        (!floorValue || location.floor === floorValue),
+        (!buildingValue || location.building === buildingValue),
       )
       .sort((first, second) => serviceRequestLocationLabel(first).localeCompare(serviceRequestLocationLabel(second), undefined, { numeric: true, sensitivity: "base" })),
-    [activeLocations, siteValue, parentLocationValue, buildingValue, floorValue],
+    [activeLocations, siteValue, buildingValue],
   );
-  const allLocationDropdownOptions = useMemo(() => activeLocations.map((location) => ({ value: location.code, label: locationSelectLabel(location) })), [activeLocations]);
+  const blockLocationOptions = useMemo(
+    () => finalLocationOptions.map((location) => ({ value: location.code, label: shortLocationLabel(location) })),
+    [finalLocationOptions],
+  );
   const selectedLocation = activeLocations.find((location) => location.code === locationCodeValue);
   const locationValue = selectedLocation ? serviceRequestLocationLabel(selectedLocation) : "";
   const filteredAssets = useMemo(() => scopedAssetOptions(assets, departmentCode, selectedTeamCode, locationValue), [assets, departmentCode, selectedTeamCode, locationValue]);
@@ -4103,69 +4113,54 @@ function ServiceRequestForm({ title, request, services, categories, departments,
         </div>
         <input type="hidden" name="priority" value={priority} />
         <input type="hidden" name="location" value={locationValue} />
-        <div className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 md:grid-cols-2">
+        <div className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 md:grid-cols-3">
           <SearchableDropdownField
-            value={locationSearchValue}
-            placeholder="1. Location"
-            options={allLocationDropdownOptions}
-            className="md:col-span-2"
+            value={siteValue}
+            placeholder="1. Site"
+            options={siteDropdownOptions}
             onInput={(nextValue) => {
-              const selected = findLocationBySearch(activeLocations, nextValue);
-              setLocationSearchValue(nextValue);
+              setSiteValue(nextValue);
+              setBuildingValue("");
               setLocationCodeValue("");
+              setLocationSearchValue("");
+            }}
+            onSelect={(option) => {
+              setSiteValue(option.value);
+              setBuildingValue("");
+              setLocationCodeValue("");
+              setLocationSearchValue("");
+            }}
+          />
+          <SearchableDropdownField
+            value={buildingValue}
+            placeholder="2. Building"
+            options={buildingDropdownOptions}
+            disabled={!siteValue}
+            onInput={(nextValue) => {
+              setBuildingValue(nextValue);
+              setLocationCodeValue("");
+              setLocationSearchValue("");
+            }}
+            onSelect={(option) => {
+              setBuildingValue(option.value);
+              setLocationCodeValue("");
+              setLocationSearchValue("");
+            }}
+          />
+          <SearchableDropdownField
+            value={locationCodeValue}
+            placeholder="3. Block / Room"
+            options={blockLocationOptions}
+            disabled={!siteValue || !buildingValue}
+            onInput={(nextValue) => {
+              setLocationCodeValue(nextValue);
+              setLocationSearchValue(nextValue);
+              const selected = activeLocations.find((location) => location.code === nextValue);
               if (selected) applyLocationSelection(selected);
             }}
             onSelect={(option) => {
               const selected = activeLocations.find((location) => location.code === option.value);
               if (selected) applyLocationSelection(selected);
-            }}
-          />
-          <SearchableDropdownField
-            value={parentLocationValue}
-            placeholder="2. Parent Location"
-            options={parentLocationDropdownOptions}
-            disabled={!locationCodeValue}
-            onInput={(nextValue) => {
-              setParentLocationValue(nextValue);
-            }}
-            onSelect={(option) => {
-              setParentLocationValue(option.value);
-            }}
-          />
-          <SearchableDropdownField
-            value={siteValue}
-            placeholder="3. Site"
-            options={siteDropdownOptions}
-            disabled={!locationCodeValue}
-            onInput={(nextValue) => {
-              setSiteValue(nextValue);
-            }}
-            onSelect={(option) => {
-              setSiteValue(option.value);
-            }}
-          />
-          <SearchableDropdownField
-            value={buildingValue}
-            placeholder="4. Building / Area"
-            options={buildingDropdownOptions}
-            disabled={!locationCodeValue}
-            onInput={(nextValue) => {
-              setBuildingValue(nextValue);
-            }}
-            onSelect={(option) => {
-              setBuildingValue(option.value);
-            }}
-          />
-          <SearchableDropdownField
-            value={floorValue}
-            placeholder="5. Floor / Level"
-            options={floorDropdownOptions}
-            disabled={!locationCodeValue}
-            onInput={(nextValue) => {
-              setFloorValue(nextValue);
-            }}
-            onSelect={(option) => {
-              setFloorValue(option.value);
             }}
           />
         </div>
@@ -5043,22 +5038,25 @@ function WorkOrderForm({ title, work, data, onSubmit, saving }: { title: string;
     [parentLocationRows],
   );
   const buildingRows = useMemo(
-    () => activeLocations.filter((location) => (!siteValue || location.site === siteValue) && (!parentLocationValue || location.parentLocation === parentLocationValue || location.zone === parentLocationValue || location.code === parentLocationValue)),
-    [activeLocations, siteValue, parentLocationValue],
+    () => activeLocations.filter((location) => !siteValue || location.site === siteValue),
+    [activeLocations, siteValue],
   );
   const buildingDropdownOptions = useMemo(
     () => uniqueLocationOptions(buildingRows, (location) => location.building, (location, value) => [value, location.description, location.locationClass].filter(Boolean).join(" - ")),
     [buildingRows],
   );
   const floorRows = useMemo(
-    () => activeLocations.filter((location) => (!siteValue || location.site === siteValue) && (!parentLocationValue || location.parentLocation === parentLocationValue || location.zone === parentLocationValue || location.code === parentLocationValue) && (!buildingValue || location.building === buildingValue)),
-    [activeLocations, siteValue, parentLocationValue, buildingValue],
+    () => activeLocations.filter((location) => (!siteValue || location.site === siteValue) && (!buildingValue || location.building === buildingValue)),
+    [activeLocations, siteValue, buildingValue],
   );
   const floorDropdownOptions = useMemo(
     () => uniqueLocationOptions(floorRows, (location) => location.floor, (location, value) => [value, location.description, location.locationClass].filter(Boolean).join(" - ")),
     [floorRows],
   );
-  const allLocationDropdownOptions = useMemo(() => activeLocations.map((location) => ({ value: location.code, label: locationSelectLabel(location) })), [activeLocations]);
+  const blockLocationOptions = useMemo(
+    () => floorRows.map((location) => ({ value: location.code, label: shortLocationLabel(location) })).sort((first, second) => first.label.localeCompare(second.label, undefined, { numeric: true, sensitivity: "base" })),
+    [floorRows],
+  );
 
   function applyLocationSelection(location: any) {
     if (!location) return;
@@ -5083,27 +5081,13 @@ function WorkOrderForm({ title, work, data, onSubmit, saving }: { title: string;
         <input name="title" defaultValue={work?.title ?? ""} placeholder="Title" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
         <input name="type" defaultValue={work?.type ?? ""} placeholder="Work type" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
         <input type="hidden" name="sourceLocation" value={selectedLocationLabel} />
-        <div className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 md:grid-cols-2">
-          <SearchableDropdownField
-            value={locationSearchValue}
-            placeholder="1. Select location code / site / building / room"
-            options={allLocationDropdownOptions}
-            className="md:col-span-2"
-            onInput={(nextValue) => {
-              const selected = findLocationBySearch(activeLocations, nextValue);
-              setLocationSearchValue(nextValue);
-              setLocationCodeValue("");
-              if (selected) applyLocationSelection(selected);
-            }}
-            onSelect={(option) => {
-              const selected = activeLocations.find((location) => location.code === option.value);
-              if (selected) applyLocationSelection(selected);
-            }}
-          />
-          <SearchableDropdownField value={parentLocationValue} placeholder="2. Parent / Zone" options={parentLocationDropdownOptions} disabled={!locationCodeValue} onInput={setParentLocationValue} onSelect={(option) => setParentLocationValue(option.value)} />
-          <SearchableDropdownField value={siteValue} placeholder="3. Site" options={siteDropdownOptions} disabled={!locationCodeValue} onInput={setSiteValue} onSelect={(option) => setSiteValue(option.value)} />
-          <SearchableDropdownField value={buildingValue} placeholder="4. Building" options={buildingDropdownOptions} disabled={!locationCodeValue} onInput={setBuildingValue} onSelect={(option) => setBuildingValue(option.value)} />
-          <SearchableDropdownField value={floorValue} placeholder="5. Floor" options={floorDropdownOptions} disabled={!locationCodeValue} onInput={setFloorValue} onSelect={(option) => setFloorValue(option.value)} />
+        <div className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 md:grid-cols-3">
+          <SearchableDropdownField value={siteValue} placeholder="1. Site" options={siteDropdownOptions} onInput={(value) => { setSiteValue(value); setBuildingValue(""); setLocationCodeValue(""); setLocationSearchValue(""); }} onSelect={(option) => { setSiteValue(option.value); setBuildingValue(""); setLocationCodeValue(""); setLocationSearchValue(""); }} />
+          <SearchableDropdownField value={buildingValue} placeholder="2. Building" options={buildingDropdownOptions} disabled={!siteValue} onInput={(value) => { setBuildingValue(value); setLocationCodeValue(""); setLocationSearchValue(""); }} onSelect={(option) => { setBuildingValue(option.value); setLocationCodeValue(""); setLocationSearchValue(""); }} />
+          <SearchableDropdownField value={locationCodeValue} placeholder="3. Block / Room" options={blockLocationOptions} disabled={!siteValue || !buildingValue} onInput={(value) => { setLocationCodeValue(value); setLocationSearchValue(value); }} onSelect={(option) => {
+            const selected = activeLocations.find((location) => location.code === option.value);
+            if (selected) applyLocationSelection(selected);
+          }} />
         </div>
         <select key={`asset-type-${selectedAssetTag}`} name="assetType" defaultValue={work?.assetType ?? selectedAsset?.assetGroup ?? selectedAsset?.category ?? ""} className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon">
           <option value="">Select asset type</option>
@@ -10124,20 +10108,21 @@ function HousingLocationDatalist({ id, options }: { id: string; options: Housing
   );
 }
 
+function shortHousingLocationLabel(option: HousingLocationOption) {
+  const detail = [option.room, option.floor].filter(Boolean).join(" / ");
+  const code = String(option.value || option.room || option.label).split(" / ")[0];
+  return [code, detail].filter(Boolean).join(" - ");
+}
+
 function HousingLocationSelect({ options, className = HOUSING_FIELD_CLASS }: { options: HousingLocationOption[]; className?: string }) {
   const [selectedValue, setSelectedValue] = useState("");
   const [site, setSite] = useState("");
   const [building, setBuilding] = useState("");
-  const [floor, setFloor] = useState("");
-  const [room, setRoom] = useState("");
   const sites = useMemo(() => Array.from(new Set(options.map((option) => option.site).filter(Boolean))).sort(), [options]);
   const siteRows = useMemo(() => options.filter((option) => !site || option.site === site), [options, site]);
   const buildings = useMemo(() => Array.from(new Set(siteRows.map((option) => option.building).filter(Boolean))).sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: "base" })), [siteRows]);
   const buildingRows = useMemo(() => siteRows.filter((option) => !building || option.building === building), [siteRows, building]);
-  const floors = useMemo(() => Array.from(new Set(buildingRows.map((option) => option.floor).filter(Boolean))).sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: "base" })), [buildingRows]);
-  const floorRows = useMemo(() => buildingRows.filter((option) => !floor || option.floor === floor), [buildingRows, floor]);
-  const rooms = useMemo(() => Array.from(new Set(floorRows.map((option) => option.room).filter(Boolean))).sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: "base" })), [floorRows]);
-  const filteredOptions = useMemo(() => floorRows.filter((option) => !room || option.room === room), [floorRows, room]);
+  const filteredOptions = useMemo(() => buildingRows, [buildingRows]);
 
   useEffect(() => {
     if (selectedValue && !filteredOptions.some((option) => (option.value || option.label) === selectedValue)) {
@@ -10151,33 +10136,23 @@ function HousingLocationSelect({ options, className = HOUSING_FIELD_CLASS }: { o
     if (!option) return;
     setSite(option.site || "");
     setBuilding(option.building || "");
-    setFloor(option.floor || "");
-    setRoom(option.room || "");
   }
 
   return (
     <div className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
       <input type="hidden" name="facilityLocationCode" value={selectedValue} />
-      <select value={selectedValue} onChange={(event) => chooseOption(event.target.value)} className={className}>
-        <option value="">Combined location code / site / building / floor / room</option>
-        {filteredOptions.map((option) => <option key={option.key} value={option.value || option.label}>{option.label}</option>)}
-      </select>
-      <div className="grid gap-3 md:grid-cols-4">
-        <select value={site} onChange={(event) => { setSite(event.target.value); setBuilding(""); setFloor(""); setRoom(""); setSelectedValue(""); }} className={className}>
-          <option value="">Site</option>
+      <div className="grid gap-3 md:grid-cols-3">
+        <select value={site} onChange={(event) => { setSite(event.target.value); setBuilding(""); setSelectedValue(""); }} className={className}>
+          <option value="">1. Site</option>
           {sites.map((item) => <option key={item} value={item}>{item}</option>)}
         </select>
-        <select value={building} onChange={(event) => { setBuilding(event.target.value); setFloor(""); setRoom(""); setSelectedValue(""); }} className={className}>
-          <option value="">Building / Area</option>
+        <select value={building} onChange={(event) => { setBuilding(event.target.value); setSelectedValue(""); }} className={className} disabled={!site}>
+          <option value="">2. Building</option>
           {buildings.map((item) => <option key={item} value={item}>{item}</option>)}
         </select>
-        <select value={floor} onChange={(event) => { setFloor(event.target.value); setRoom(""); setSelectedValue(""); }} className={className}>
-          <option value="">Floor / Level</option>
-          {floors.map((item) => <option key={item} value={item}>{item}</option>)}
-        </select>
-        <select value={room} onChange={(event) => { setRoom(event.target.value); setSelectedValue(""); }} className={className}>
-          <option value="">Room / Location</option>
-          {rooms.map((item) => <option key={item} value={item}>{item}</option>)}
+        <select value={selectedValue} onChange={(event) => chooseOption(event.target.value)} className={className} disabled={!site || !building}>
+          <option value="">3. Block / Room</option>
+          {filteredOptions.map((option) => <option key={option.key} value={option.value || option.label}>{shortHousingLocationLabel(option)}</option>)}
         </select>
       </div>
     </div>
