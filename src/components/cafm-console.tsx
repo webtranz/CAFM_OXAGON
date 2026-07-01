@@ -2445,12 +2445,12 @@ function AssetLocationCodeSelect({
   const options = Array.from(new Map(locations.filter((location) => location.code).map((location) => [location.code, location])).values());
   const initialLocation = options.find((location) => location.code === defaultValue) || findLocationBySearch(options, defaultValue);
   const [selectedCode, setSelectedCode] = useState(initialLocation?.code || defaultValue);
-  const [siteCode, setSiteCode] = useState(initialLocation?.site || "");
+  const [siteCode, setSiteCode] = useState(hierarchyZoneValueFromRecord(initialLocation) || "");
   const [buildingCode, setBuildingCode] = useState(initialLocation?.building || "");
   const [floor, setFloor] = useState(initialLocation?.floor || "");
   const [room, setRoom] = useState(initialLocation?.room || initialLocation?.code || defaultValue);
-  const siteOptions = useMemo(() => uniqueLocationOptions(options, (location) => location.site, (location, value) => [value, location.description].filter(Boolean).join(" - ")), [options]);
-  const buildingRows = useMemo(() => options.filter((location) => !siteCode || location.site === siteCode), [options, siteCode]);
+  const siteOptions = useMemo(() => uniqueLocationOptions(options, hierarchyZoneValueFromRecord, (location, value) => [value, location.description].filter(Boolean).join(" - ")), [options]);
+  const buildingRows = useMemo(() => options.filter((location) => !siteCode || hierarchyZoneValueFromRecord(location) === siteCode), [options, siteCode]);
   const buildingOptions = useMemo(() => uniqueLocationOptions(buildingRows, (location) => location.building, (location, value) => [value, location.description].filter(Boolean).join(" - ")), [buildingRows]);
   const floorRows = useMemo(() => buildingRows.filter((location) => !buildingCode || location.building === buildingCode), [buildingRows, buildingCode]);
   const floorOptions = useMemo(() => uniqueLocationOptions(floorRows, (location) => location.floor, (location, value) => [value, location.description].filter(Boolean).join(" - ")), [floorRows]);
@@ -2463,7 +2463,7 @@ function AssetLocationCodeSelect({
   function applyLocation(location: any) {
     if (!location) return;
     setSelectedCode(location.code || "");
-    setSiteCode(location.site || "");
+    setSiteCode(hierarchyZoneValueFromRecord(location) || "");
     setBuildingCode(location.building || "");
     setFloor(location.floor || "");
     setRoom(location.room || location.code || "");
@@ -3781,11 +3781,81 @@ function shortLocationLabel(location: any) {
 }
 
 function spValueFromRecord(record: any) {
-  const text = [record?.sp, record?.subProject, record?.zone, record?.parentLocation, record?.site, record?.building, record?.code, record?.description, record?.label]
+  const text = [
+    record?.sp,
+    record?.subProject,
+    record?.phase,
+    record?.zone,
+    record?.parentLocation,
+    record?.site,
+    record?.siteCode,
+    record?.building,
+    record?.buildingCode,
+    record?.code,
+    record?.locationCode,
+    record?.locationDesc,
+    record?.roomLocation,
+    record?.description,
+    record?.label,
+  ]
     .filter(Boolean)
     .join(" ");
   const match = text.match(/\bSP[\s_-]*(\d{1,2})\b/i);
-  return match ? `SP${match[1]}` : "";
+  if (match) return `SP${match[1]}`;
+  return phaseValueFromRecord(record);
+}
+
+function hierarchyZoneValueFromRecord(record: any) {
+  const text = [
+    record?.region,
+    record?.zone,
+    record?.parentLocation,
+    record?.site,
+    record?.siteCode,
+    record?.building,
+    record?.buildingCode,
+    record?.code,
+    record?.locationCode,
+    record?.locationDesc,
+    record?.roomLocation,
+    record?.description,
+    record?.label,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toUpperCase();
+  if (/\bEAST\b|\bE-[A-Z]\d+|\b0169-EAST\b/.test(text)) return "EAST";
+  if (/\bWEST\b|\bW-[A-Z]\d+|\b0169-WEST\b/.test(text)) return "WEST";
+  return String(record?.site || "").trim();
+}
+
+function phaseValueFromRecord(record: any) {
+  const candidates = [
+    record?.phase,
+    record?.sp,
+    record?.building,
+    record?.buildingCode,
+    record?.code,
+    record?.locationCode,
+    record?.zone,
+    record?.parentLocation,
+    record?.locationDesc,
+    record?.roomLocation,
+    record?.description,
+    record?.label,
+  ]
+    .filter(Boolean)
+    .map((value) => String(value).trim().toUpperCase());
+  for (const value of candidates) {
+    const buildingMatch = value.match(/\b[EW]-([A-Z])\d{2,}\b/);
+    if (buildingMatch) return buildingMatch[1];
+    const codeMatch = value.match(/\b(?:EAST|WEST|[EW])-([A-Z])\d{2,}\b/);
+    if (codeMatch) return codeMatch[1];
+    if (/^[A-Z]$/.test(value)) return value;
+    const phaseMatch = value.match(/\bPHASE[\s_-]*([A-Z0-9]+)\b/i);
+    if (phaseMatch) return phaseMatch[1].toUpperCase();
+  }
+  return "";
 }
 
 function locationOptionDetail(location: any) {
@@ -4015,7 +4085,7 @@ function ServiceRequestForm({ title, request, services, categories, departments,
   const [priority, setPriority] = useState(request?.priority ?? "MEDIUM");
   const [departmentCode, setDepartmentCode] = useState(request?.departmentCode ?? "");
   const [serviceCode, setServiceCode] = useState(request?.serviceCode ?? "");
-  const [siteValue, setSiteValue] = useState(initialLocation?.site ?? "");
+  const [siteValue, setSiteValue] = useState(hierarchyZoneValueFromRecord(initialLocation) || "");
   const [spValue, setSpValue] = useState(spValueFromRecord(initialLocation));
   const [parentLocationValue, setParentLocationValue] = useState(initialLocation?.parentLocation || initialLocation?.zone || "");
   const [buildingValue, setBuildingValue] = useState(initialLocation?.building ?? "");
@@ -4037,15 +4107,15 @@ function ServiceRequestForm({ title, request, services, categories, departments,
   const selectedService = services.find((service) => service.code === serviceCode);
   const selectedTeamCode = selectedService?.team?.code || selectedService?.teamCode || teams.find((team) => team.code === departmentCode)?.code || "";
   const siteDropdownOptions = useMemo(
-    () => uniqueLocationOptions(activeLocations, (location) => location.site, (location, value) => [value, locationOptionDetail(location)].filter(Boolean).join(" - ")),
+    () => uniqueLocationOptions(activeLocations, hierarchyZoneValueFromRecord, (location, value) => [value, locationOptionDetail(location)].filter(Boolean).join(" - ")),
     [activeLocations],
   );
-  const parentLocationRows = useMemo(() => activeLocations.filter((location) => !siteValue || location.site === siteValue), [activeLocations, siteValue]);
+  const parentLocationRows = useMemo(() => activeLocations.filter((location) => !siteValue || hierarchyZoneValueFromRecord(location) === siteValue), [activeLocations, siteValue]);
   const parentLocationDropdownOptions = useMemo(
     () => uniqueLocationOptions(parentLocationRows, (location) => location.parentLocation || location.zone || location.code, (location, value) => [value, location.description || location.building, location.locationClass].filter(Boolean).join(" - ")),
     [parentLocationRows],
   );
-  const spRows = useMemo(() => activeLocations.filter((location) => !siteValue || location.site === siteValue), [activeLocations, siteValue]);
+  const spRows = useMemo(() => activeLocations.filter((location) => !siteValue || hierarchyZoneValueFromRecord(location) === siteValue), [activeLocations, siteValue]);
   const spDropdownOptions = useMemo(
     () => uniqueLocationOptions(spRows, spValueFromRecord, (_location, value) => value),
     [spRows],
@@ -4065,7 +4135,7 @@ function ServiceRequestForm({ title, request, services, categories, departments,
     return value === buildingValue || selectedBuildingAliases.has(value);
   };
   const buildingRows = useMemo(
-    () => activeLocations.filter((location) => (!siteValue || location.site === siteValue) && (!spValue || spValueFromRecord(location) === spValue)),
+    () => activeLocations.filter((location) => (!siteValue || hierarchyZoneValueFromRecord(location) === siteValue) && (!spValue || spValueFromRecord(location) === spValue)),
     [activeLocations, siteValue, spValue],
   );
   const buildingDropdownOptions = useMemo(
@@ -4073,7 +4143,7 @@ function ServiceRequestForm({ title, request, services, categories, departments,
       const options = uniqueLocationOptions(buildingRows, (location) => location.building, (location, value) => [value, location.description, location.locationClass].filter(Boolean).join(" - "));
       const seen = new Set(options.map((option) => option.value));
       buildings
-        .filter((building) => !siteValue || building.site?.name === siteValue || building.siteName === siteValue || building.site === siteValue)
+        .filter((building) => !siteValue || hierarchyZoneValueFromRecord(building) === siteValue || building.site?.name === siteValue || building.siteName === siteValue || building.site === siteValue)
         .forEach((building) => {
           const value = String(building.code || building.name || "").trim();
           if (!value || seen.has(value)) return;
@@ -4085,7 +4155,7 @@ function ServiceRequestForm({ title, request, services, categories, departments,
     [buildingRows, buildings, siteValue],
   );
   const floorRows = useMemo(
-    () => activeLocations.filter((location) => (!siteValue || location.site === siteValue) && (!spValue || spValueFromRecord(location) === spValue) && buildingMatchesSelection(location)),
+    () => activeLocations.filter((location) => (!siteValue || hierarchyZoneValueFromRecord(location) === siteValue) && (!spValue || spValueFromRecord(location) === spValue) && buildingMatchesSelection(location)),
     [activeLocations, siteValue, spValue, buildingValue, selectedBuildingAliases],
   );
   const floorDropdownOptions = useMemo(
@@ -4095,7 +4165,7 @@ function ServiceRequestForm({ title, request, services, categories, departments,
   const finalLocationOptions = useMemo(
     () => activeLocations
       .filter((location) =>
-        (!siteValue || location.site === siteValue) &&
+        (!siteValue || hierarchyZoneValueFromRecord(location) === siteValue) &&
         (!spValue || spValueFromRecord(location) === spValue) &&
         buildingMatchesSelection(location),
       )
@@ -4145,7 +4215,8 @@ function ServiceRequestForm({ title, request, services, categories, departments,
     if (!location) return;
     setLocationCodeValue(location.code);
     setLocationSearchValue(locationSelectLabel(location));
-    setSiteValue(location.site || "");
+    setSiteValue(hierarchyZoneValueFromRecord(location) || "");
+    setSpValue(spValueFromRecord(location));
     setParentLocationValue(location.parentLocation || location.zone || location.code || "");
     setBuildingValue(location.building || "");
     setFloorValue(location.floor || "");
@@ -4225,7 +4296,7 @@ function ServiceRequestForm({ title, request, services, categories, departments,
           />
           <SearchableDropdownField
             value={spValue}
-            placeholder="2. SP"
+            placeholder="2. Phase"
             options={spDropdownOptions}
             disabled={!siteValue || !spDropdownOptions.length}
             onInput={(nextValue) => {
@@ -5121,7 +5192,7 @@ function WorkOrderForm({ title, work, data, onSubmit, saving }: { title: string;
   const initialAsset = data.assets.find((asset) => asset.tag === initialAssetTag);
   const initialLocationCode = resolveLocationCode(activeLocations, initialAsset?.locationCode || work?.request?.location || "");
   const initialLocation = activeLocations.find((location) => location.code === initialLocationCode);
-  const [siteValue, setSiteValue] = useState(initialLocation?.site ?? "");
+  const [siteValue, setSiteValue] = useState(hierarchyZoneValueFromRecord(initialLocation) || "");
   const [spValue, setSpValue] = useState(spValueFromRecord(initialLocation));
   const [parentLocationValue, setParentLocationValue] = useState(initialLocation?.parentLocation || initialLocation?.zone || "");
   const [buildingValue, setBuildingValue] = useState(initialLocation?.building ?? initialAsset?.buildingCode ?? "");
@@ -5142,15 +5213,15 @@ function WorkOrderForm({ title, work, data, onSubmit, saving }: { title: string;
   const matchedService = selectedAsset ? data.services.find((service) => service.category === selectedAsset.category || service.category === selectedAsset.assetGroup || service.code === selectedAsset.serviceCode) : null;
   const selectedLocation = selectedAsset ? [selectedAsset.siteCode || selectedAsset.site?.name, selectedAsset.buildingCode || selectedAsset.building?.name, selectedAsset.floor, selectedAsset.room].filter(Boolean).join(" > ") : "";
   const siteDropdownOptions = useMemo(
-    () => uniqueLocationOptions(activeLocations, (location) => location.site, (location, value) => [value, locationOptionDetail(location)].filter(Boolean).join(" - ")),
+    () => uniqueLocationOptions(activeLocations, hierarchyZoneValueFromRecord, (location, value) => [value, locationOptionDetail(location)].filter(Boolean).join(" - ")),
     [activeLocations],
   );
-  const parentLocationRows = useMemo(() => activeLocations.filter((location) => !siteValue || location.site === siteValue), [activeLocations, siteValue]);
+  const parentLocationRows = useMemo(() => activeLocations.filter((location) => !siteValue || hierarchyZoneValueFromRecord(location) === siteValue), [activeLocations, siteValue]);
   const parentLocationDropdownOptions = useMemo(
     () => uniqueLocationOptions(parentLocationRows, (location) => location.parentLocation || location.zone || location.code, (location, value) => [value, location.description || location.building, location.locationClass].filter(Boolean).join(" - ")),
     [parentLocationRows],
   );
-  const spRows = useMemo(() => activeLocations.filter((location) => !siteValue || location.site === siteValue), [activeLocations, siteValue]);
+  const spRows = useMemo(() => activeLocations.filter((location) => !siteValue || hierarchyZoneValueFromRecord(location) === siteValue), [activeLocations, siteValue]);
   const spDropdownOptions = useMemo(
     () => uniqueLocationOptions(spRows, spValueFromRecord, (_location, value) => value),
     [spRows],
@@ -5170,7 +5241,7 @@ function WorkOrderForm({ title, work, data, onSubmit, saving }: { title: string;
     return value === buildingValue || selectedWorkBuildingAliases.has(value);
   };
   const buildingRows = useMemo(
-    () => activeLocations.filter((location) => (!siteValue || location.site === siteValue) && (!spValue || spValueFromRecord(location) === spValue)),
+    () => activeLocations.filter((location) => (!siteValue || hierarchyZoneValueFromRecord(location) === siteValue) && (!spValue || spValueFromRecord(location) === spValue)),
     [activeLocations, siteValue, spValue],
   );
   const buildingDropdownOptions = useMemo(
@@ -5178,7 +5249,7 @@ function WorkOrderForm({ title, work, data, onSubmit, saving }: { title: string;
       const options = uniqueLocationOptions(buildingRows, (location) => location.building, (location, value) => [value, location.description, location.locationClass].filter(Boolean).join(" - "));
       const seen = new Set(options.map((option) => option.value));
       (data.buildings ?? [])
-        .filter((building) => !siteValue || building.site?.name === siteValue || building.siteName === siteValue || building.site === siteValue)
+        .filter((building) => !siteValue || hierarchyZoneValueFromRecord(building) === siteValue || building.site?.name === siteValue || building.siteName === siteValue || building.site === siteValue)
         .forEach((building) => {
           const value = String(building.code || building.name || "").trim();
           if (!value || seen.has(value)) return;
@@ -5190,7 +5261,7 @@ function WorkOrderForm({ title, work, data, onSubmit, saving }: { title: string;
     [buildingRows, data.buildings, siteValue],
   );
   const floorRows = useMemo(
-    () => activeLocations.filter((location) => (!siteValue || location.site === siteValue) && (!spValue || spValueFromRecord(location) === spValue) && workBuildingMatchesSelection(location)),
+    () => activeLocations.filter((location) => (!siteValue || hierarchyZoneValueFromRecord(location) === siteValue) && (!spValue || spValueFromRecord(location) === spValue) && workBuildingMatchesSelection(location)),
     [activeLocations, siteValue, spValue, buildingValue, selectedWorkBuildingAliases],
   );
   const floorDropdownOptions = useMemo(
@@ -5206,7 +5277,7 @@ function WorkOrderForm({ title, work, data, onSubmit, saving }: { title: string;
     if (!location) return;
     setLocationCodeValue(location.code);
     setLocationSearchValue(locationSelectLabel(location));
-    setSiteValue(location.site || "");
+    setSiteValue(hierarchyZoneValueFromRecord(location) || "");
     setSpValue(spValueFromRecord(location));
     setParentLocationValue(location.parentLocation || location.zone || location.code || "");
     setBuildingValue(location.building || "");
@@ -5228,7 +5299,7 @@ function WorkOrderForm({ title, work, data, onSubmit, saving }: { title: string;
         <input type="hidden" name="sourceLocation" value={selectedLocationLabel} />
         <div className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 md:grid-cols-4">
           <SearchableDropdownField value={siteValue} placeholder="1. Zone" options={siteDropdownOptions} onInput={(value) => { setSiteValue(value); setSpValue(""); setBuildingValue(""); setLocationCodeValue(""); setLocationSearchValue(""); }} onSelect={(option) => { setSiteValue(option.value); setSpValue(""); setBuildingValue(""); setLocationCodeValue(""); setLocationSearchValue(""); }} />
-          <SearchableDropdownField value={spValue} placeholder="2. SP" options={spDropdownOptions} disabled={!siteValue || !spDropdownOptions.length} onInput={(value) => { setSpValue(value); setBuildingValue(""); setLocationCodeValue(""); setLocationSearchValue(""); }} onSelect={(option) => { setSpValue(option.value); setBuildingValue(""); setLocationCodeValue(""); setLocationSearchValue(""); }} />
+          <SearchableDropdownField value={spValue} placeholder="2. Phase" options={spDropdownOptions} disabled={!siteValue || !spDropdownOptions.length} onInput={(value) => { setSpValue(value); setBuildingValue(""); setLocationCodeValue(""); setLocationSearchValue(""); }} onSelect={(option) => { setSpValue(option.value); setBuildingValue(""); setLocationCodeValue(""); setLocationSearchValue(""); }} />
           <SearchableDropdownField value={buildingValue} placeholder="3. Building" options={buildingDropdownOptions} disabled={!siteValue || (spDropdownOptions.length > 0 && !spValue)} onInput={(value) => { setBuildingValue(value); setLocationCodeValue(""); setLocationSearchValue(""); }} onSelect={(option) => { setBuildingValue(option.value); setLocationCodeValue(""); setLocationSearchValue(""); }} />
           <SearchableDropdownField value={locationCodeValue} placeholder="4. Block / Room" options={blockLocationOptions} disabled={!siteValue || (spDropdownOptions.length > 0 && !spValue) || !buildingValue} onInput={(value) => { setLocationCodeValue(value); setLocationSearchValue(value); }} onSelect={(option) => {
             const selected = activeLocations.find((location) => location.code === option.value);
@@ -9336,8 +9407,8 @@ function HousingOperations({
           key,
           value: location.code,
           label: `${serviceRequestLocationLabel(location)}${count ? ` / Assets ${count}` : ""}`,
-          site: location.site || "",
-          zone: location.parentLocation || location.zone || "",
+          site: hierarchyZoneValueFromRecord(location) || location.site || "",
+          zone: phaseValueFromRecord(location) || location.parentLocation || location.zone || "",
           building: location.building || location.zone || location.site || "",
           floor: location.floor || "",
           room: location.room || "",
@@ -9351,8 +9422,8 @@ function HousingOperations({
         key,
         value: location.code,
         label: `${serviceRequestLocationLabel(location)}${count ? ` / Assets ${count}` : ""}`,
-        site: location.site || "",
-        zone: location.parentLocation || location.zone || "",
+          site: hierarchyZoneValueFromRecord(location) || location.site || "",
+          zone: phaseValueFromRecord(location) || location.parentLocation || location.zone || "",
         building: location.building || location.parentLocation || location.site || "",
         floor: location.floor || "",
         room: location.room || location.code || "",
@@ -9364,9 +9435,9 @@ function HousingOperations({
       optionMap.set(key, {
         key,
         value: space.id,
-        label: `${space.building?.site?.name || "Zone"} / ${space.building?.code || space.building?.name || "Building"} / Floor ${space.floor || "-"} / ${space.roomNumber || space.name || space.code}`,
-        site: space.building?.site?.name || "",
-        zone: "",
+        label: `${hierarchyZoneValueFromRecord(space.building || space) || space.building?.site?.name || "Zone"} / ${space.building?.code || space.building?.name || "Building"} / Floor ${space.floor || "-"} / ${space.roomNumber || space.name || space.code}`,
+        site: hierarchyZoneValueFromRecord(space.building || space) || space.building?.site?.name || "",
+        zone: phaseValueFromRecord(space.building || space),
         building: space.building?.name || space.building?.code || "",
         floor: space.floor || "",
         room: space.roomNumber || space.name || space.code || "",
@@ -9380,8 +9451,8 @@ function HousingOperations({
         key,
         value: asset.locationCode || asset.tag,
         label: `${asset.locationCode || asset.tag || "Asset"} / ${asset.assetDescription || asset.name || "Asset"} / ${asset.buildingCode || "-"} / ${asset.floor || "-"} / ${room || "-"}`,
-        site: asset.siteCode || "",
-        zone: asset.locationDesc || "",
+        site: hierarchyZoneValueFromRecord(asset) || asset.siteCode || "",
+        zone: phaseValueFromRecord(asset) || asset.locationDesc || "",
         building: asset.buildingCode || "",
         floor: asset.floor || "",
         room: room || "",
@@ -10283,11 +10354,14 @@ function housingRoomLabel(room: any) {
 function HousingLocationSelect({ options, className = HOUSING_FIELD_CLASS }: { options: HousingLocationOption[]; className?: string }) {
   const [selectedValue, setSelectedValue] = useState("");
   const [site, setSite] = useState("");
+  const [phase, setPhase] = useState("");
   const [building, setBuilding] = useState("");
   const sites = useMemo(() => Array.from(new Set(options.map((option) => option.site).filter(Boolean))).sort(), [options]);
   const siteRows = useMemo(() => options.filter((option) => !site || option.site === site), [options, site]);
-  const buildings = useMemo(() => Array.from(new Set(siteRows.map((option) => option.building).filter(Boolean))).sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: "base" })), [siteRows]);
-  const buildingRows = useMemo(() => siteRows.filter((option) => !building || option.building === building), [siteRows, building]);
+  const phases = useMemo(() => Array.from(new Set(siteRows.map((option) => option.zone).filter(Boolean))).sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: "base" })), [siteRows]);
+  const phaseRows = useMemo(() => siteRows.filter((option) => !phase || option.zone === phase), [siteRows, phase]);
+  const buildings = useMemo(() => Array.from(new Set(phaseRows.map((option) => option.building).filter(Boolean))).sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: "base" })), [phaseRows]);
+  const buildingRows = useMemo(() => phaseRows.filter((option) => !building || option.building === building), [phaseRows, building]);
   const filteredOptions = useMemo(() => buildingRows, [buildingRows]);
 
   useEffect(() => {
@@ -10301,23 +10375,28 @@ function HousingLocationSelect({ options, className = HOUSING_FIELD_CLASS }: { o
     const option = options.find((item) => (item.value || item.label) === value);
     if (!option) return;
     setSite(option.site || "");
+    setPhase(option.zone || "");
     setBuilding(option.building || "");
   }
 
   return (
     <div className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
       <input type="hidden" name="facilityLocationCode" value={selectedValue} />
-      <div className="grid gap-3 md:grid-cols-3">
-        <select value={site} onChange={(event) => { setSite(event.target.value); setBuilding(""); setSelectedValue(""); }} className={className}>
+      <div className="grid gap-3 md:grid-cols-4">
+        <select value={site} onChange={(event) => { setSite(event.target.value); setPhase(""); setBuilding(""); setSelectedValue(""); }} className={className}>
           <option value="">1. Zone</option>
           {sites.map((item) => <option key={item} value={item}>{item}</option>)}
         </select>
-        <select value={building} onChange={(event) => { setBuilding(event.target.value); setSelectedValue(""); }} className={className} disabled={!site}>
-          <option value="">2. Building</option>
+        <select value={phase} onChange={(event) => { setPhase(event.target.value); setBuilding(""); setSelectedValue(""); }} className={className} disabled={!site || !phases.length}>
+          <option value="">2. Phase</option>
+          {phases.map((item) => <option key={item} value={item}>{item}</option>)}
+        </select>
+        <select value={building} onChange={(event) => { setBuilding(event.target.value); setSelectedValue(""); }} className={className} disabled={!site || (phases.length > 0 && !phase)}>
+          <option value="">3. Building</option>
           {buildings.map((item) => <option key={item} value={item}>{item}</option>)}
         </select>
-        <select value={selectedValue} onChange={(event) => chooseOption(event.target.value)} className={className} disabled={!site || !building}>
-          <option value="">3. Block / Room</option>
+        <select value={selectedValue} onChange={(event) => chooseOption(event.target.value)} className={className} disabled={!site || (phases.length > 0 && !phase) || !building}>
+          <option value="">4. Block / Room</option>
           {filteredOptions.map((option) => <option key={option.key} value={option.value || option.label}>{shortHousingLocationLabel(option)}</option>)}
         </select>
       </div>
