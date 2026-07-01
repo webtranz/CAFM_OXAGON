@@ -9235,20 +9235,15 @@ function HousingOperations({
     setRunningAlerts(false);
   };
   const refreshHousingData = async () => {
-    const response = await fetch("/api/housing?type=references", { cache: "no-store" });
+    const response = await fetch("/api/housing", { cache: "no-store" });
     if (response.ok) {
-      const references = await response.json();
+      const records = await response.json();
       setHousingRecords((current) => ({
         ...current,
-        properties: references.properties ?? current.properties,
-        blocks: references.blocks ?? current.blocks,
-        rooms: references.rooms ?? current.rooms,
-        beds: references.beds ?? current.beds,
-        residents: references.residents ?? current.residents,
-        assets: references.assets ?? current.assets,
-        locations: references.locations ?? current.locations,
-        spaces: references.spaces ?? current.spaces,
-        cafmAssets: references.cafmAssets ?? current.cafmAssets,
+        ...records,
+        locations: records.locations ?? current.locations,
+        spaces: records.spaces ?? current.spaces,
+        cafmAssets: records.cafmAssets ?? current.cafmAssets,
       }));
     } else {
       await refreshData();

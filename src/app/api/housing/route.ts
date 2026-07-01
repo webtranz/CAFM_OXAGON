@@ -307,6 +307,9 @@ export async function GET(request: Request) {
     notifications,
     notificationSettings,
     history,
+    locations,
+    spaces,
+    cafmAssets,
   ] = await Promise.all([
     prisma.housingProperty.findMany({ orderBy: { name: "asc" } }),
     prisma.housingBlock.findMany({ include: { property: true }, orderBy: { code: "asc" } }),
@@ -321,9 +324,23 @@ export async function GET(request: Request) {
     prisma.housingNotification.findMany({ orderBy: { createdAt: "desc" }, take: 100 }),
     ensureHousingNotificationSettings(),
     prisma.housingHistory.findMany({ orderBy: { createdAt: "desc" }, take: 300 }),
+    prisma.location.findMany({
+      select: { id: true, code: true, description: true, site: true, building: true, floor: true, room: true, type: true, parentLocation: true },
+      orderBy: { code: "asc" },
+    }),
+    prisma.space.findMany({
+      select: { id: true, name: true, floor: true, type: true, building: { select: { code: true, name: true, site: { select: { name: true } } } } },
+      orderBy: [{ building: { code: "asc" } }, { floor: "asc" }, { name: "asc" }],
+      take: HOUSING_REFERENCE_LIMIT,
+    }),
+    prisma.asset.findMany({
+      select: { id: true, tag: true, name: true, assetDescription: true, siteCode: true, buildingCode: true, floor: true, room: true, locationCode: true, locationDesc: true, status: true },
+      orderBy: { tag: "asc" },
+      take: HOUSING_REFERENCE_LIMIT,
+    }),
   ]);
 
-  return NextResponse.json({ properties, blocks, rooms, beds, residents, bookings, inspections, assets, inventory, approvals, notifications, notificationSettings, history });
+  return NextResponse.json({ properties, blocks, rooms, beds, residents, bookings, inspections, assets, inventory, approvals, notifications, notificationSettings, history, locations, spaces, cafmAssets });
 }
 
 export async function POST(request: Request) {
