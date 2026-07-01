@@ -5155,17 +5155,43 @@ function WorkOrderForm({ title, work, data, onSubmit, saving }: { title: string;
     () => uniqueLocationOptions(spRows, spValueFromRecord, (_location, value) => value),
     [spRows],
   );
+  const workBuildingAliasesByValue = useMemo(() => {
+    const map = new Map<string, Set<string>>();
+    (data.buildings ?? []).forEach((building) => {
+      const values = [building.code, building.name].map((value) => String(value || "").trim()).filter(Boolean);
+      values.forEach((value) => map.set(value, new Set(values)));
+    });
+    return map;
+  }, [data.buildings]);
+  const selectedWorkBuildingAliases = buildingValue ? workBuildingAliasesByValue.get(buildingValue) ?? new Set([buildingValue]) : new Set<string>();
+  const workBuildingMatchesSelection = (location: any) => {
+    if (!buildingValue) return true;
+    const value = String(location.building || "").trim();
+    return value === buildingValue || selectedWorkBuildingAliases.has(value);
+  };
   const buildingRows = useMemo(
     () => activeLocations.filter((location) => (!siteValue || location.site === siteValue) && (!spValue || spValueFromRecord(location) === spValue)),
     [activeLocations, siteValue, spValue],
   );
   const buildingDropdownOptions = useMemo(
-    () => uniqueLocationOptions(buildingRows, (location) => location.building, (location, value) => [value, location.description, location.locationClass].filter(Boolean).join(" - ")),
-    [buildingRows],
+    () => {
+      const options = uniqueLocationOptions(buildingRows, (location) => location.building, (location, value) => [value, location.description, location.locationClass].filter(Boolean).join(" - "));
+      const seen = new Set(options.map((option) => option.value));
+      (data.buildings ?? [])
+        .filter((building) => !siteValue || building.site?.name === siteValue || building.siteName === siteValue || building.site === siteValue)
+        .forEach((building) => {
+          const value = String(building.code || building.name || "").trim();
+          if (!value || seen.has(value)) return;
+          seen.add(value);
+          options.push({ value, label: [building.code, building.name, building.site?.name || building.siteName || building.site].filter(Boolean).join(" - ") });
+        });
+      return options.sort((first, second) => first.label.localeCompare(second.label, undefined, { numeric: true, sensitivity: "base" }));
+    },
+    [buildingRows, data.buildings, siteValue],
   );
   const floorRows = useMemo(
-    () => activeLocations.filter((location) => (!siteValue || location.site === siteValue) && (!spValue || spValueFromRecord(location) === spValue) && (!buildingValue || location.building === buildingValue)),
-    [activeLocations, siteValue, spValue, buildingValue],
+    () => activeLocations.filter((location) => (!siteValue || location.site === siteValue) && (!spValue || spValueFromRecord(location) === spValue) && workBuildingMatchesSelection(location)),
+    [activeLocations, siteValue, spValue, buildingValue, selectedWorkBuildingAliases],
   );
   const floorDropdownOptions = useMemo(
     () => uniqueLocationOptions(floorRows, (location) => location.floor, (location, value) => [value, location.description, location.locationClass].filter(Boolean).join(" - ")),
