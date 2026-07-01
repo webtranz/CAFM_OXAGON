@@ -301,7 +301,7 @@ const healthColors = ["#35a852", "#0f8b8d", "#ffd166", "#f45d48"];
 const dashboardColors = ["#0f8b8d", "#f45d48", "#06d6a0", "#ffd166", "#0b1f3a", "#7c3aed", "#2563eb", "#db2777", "#64748b", "#16a34a"];
 const PAGE_SIZE = 100;
 const PAGINATION_WINDOW = 7;
-const HOUSING_REFERENCE_LIMIT = 300;
+const HOUSING_REFERENCE_LIMIT = 2000;
 const HOUSING_LOCATION_OPTION_LIMIT = 120;
 const DEFAULT_NATIONALITIES = [
   "Saudi Arabia",
@@ -4214,7 +4214,7 @@ function ServiceRequestForm({ title, request, services, categories, departments,
             value={buildingValue}
             placeholder="3. Building"
             options={buildingDropdownOptions}
-            disabled={!siteValue}
+            disabled={!siteValue || (spDropdownOptions.length > 0 && !spValue)}
             onInput={(nextValue) => {
               setBuildingValue(nextValue);
               setLocationCodeValue("");
@@ -4230,7 +4230,7 @@ function ServiceRequestForm({ title, request, services, categories, departments,
             value={locationCodeValue}
             placeholder="4. Block / Room"
             options={blockLocationOptions}
-            disabled={!siteValue || !buildingValue}
+            disabled={!siteValue || (spDropdownOptions.length > 0 && !spValue) || !buildingValue}
             onInput={(nextValue) => {
               setLocationCodeValue(nextValue);
               setLocationSearchValue(nextValue);
@@ -5172,8 +5172,8 @@ function WorkOrderForm({ title, work, data, onSubmit, saving }: { title: string;
         <div className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 md:grid-cols-4">
           <SearchableDropdownField value={siteValue} placeholder="1. Zone" options={siteDropdownOptions} onInput={(value) => { setSiteValue(value); setSpValue(""); setBuildingValue(""); setLocationCodeValue(""); setLocationSearchValue(""); }} onSelect={(option) => { setSiteValue(option.value); setSpValue(""); setBuildingValue(""); setLocationCodeValue(""); setLocationSearchValue(""); }} />
           <SearchableDropdownField value={spValue} placeholder="2. SP" options={spDropdownOptions} disabled={!siteValue || !spDropdownOptions.length} onInput={(value) => { setSpValue(value); setBuildingValue(""); setLocationCodeValue(""); setLocationSearchValue(""); }} onSelect={(option) => { setSpValue(option.value); setBuildingValue(""); setLocationCodeValue(""); setLocationSearchValue(""); }} />
-          <SearchableDropdownField value={buildingValue} placeholder="3. Building" options={buildingDropdownOptions} disabled={!siteValue} onInput={(value) => { setBuildingValue(value); setLocationCodeValue(""); setLocationSearchValue(""); }} onSelect={(option) => { setBuildingValue(option.value); setLocationCodeValue(""); setLocationSearchValue(""); }} />
-          <SearchableDropdownField value={locationCodeValue} placeholder="4. Block / Room" options={blockLocationOptions} disabled={!siteValue || !buildingValue} onInput={(value) => { setLocationCodeValue(value); setLocationSearchValue(value); }} onSelect={(option) => {
+          <SearchableDropdownField value={buildingValue} placeholder="3. Building" options={buildingDropdownOptions} disabled={!siteValue || (spDropdownOptions.length > 0 && !spValue)} onInput={(value) => { setBuildingValue(value); setLocationCodeValue(""); setLocationSearchValue(""); }} onSelect={(option) => { setBuildingValue(option.value); setLocationCodeValue(""); setLocationSearchValue(""); }} />
+          <SearchableDropdownField value={locationCodeValue} placeholder="4. Block / Room" options={blockLocationOptions} disabled={!siteValue || (spDropdownOptions.length > 0 && !spValue) || !buildingValue} onInput={(value) => { setLocationCodeValue(value); setLocationSearchValue(value); }} onSelect={(option) => {
             const selected = activeLocations.find((location) => location.code === option.value);
             if (selected) applyLocationSelection(selected);
           }} />
@@ -9095,6 +9095,11 @@ function HousingOperations({
   const dashboardBuildings = Array.from(new Set(rooms.map(roomBuilding))).filter(Boolean).sort();
   const dashboardFloors = Array.from(new Set(rooms.map((room) => String(room.floor ?? "")))).filter(Boolean).sort();
   const dashboardCategories = Array.from(new Set(rooms.map((room) => String(room.roomType ?? "")))).filter(Boolean).sort();
+  const housingAssetGroupOptions = Array.from(new Set([
+    ...HOUSING_ASSET_GROUP_OPTIONS,
+    ...assets.map((asset) => asset.category),
+    ...housingAssetRowsSource.map((asset) => asset.category),
+  ].map((item) => String(item || "").trim()).filter(Boolean))).sort((first, second) => first.localeCompare(second, undefined, { numeric: true, sensitivity: "base" }));
   const groupRooms = (rows: any[], keyFn: (row: any) => string) => {
     const map = new Map<string, { name: string; capacity: number; occupied: number; rooms: number }>();
     rows.forEach((room) => {
@@ -9139,10 +9144,24 @@ function HousingOperations({
     return (!search || haystack.includes(filterText)) && (status === "All" || booking.status === status);
   });
   const bookingRows = visibleBookings.map((booking) => ({ ...booking, ...bookingDetailMeta(booking.notes) }));
+  const housingAssetsByRoom = new Map<string, any[]>();
+  assets.forEach((asset) => {
+    const keys = [asset.roomId, asset.room?.id, asset.roomLocation, asset.room?.roomNumber, asset.room?.code].filter(Boolean).map((value) => String(value).trim().toLowerCase());
+    keys.forEach((key) => housingAssetsByRoom.set(key, [...(housingAssetsByRoom.get(key) ?? []), asset]));
+  });
+  const roomAssetSummary = (room: any) => {
+    const keys = [room.id, room.code, room.roomNumber].filter(Boolean).map((value) => String(value).trim().toLowerCase());
+    const roomAssets = Array.from(new Map(keys.flatMap((key) => housingAssetsByRoom.get(key) ?? []).map((asset) => [asset.id, asset])).values());
+    return {
+      assetCount: roomAssets.length,
+      assetList: roomAssets.slice(0, 5).map((asset) => [asset.tag, asset.name || asset.category].filter(Boolean).join(" - ")).join(" / "),
+    };
+  };
   const visibleRooms = rooms.filter((room) => {
     const haystack = `${room.code} ${room.roomNumber} ${room.property?.name} ${room.block?.name} ${room.floor} ${room.roomType} ${room.status}`.toLowerCase();
     return (!search || haystack.includes(filterText)) && (status === "All" || room.status === status);
-  });
+  }).map((room) => ({ ...room, ...roomAssetSummary(room), bedCount: Math.max(Number(room.capacity || 0), (room.beds ?? []).length) }));
+  const dashboardRoomRows = dashboardRooms.map((room) => ({ ...room, ...roomAssetSummary(room), bedCount: Math.max(Number(room.capacity || 0), (room.beds ?? []).length) }));
   const visibleInspections = inspections.filter((inspection) => {
     const haystack = `${inspection.inspectionNo} ${inspection.inspectionType} ${inspection.inspector} ${inspection.status} ${inspection.findings} ${inspection.room?.roomNumber}`.toLowerCase();
     return (!search || haystack.includes(filterText)) && (status === "All" || inspection.status === status);
@@ -9163,6 +9182,7 @@ function HousingOperations({
     building: asset.buildingLocation || asset.room?.block?.name || asset.room?.property?.name || "",
     floor: asset.csvMeta.floor || asset.room?.floor || "",
     roomDisplay: asset.roomLocation || asset.room?.roomNumber || "",
+    roomFullLocation: [asset.room?.property?.name, asset.room?.block?.name, asset.room?.floor ? `Floor ${asset.room.floor}` : "", asset.room?.roomNumber ? `Room ${asset.room.roomNumber}` : ""].filter(Boolean).join(" / ") || asset.roomLocation || asset.buildingLocation || "",
     assetGroup: asset.category,
     assetName: asset.name,
     assetDescription: asset.assetDescriptionText || "",
@@ -9455,8 +9475,8 @@ function HousingOperations({
           <div className="grid gap-5 xl:grid-cols-[1.3fr_0.7fr]">
             <HousingTable
               title="Accommodation & Occupancy Drill-down"
-              rows={dashboardRooms}
-              columns={[["code", "Code"], ["roomNumber", "Room"], ["roomType", "Type"], ["floor", "Floor"], ["occupancy", "Occ"], ["capacity", "Cap"], ["status", "Status"], ["qrCode", "QR"]]}
+              rows={dashboardRoomRows}
+              columns={[["code", "Code"], ["roomNumber", "Room"], ["roomType", "Type"], ["floor", "Floor"], ["occupancy", "Occ"], ["capacity", "Cap"], ["bedCount", "Beds"], ["assetCount", "Assets"], ["assetList", "Room Asset List"], ["status", "Status"], ["qrCode", "QR"]]}
               onSelect={(record) => setSelected({ type: "room", record })}
               reportType="housing-rooms"
               bulkSelectable={isAdmin}
@@ -9542,7 +9562,7 @@ function HousingOperations({
               <span className="text-xs font-black uppercase text-slate-500">Asset group</span>
               <select value={housingAssetGroupFilter} onChange={(event) => setHousingAssetGroupFilter(event.target.value)} className="h-10 min-w-[220px] rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold">
                 <option value="All">All asset groups</option>
-                {HOUSING_ASSET_GROUP_OPTIONS.map((group) => <option key={group} value={group}>{group}</option>)}
+                {housingAssetGroupOptions.map((group) => <option key={group} value={group}>{group}</option>)}
               </select>
             </div>
             <HousingTable
@@ -9555,6 +9575,7 @@ function HousingOperations({
                 ["building", "BLDG"],
                 ["floor", "FLOOR"],
                 ["roomDisplay", "ROOM"],
+                ["roomFullLocation", "ROOM LOCATION"],
                 ["assetGroup", "ASSET GROUP"],
                 ["assetName", "ASSET NAME"],
                 ["assetDescription", "ASSET DESCRIPTION"],
@@ -9591,7 +9612,7 @@ function HousingOperations({
               )}
             />
           </div>
-          {canManage && <HousingAssetForm rooms={rooms} locationOptions={fallbackLocationOptions} saving={saving} onSubmit={submitHousingAndRefresh} />}
+          {canManage && <HousingAssetForm rooms={rooms} assetGroupOptions={housingAssetGroupOptions} locationOptions={fallbackLocationOptions} saving={saving} onSubmit={submitHousingAndRefresh} />}
         </section>
       )}
 
@@ -9900,7 +9921,7 @@ function HousingTable({
 
 function HousingReportsWorkspace({ rooms, bookings }: { rooms: any[]; bookings: any[] }) {
   const reportGroups = [
-    { group: "Occupancy Reports", reports: [["housing-occupancy-daily", "Daily occupancy report"], ["housing-occupancy-weekly", "Weekly occupancy report"], ["housing-occupancy-monthly", "Monthly occupancy report"], ["housing-company-occupancy", "Company-wise occupancy report"], ["housing-building-occupancy", "Building-wise occupancy report"], ["housing-bed-occupancy", "Bed-wise occupancy report"], ["housing-room-utilization", "Room utilization report"]] },
+    { group: "Occupancy Reports", reports: [["housing-occupancy-daily", "Daily occupancy report"], ["housing-occupancy-weekly", "Weekly occupancy report"], ["housing-occupancy-monthly", "Monthly occupancy report"], ["housing-company-occupancy", "Company-wise occupancy report"], ["housing-fm-occupancy", "FM occupancy report"], ["housing-building-occupancy", "Building-wise occupancy report"], ["housing-bed-occupancy", "Bed-wise occupancy report"], ["housing-room-utilization", "Room utilization report"]] },
     { group: "Asset Reports", reports: [["housing-missing-assets", "Missing asset report"], ["housing-damaged-assets", "Damaged asset report"], ["housing-asset-transfers", "Asset transfer report"], ["housing-asset-depreciation", "Asset depreciation report"], ["housing-asset-audit", "Asset audit report"]] },
     { group: "Maintenance Reports", reports: [["housing-maintenance-open", "Open ticket report"], ["housing-maintenance-closed", "Closed ticket report"], ["housing-maintenance-delayed", "Delayed ticket report"], ["housing-preventive-maintenance", "Preventive maintenance report"], ["housing-technician-performance", "Technician performance report"]] },
     { group: "Housekeeping Reports", reports: [["housing-cleaning-daily", "Daily cleaning report"], ["housing-deep-cleaning", "Deep cleaning report"], ["housing-inspection-report", "Inspection report"], ["housing-room-readiness", "Room readiness report"]] },
@@ -10376,10 +10397,19 @@ function HousingBookingForm({ rooms, beds, bookings, residents, locationOptions,
 }
 
 function HousingInspectionForm({ rooms, beds, bookings, assets, locationOptions, saving, onSubmit }: { rooms: any[]; beds: any[]; bookings: any[]; assets: any[]; locationOptions: HousingLocationOption[]; saving: boolean; onSubmit: (formData: FormData) => void }) {
+  const [selectedRoomId, setSelectedRoomId] = useState("");
   const roomOptions = rooms.slice(0, HOUSING_REFERENCE_LIMIT);
-  const bedOptions = beds.slice(0, HOUSING_REFERENCE_LIMIT);
-  const bookingOptions = bookings.slice(0, HOUSING_REFERENCE_LIMIT);
-  const assetOptions = assets.slice(0, HOUSING_REFERENCE_LIMIT);
+  const selectedRoom = rooms.find((room) => room.id === selectedRoomId);
+  const selectedRoomKeys = new Set([selectedRoom?.id, selectedRoom?.code, selectedRoom?.roomNumber].filter(Boolean).map((value) => String(value).trim().toLowerCase()));
+  const belongsToSelectedRoom = (record: any) => {
+    if (!selectedRoomId) return true;
+    return [record.roomId, record.room?.id, record.room?.code, record.room?.roomNumber, record.roomLocation, record.roomNumber]
+      .filter(Boolean)
+      .some((value) => selectedRoomKeys.has(String(value).trim().toLowerCase()));
+  };
+  const bedOptions = beds.filter(belongsToSelectedRoom).slice(0, HOUSING_REFERENCE_LIMIT);
+  const bookingOptions = bookings.filter(belongsToSelectedRoom).slice(0, HOUSING_REFERENCE_LIMIT);
+  const assetOptions = assets.filter(belongsToSelectedRoom).slice(0, HOUSING_REFERENCE_LIMIT);
   const conditionOptions = ["Good", "Fair", "Damaged", "Missing", "Needs Repair", "Not Applicable"];
   const checklistFields = [
     ["furnitureCondition", "Furniture condition"],
@@ -10411,11 +10441,11 @@ function HousingInspectionForm({ rooms, beds, bookings, assets, locationOptions,
         <option>Monthly inspection</option>
         <option>Safety inspection</option>
       </select>
-      <select name="roomId" className={HOUSING_FIELD_CLASS}><option value="">Select building / room</option>{roomOptions.map((room) => <option key={room.id} value={room.id}>{room.property?.name} / {room.block?.name} / Floor {room.floor} / Room {room.roomNumber} / {room.roomType}</option>)}</select>
-      <select name="bedId" className={HOUSING_FIELD_CLASS}><option value="">Link bed</option>{bedOptions.map((bed) => <option key={bed.id} value={bed.id}>{bed.room?.roomNumber || "Room"} / {bed.label} / {bed.status}</option>)}</select>
-      <select name="occupantId" className={HOUSING_FIELD_CLASS}><option value="">Link occupant / booking</option>{bookingOptions.map((booking) => <option key={booking.id} value={booking.residentId || booking.id}>{booking.bookingNo} / {booking.residentName} / {booking.status}</option>)}</select>
+      <select name="roomId" value={selectedRoomId} onChange={(event) => setSelectedRoomId(event.target.value)} className={HOUSING_FIELD_CLASS}><option value="">Select building / room</option>{roomOptions.map((room) => <option key={room.id} value={room.id}>{housingRoomLabel(room)}</option>)}</select>
+      <select name="bedId" className={HOUSING_FIELD_CLASS}><option value="">{selectedRoomId ? "Link bed in selected room" : "Select room to link bed"}</option>{bedOptions.map((bed) => <option key={bed.id} value={bed.id}>{bed.room?.roomNumber || selectedRoom?.roomNumber || "Room"} / {bed.label || bed.code} / {bed.status}</option>)}</select>
+      <select name="occupantId" className={HOUSING_FIELD_CLASS}><option value="">{selectedRoomId ? "Link occupant / booking in selected room" : "Select room to link occupant / booking"}</option>{bookingOptions.map((booking) => <option key={booking.id} value={booking.residentId || booking.id}>{booking.bookingNo} / {booking.residentName} / {booking.status}</option>)}</select>
       <input name="occupantName" placeholder="Occupant name" className={HOUSING_FIELD_CLASS} />
-      <select name="assetId" className={HOUSING_FIELD_CLASS}><option value="">Link asset</option>{assetOptions.map((asset) => <option key={asset.id} value={asset.id}>{asset.tag} / {asset.name} / {asset.status}</option>)}</select>
+      <select name="assetId" className={HOUSING_FIELD_CLASS}><option value="">{selectedRoomId ? "Link asset in selected room" : "Select room to link room asset"}</option>{assetOptions.map((asset) => <option key={asset.id} value={asset.id}>{asset.tag} / {asset.name} / {asset.category} / {asset.status}</option>)}</select>
       <input name="workOrderRef" list="housing-inspection-locations" placeholder="Linked work order / reference" className={HOUSING_FIELD_CLASS} />
       <input name="inspector" placeholder="Inspector" className={HOUSING_FIELD_CLASS} />
       <input name="dueAt" type="datetime-local" className={HOUSING_FIELD_CLASS} />
@@ -10448,9 +10478,9 @@ function HousingInspectionForm({ rooms, beds, bookings, assets, locationOptions,
   );
 }
 
-function HousingAssetForm({ rooms, locationOptions, saving, onSubmit }: { rooms: any[]; locationOptions: HousingLocationOption[]; saving: boolean; onSubmit: (formData: FormData) => void }) {
+function HousingAssetForm({ rooms, assetGroupOptions, locationOptions, saving, onSubmit }: { rooms: any[]; assetGroupOptions: string[]; locationOptions: HousingLocationOption[]; saving: boolean; onSubmit: (formData: FormData) => void }) {
   const roomOptions = rooms.slice(0, HOUSING_REFERENCE_LIMIT);
-  const categories = ["Furniture", "Beds", "Mattresses", "TVs", "Refrigerators", "Air conditioners", "Curtains", "Water dispensers", "Fire extinguishers", "Smoke detectors", "Office equipment", "Housekeeping tools", "Electrical items"];
+  const categories = assetGroupOptions.length ? assetGroupOptions : ["Furniture", "Beds", "Mattresses", "TVs", "Refrigerators", "Air conditioners", "Curtains", "Water dispensers", "Fire extinguishers", "Smoke detectors", "Office equipment", "Housekeeping tools", "Electrical items"];
   const statuses = ["AVAILABLE", "INSTALLED", "UNDER_REPAIR", "MISSING", "DAMAGED", "SCRAPPED", "TRANSFERRED"];
   return (
     <HousingForm title="Housing Asset Management" type="asset" saving={saving} onSubmit={onSubmit}>
