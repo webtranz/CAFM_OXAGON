@@ -109,3 +109,20 @@ export async function POST(request: Request) {
     return apiError(error, "Unable to save building");
   }
 }
+
+export async function DELETE(request: Request) {
+  try {
+    const { error, user } = await requirePermission("assets.manage");
+    if (error) return error;
+    const id = new URL(request.url).searchParams.get("id");
+    if (!id) throw new Error("Building id is required");
+    const current = await prisma.building.findUnique({ where: { id }, include: { site: true, spaces: true } });
+    if (!current) throw new Error("Building not found");
+    await prisma.asset.updateMany({ where: { buildingId: id }, data: { buildingId: null } });
+    await prisma.building.delete({ where: { id } });
+    await auditAction({ user, action: "BUILDING_DELETE", entity: "building", entityId: id, details: { deletedRecord: current } });
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    return apiError(error, "Unable to delete building");
+  }
+}

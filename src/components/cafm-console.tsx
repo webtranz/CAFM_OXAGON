@@ -1263,8 +1263,12 @@ export function CafmConsole({ data, user, deferInitialData = false }: { data: Co
               submitSite={(formData) => postRecord("/api/sites", formData, "Site")}
               submitBuilding={(formData) => postRecord("/api/buildings", formData, "Building")}
               submitSpace={(formData) => postRecord("/api/spaces", formData, "Space")}
+              deleteSite={(id) => deleteRecord(`/api/sites?id=${encodeURIComponent(id)}`, "Site deleted.")}
+              deleteBuilding={(id) => deleteRecord(`/api/buildings?id=${encodeURIComponent(id)}`, "Building deleted.")}
+              deleteSpace={(id) => deleteRecord(`/api/spaces?id=${encodeURIComponent(id)}`, "Space deleted.")}
               submitDepartment={(formData) => postRecord("/api/departments", formData, "Department")}
               submitCategory={(formData) => postRecord("/api/asset-categories", formData, "Asset category")}
+              isAdmin={isAdmin}
             />
           )}
           {canViewActive && active === "ppm" && <Ppm ppms={records.ppms} ppmsTotal={records.ppmsTotal} assets={records.assets} locations={records.locations} workOrders={records.workOrders} saving={saving} isAdmin={isAdmin} submitPpm={(formData) => postRecord("/api/ppm", formData, "PPM")} updatePpm={(body) => patchRecord("/api/ppm", body, "PPM updated.")} deletePpm={(id) => deleteRecord(`/api/ppm?id=${encodeURIComponent(id)}`, "PPM deleted.")} />}
@@ -7119,8 +7123,12 @@ function AssetHierarchySetup({
   submitSite,
   submitBuilding,
   submitSpace,
+  deleteSite,
+  deleteBuilding,
+  deleteSpace,
   submitDepartment,
   submitCategory,
+  isAdmin,
 }: {
   view: string;
   sites: any[];
@@ -7132,8 +7140,12 @@ function AssetHierarchySetup({
   submitSite: (formData: FormData) => void;
   submitBuilding: (formData: FormData) => void;
   submitSpace: (formData: FormData) => void;
+  deleteSite: (id: string) => Promise<void> | void;
+  deleteBuilding: (id: string) => Promise<void> | void;
+  deleteSpace: (id: string) => Promise<void> | void;
   submitDepartment: (formData: FormData) => void;
   submitCategory: (formData: FormData) => void;
+  isAdmin: boolean;
 }) {
   const [setupRows, setSetupRows] = useState({ sites, buildings, spaces, categories });
   const [setupTotals, setSetupTotals] = useState({ sites: sites.length, buildings: buildings.length, spaces: spaces.length, categories: categories.length });
@@ -7234,17 +7246,53 @@ function AssetHierarchySetup({
       <div className="space-y-5">
         {showSites && (
           <Panel title="Sites" icon={MapPinned}>
-            <ScrollableRowsTable rows={siteRows} totalRows={setupTotals.sites} loading={setupLoading === "sites"} onLoadMore={loadMoreSetupRows} columns={[["name", "Zone"], ["city", "City"], ["country", "Country"], ["type", "Type"], ["areaSqm", "Area sqm"], ["buildingCount", "Buildings"]]} />
+            <ScrollableRowsTable
+              rows={siteRows}
+              totalRows={setupTotals.sites}
+              loading={setupLoading === "sites"}
+              onLoadMore={loadMoreSetupRows}
+              columns={[["name", "Zone"], ["city", "City"], ["country", "Country"], ["type", "Type"], ["areaSqm", "Area sqm"], ["buildingCount", "Buildings"]]}
+              actions={isAdmin ? (row) => <DeleteRowButton saving={saving} onDelete={() => deleteSite(row.id)} /> : undefined}
+              bulkSelectable={isAdmin}
+              bulkLabel="sites"
+              onBulkDelete={async (rows) => { await Promise.all(rows.map((row) => deleteSite(row.id))); }}
+            />
           </Panel>
         )}
         {showBuildings && (
           <Panel title="Buildings" icon={Building2}>
-            <ScrollableRowsTable rows={buildingRows} totalRows={setupTotals.buildings} loading={setupLoading === "buildings"} onLoadMore={loadMoreSetupRows} filters={setupFilters} setFilters={setSetupFilters} moduleOptions={["Housing", "Non Housing"]} columns={[["code", "Code"], ["name", "Building"], ["siteName", "Zone"], ["locationScope", "Housing Type"], ["floors", "Floors"], ["areaSqm", "Area sqm"]]} />
+            <ScrollableRowsTable
+              rows={buildingRows}
+              totalRows={setupTotals.buildings}
+              loading={setupLoading === "buildings"}
+              onLoadMore={loadMoreSetupRows}
+              filters={setupFilters}
+              setFilters={setSetupFilters}
+              moduleOptions={["Housing", "Non Housing"]}
+              columns={[["code", "Code"], ["name", "Building"], ["siteName", "Zone"], ["locationScope", "Housing Type"], ["floors", "Floors"], ["areaSqm", "Area sqm"]]}
+              actions={isAdmin ? (row) => <DeleteRowButton saving={saving} onDelete={() => deleteBuilding(row.id)} /> : undefined}
+              bulkSelectable={isAdmin}
+              bulkLabel="buildings"
+              onBulkDelete={async (rows) => { await Promise.all(rows.map((row) => deleteBuilding(row.id))); }}
+            />
           </Panel>
         )}
         {showSpaces && (
           <Panel title="Spaces" icon={Boxes}>
-            <ScrollableRowsTable rows={spaceRows} totalRows={setupTotals.spaces} loading={setupLoading === "spaces"} onLoadMore={loadMoreSetupRows} filters={setupFilters} setFilters={setSetupFilters} moduleOptions={["Housing", "Non Housing"]} columns={[["name", "Space"], ["buildingCode", "Building"], ["siteName", "Zone"], ["floor", "Floor"], ["type", "Type"], ["locationScope", "Housing Type"], ["capacity", "Capacity"], ["areaSqm", "Area sqm"], ["occupancy", "Occupancy"]]} />
+            <ScrollableRowsTable
+              rows={spaceRows}
+              totalRows={setupTotals.spaces}
+              loading={setupLoading === "spaces"}
+              onLoadMore={loadMoreSetupRows}
+              filters={setupFilters}
+              setFilters={setSetupFilters}
+              moduleOptions={["Housing", "Non Housing"]}
+              columns={[["name", "Space"], ["buildingCode", "Building"], ["siteName", "Zone"], ["floor", "Floor"], ["type", "Type"], ["locationScope", "Housing Type"], ["capacity", "Capacity"], ["areaSqm", "Area sqm"], ["occupancy", "Occupancy"]]}
+              actions={isAdmin ? (row) => <DeleteRowButton saving={saving} onDelete={() => deleteSpace(row.id)} /> : undefined}
+              bulkSelectable={isAdmin}
+              bulkLabel="spaces"
+              onBulkDelete={async (rows) => { await Promise.all(rows.map((row) => deleteSpace(row.id))); }}
+            />
           </Panel>
         )}
         {showDepartments && (

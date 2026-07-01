@@ -49,3 +49,19 @@ export async function POST(request: Request) {
     return apiError(error, "Unable to save site");
   }
 }
+
+export async function DELETE(request: Request) {
+  try {
+    const { error, user } = await requirePermission("assets.manage");
+    if (error) return error;
+    const id = new URL(request.url).searchParams.get("id");
+    if (!id) throw new Error("Site id is required");
+    const current = await prisma.site.findUnique({ where: { id }, include: { buildings: true } });
+    if (!current) throw new Error("Site not found");
+    await prisma.site.delete({ where: { id } });
+    await auditAction({ user, action: "SITE_DELETE", entity: "site", entityId: id, details: { deletedRecord: current } });
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    return apiError(error, "Unable to delete site");
+  }
+}

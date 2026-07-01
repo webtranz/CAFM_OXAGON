@@ -120,3 +120,19 @@ export async function POST(request: Request) {
     return apiError(error, "Unable to save space");
   }
 }
+
+export async function DELETE(request: Request) {
+  try {
+    const { error, user } = await requirePermission("assets.manage");
+    if (error) return error;
+    const id = new URL(request.url).searchParams.get("id");
+    if (!id) throw new Error("Space id is required");
+    const current = await prisma.space.findUnique({ where: { id }, include: { building: true } });
+    if (!current) throw new Error("Space not found");
+    await prisma.space.delete({ where: { id } });
+    await auditAction({ user, action: "SPACE_DELETE", entity: "space", entityId: id, details: { deletedRecord: current } });
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    return apiError(error, "Unable to delete space");
+  }
+}
