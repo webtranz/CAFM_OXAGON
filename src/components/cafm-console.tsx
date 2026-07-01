@@ -1232,6 +1232,7 @@ export function CafmConsole({ data, user, deferInitialData = false }: { data: Co
               departments={records.departments}
               teams={records.teams}
               locations={records.locations}
+              buildings={records.buildings}
               submitRequest={submitRequest}
               permissions={actionPermissions}
               role={user.role}
@@ -3254,6 +3255,7 @@ function Helpdesk({
   departments,
   teams,
   locations,
+  buildings,
   submitRequest,
   permissions,
   role,
@@ -3269,6 +3271,7 @@ function Helpdesk({
   departments: any[];
   teams: any[];
   locations: any[];
+  buildings: any[];
   submitRequest: (formData: FormData) => void;
   permissions: ActionPermissions;
   role: string;
@@ -3578,6 +3581,7 @@ function Helpdesk({
             departments={departments}
             teams={teams}
             locations={locations}
+            buildings={buildings}
             assets={assets}
             onSubmit={async (formData) => {
               await submitRequest(formData);
@@ -3598,6 +3602,7 @@ function Helpdesk({
             departments={departments}
             teams={teams}
             locations={locations}
+            buildings={buildings}
             assets={assets}
             onSubmit={async (formData) => {
               await updateRequest(editing.id, formData);
@@ -3991,7 +3996,7 @@ function LocationAssetSelect({
   );
 }
 
-function ServiceRequestForm({ title, request, services, categories, departments, teams, locations, assets, onSubmit, saving, mode = "panel" }: { title: string; request?: any; services: any[]; categories: any[]; departments: any[]; teams: any[]; locations: any[]; assets: any[]; onSubmit: (formData: FormData) => void; saving: boolean; mode?: "panel" | "modal" }) {
+function ServiceRequestForm({ title, request, services, categories, departments, teams, locations, buildings = [], assets, onSubmit, saving, mode = "panel" }: { title: string; request?: any; services: any[]; categories: any[]; departments: any[]; teams: any[]; locations: any[]; buildings?: any[]; assets: any[]; onSubmit: (formData: FormData) => void; saving: boolean; mode?: "panel" | "modal" }) {
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
@@ -4045,17 +4050,43 @@ function ServiceRequestForm({ title, request, services, categories, departments,
     () => uniqueLocationOptions(spRows, spValueFromRecord, (_location, value) => value),
     [spRows],
   );
+  const buildingAliasesByValue = useMemo(() => {
+    const map = new Map<string, Set<string>>();
+    buildings.forEach((building) => {
+      const values = [building.code, building.name].map((value) => String(value || "").trim()).filter(Boolean);
+      values.forEach((value) => map.set(value, new Set(values)));
+    });
+    return map;
+  }, [buildings]);
+  const selectedBuildingAliases = buildingValue ? buildingAliasesByValue.get(buildingValue) ?? new Set([buildingValue]) : new Set<string>();
+  const buildingMatchesSelection = (location: any) => {
+    if (!buildingValue) return true;
+    const value = String(location.building || "").trim();
+    return value === buildingValue || selectedBuildingAliases.has(value);
+  };
   const buildingRows = useMemo(
     () => activeLocations.filter((location) => (!siteValue || location.site === siteValue) && (!spValue || spValueFromRecord(location) === spValue)),
     [activeLocations, siteValue, spValue],
   );
   const buildingDropdownOptions = useMemo(
-    () => uniqueLocationOptions(buildingRows, (location) => location.building, (location, value) => [value, location.description, location.locationClass].filter(Boolean).join(" - ")),
-    [buildingRows],
+    () => {
+      const options = uniqueLocationOptions(buildingRows, (location) => location.building, (location, value) => [value, location.description, location.locationClass].filter(Boolean).join(" - "));
+      const seen = new Set(options.map((option) => option.value));
+      buildings
+        .filter((building) => !siteValue || building.site?.name === siteValue || building.siteName === siteValue || building.site === siteValue)
+        .forEach((building) => {
+          const value = String(building.code || building.name || "").trim();
+          if (!value || seen.has(value)) return;
+          seen.add(value);
+          options.push({ value, label: [building.code, building.name, building.site?.name || building.siteName || building.site].filter(Boolean).join(" - ") });
+        });
+      return options.sort((first, second) => first.label.localeCompare(second.label, undefined, { numeric: true, sensitivity: "base" }));
+    },
+    [buildingRows, buildings, siteValue],
   );
   const floorRows = useMemo(
-    () => activeLocations.filter((location) => (!siteValue || location.site === siteValue) && (!spValue || spValueFromRecord(location) === spValue) && (!buildingValue || location.building === buildingValue)),
-    [activeLocations, siteValue, spValue, buildingValue],
+    () => activeLocations.filter((location) => (!siteValue || location.site === siteValue) && (!spValue || spValueFromRecord(location) === spValue) && buildingMatchesSelection(location)),
+    [activeLocations, siteValue, spValue, buildingValue, selectedBuildingAliases],
   );
   const floorDropdownOptions = useMemo(
     () => uniqueLocationOptions(floorRows, (location) => location.floor, (location, value) => [value, location.description, location.locationClass].filter(Boolean).join(" - ")),
@@ -4066,10 +4097,10 @@ function ServiceRequestForm({ title, request, services, categories, departments,
       .filter((location) =>
         (!siteValue || location.site === siteValue) &&
         (!spValue || spValueFromRecord(location) === spValue) &&
-        (!buildingValue || location.building === buildingValue),
+        buildingMatchesSelection(location),
       )
       .sort((first, second) => serviceRequestLocationLabel(first).localeCompare(serviceRequestLocationLabel(second), undefined, { numeric: true, sensitivity: "base" })),
-    [activeLocations, siteValue, spValue, buildingValue],
+    [activeLocations, siteValue, spValue, buildingValue, selectedBuildingAliases],
   );
   const blockLocationOptions = useMemo(
     () => finalLocationOptions.map((location) => ({ value: location.code, label: shortLocationLabel(location) })),
