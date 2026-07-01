@@ -661,6 +661,7 @@ async function createBooking(input: z.infer<typeof housingSchema>, actor: string
   if (room.genderRestriction && room.genderRestriction !== "MIXED" && occupantGender && occupantGender !== room.genderRestriction.toUpperCase()) {
     throw new Error("Male and female occupants cannot be assigned to this gender-restricted room.");
   }
+  await ensureBeds(room.id, room.code || room.roomNumber || room.id, Math.max(1, Number(room.capacity || 1)));
   const bed = input.bedId ? await prisma.housingBed.findUnique({ where: { id: input.bedId } }) : await prisma.housingBed.findFirst({ where: { roomId: room.id, status: "AVAILABLE" } });
   if (!bed && room.capacity > 1) throw new Error("No available bed found for this room.");
   if (bed && bed.roomId !== room.id) throw new Error("Selected bed does not belong to the selected room.");

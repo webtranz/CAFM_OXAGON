@@ -2493,7 +2493,7 @@ function AssetLocationCodeSelect({
         />
       </label>
       <div className="grid gap-3 sm:grid-cols-4">
-        <SearchableDropdownField value={siteCode} placeholder="2. Site" options={siteOptions} onInput={(value) => { setSiteCode(value); setBuildingCode(""); setFloor(""); setRoom(""); setSelectedCode(""); }} onSelect={(option) => { setSiteCode(option.value); setBuildingCode(""); setFloor(""); setRoom(""); setSelectedCode(""); }} />
+        <SearchableDropdownField value={siteCode} placeholder="2. Zone" options={siteOptions} onInput={(value) => { setSiteCode(value); setBuildingCode(""); setFloor(""); setRoom(""); setSelectedCode(""); }} onSelect={(option) => { setSiteCode(option.value); setBuildingCode(""); setFloor(""); setRoom(""); setSelectedCode(""); }} />
         <SearchableDropdownField value={buildingCode} placeholder="3. Building" options={buildingOptions} onInput={(value) => { setBuildingCode(value); setFloor(""); setRoom(""); setSelectedCode(""); }} onSelect={(option) => { setBuildingCode(option.value); setFloor(""); setRoom(""); setSelectedCode(""); }} />
         <SearchableDropdownField value={floor} placeholder="4. Floor" options={floorOptions} onInput={(value) => { setFloor(value); setRoom(""); setSelectedCode(""); }} onSelect={(option) => { setFloor(option.value); setRoom(""); setSelectedCode(""); }} />
         <SearchableDropdownField value={room} placeholder="5. Room" options={roomOptions} onInput={(value) => { setRoom(value); setSelectedCode(value); }} onSelect={(option) => {
@@ -3775,6 +3775,14 @@ function shortLocationLabel(location: any) {
   return [location.code, detail].filter(Boolean).join(" - ");
 }
 
+function spValueFromRecord(record: any) {
+  const text = [record?.sp, record?.subProject, record?.zone, record?.parentLocation, record?.site, record?.building, record?.code, record?.description, record?.label]
+    .filter(Boolean)
+    .join(" ");
+  const match = text.match(/\bSP[\s_-]*(\d{1,2})\b/i);
+  return match ? `SP${match[1]}` : "";
+}
+
 function locationOptionDetail(location: any) {
   return [location.building, location.floor, location.room, location.description, location.locationClass || location.type].filter(Boolean).join(" / ");
 }
@@ -4003,6 +4011,7 @@ function ServiceRequestForm({ title, request, services, categories, departments,
   const [departmentCode, setDepartmentCode] = useState(request?.departmentCode ?? "");
   const [serviceCode, setServiceCode] = useState(request?.serviceCode ?? "");
   const [siteValue, setSiteValue] = useState(initialLocation?.site ?? "");
+  const [spValue, setSpValue] = useState(spValueFromRecord(initialLocation));
   const [parentLocationValue, setParentLocationValue] = useState(initialLocation?.parentLocation || initialLocation?.zone || "");
   const [buildingValue, setBuildingValue] = useState(initialLocation?.building ?? "");
   const [floorValue, setFloorValue] = useState(initialLocation?.floor ?? "");
@@ -4031,17 +4040,22 @@ function ServiceRequestForm({ title, request, services, categories, departments,
     () => uniqueLocationOptions(parentLocationRows, (location) => location.parentLocation || location.zone || location.code, (location, value) => [value, location.description || location.building, location.locationClass].filter(Boolean).join(" - ")),
     [parentLocationRows],
   );
+  const spRows = useMemo(() => activeLocations.filter((location) => !siteValue || location.site === siteValue), [activeLocations, siteValue]);
+  const spDropdownOptions = useMemo(
+    () => uniqueLocationOptions(spRows, spValueFromRecord, (_location, value) => value),
+    [spRows],
+  );
   const buildingRows = useMemo(
-    () => activeLocations.filter((location) => (!siteValue || location.site === siteValue) && (!parentLocationValue || location.parentLocation === parentLocationValue || location.zone === parentLocationValue || location.code === parentLocationValue)),
-    [activeLocations, siteValue, parentLocationValue],
+    () => activeLocations.filter((location) => (!siteValue || location.site === siteValue) && (!spValue || spValueFromRecord(location) === spValue)),
+    [activeLocations, siteValue, spValue],
   );
   const buildingDropdownOptions = useMemo(
     () => uniqueLocationOptions(buildingRows, (location) => location.building, (location, value) => [value, location.description, location.locationClass].filter(Boolean).join(" - ")),
     [buildingRows],
   );
   const floorRows = useMemo(
-    () => activeLocations.filter((location) => (!siteValue || location.site === siteValue) && (!parentLocationValue || location.parentLocation === parentLocationValue || location.zone === parentLocationValue || location.code === parentLocationValue) && (!buildingValue || location.building === buildingValue)),
-    [activeLocations, siteValue, parentLocationValue, buildingValue],
+    () => activeLocations.filter((location) => (!siteValue || location.site === siteValue) && (!spValue || spValueFromRecord(location) === spValue) && (!buildingValue || location.building === buildingValue)),
+    [activeLocations, siteValue, spValue, buildingValue],
   );
   const floorDropdownOptions = useMemo(
     () => uniqueLocationOptions(floorRows, (location) => location.floor, (location, value) => [value, location.description, location.locationClass].filter(Boolean).join(" - ")),
@@ -4051,10 +4065,11 @@ function ServiceRequestForm({ title, request, services, categories, departments,
     () => activeLocations
       .filter((location) =>
         (!siteValue || location.site === siteValue) &&
+        (!spValue || spValueFromRecord(location) === spValue) &&
         (!buildingValue || location.building === buildingValue),
       )
       .sort((first, second) => serviceRequestLocationLabel(first).localeCompare(serviceRequestLocationLabel(second), undefined, { numeric: true, sensitivity: "base" })),
-    [activeLocations, siteValue, buildingValue],
+    [activeLocations, siteValue, spValue, buildingValue],
   );
   const blockLocationOptions = useMemo(
     () => finalLocationOptions.map((location) => ({ value: location.code, label: shortLocationLabel(location) })),
@@ -4157,19 +4172,39 @@ function ServiceRequestForm({ title, request, services, categories, departments,
         </div>
         <input type="hidden" name="priority" value={priority} />
         <input type="hidden" name="location" value={locationValue} />
-        <div className={`grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 md:grid-cols-3 ${compact ? "xl:col-span-2" : ""}`}>
+        <div className={`grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 md:grid-cols-4 ${compact ? "xl:col-span-2" : ""}`}>
           <SearchableDropdownField
             value={siteValue}
-            placeholder="1. Site"
+            placeholder="1. Zone"
             options={siteDropdownOptions}
             onInput={(nextValue) => {
               setSiteValue(nextValue);
+              setSpValue("");
               setBuildingValue("");
               setLocationCodeValue("");
               setLocationSearchValue("");
             }}
             onSelect={(option) => {
               setSiteValue(option.value);
+              setSpValue("");
+              setBuildingValue("");
+              setLocationCodeValue("");
+              setLocationSearchValue("");
+            }}
+          />
+          <SearchableDropdownField
+            value={spValue}
+            placeholder="2. SP"
+            options={spDropdownOptions}
+            disabled={!siteValue || !spDropdownOptions.length}
+            onInput={(nextValue) => {
+              setSpValue(nextValue);
+              setBuildingValue("");
+              setLocationCodeValue("");
+              setLocationSearchValue("");
+            }}
+            onSelect={(option) => {
+              setSpValue(option.value);
               setBuildingValue("");
               setLocationCodeValue("");
               setLocationSearchValue("");
@@ -4177,7 +4212,7 @@ function ServiceRequestForm({ title, request, services, categories, departments,
           />
           <SearchableDropdownField
             value={buildingValue}
-            placeholder="2. Building"
+            placeholder="3. Building"
             options={buildingDropdownOptions}
             disabled={!siteValue}
             onInput={(nextValue) => {
@@ -4193,7 +4228,7 @@ function ServiceRequestForm({ title, request, services, categories, departments,
           />
           <SearchableDropdownField
             value={locationCodeValue}
-            placeholder="3. Block / Room"
+            placeholder="4. Block / Room"
             options={blockLocationOptions}
             disabled={!siteValue || !buildingValue}
             onInput={(nextValue) => {
@@ -5056,6 +5091,7 @@ function WorkOrderForm({ title, work, data, onSubmit, saving }: { title: string;
   const initialLocationCode = resolveLocationCode(activeLocations, initialAsset?.locationCode || work?.request?.location || "");
   const initialLocation = activeLocations.find((location) => location.code === initialLocationCode);
   const [siteValue, setSiteValue] = useState(initialLocation?.site ?? "");
+  const [spValue, setSpValue] = useState(spValueFromRecord(initialLocation));
   const [parentLocationValue, setParentLocationValue] = useState(initialLocation?.parentLocation || initialLocation?.zone || "");
   const [buildingValue, setBuildingValue] = useState(initialLocation?.building ?? initialAsset?.buildingCode ?? "");
   const [floorValue, setFloorValue] = useState(initialLocation?.floor ?? initialAsset?.floor ?? "");
@@ -5083,17 +5119,22 @@ function WorkOrderForm({ title, work, data, onSubmit, saving }: { title: string;
     () => uniqueLocationOptions(parentLocationRows, (location) => location.parentLocation || location.zone || location.code, (location, value) => [value, location.description || location.building, location.locationClass].filter(Boolean).join(" - ")),
     [parentLocationRows],
   );
+  const spRows = useMemo(() => activeLocations.filter((location) => !siteValue || location.site === siteValue), [activeLocations, siteValue]);
+  const spDropdownOptions = useMemo(
+    () => uniqueLocationOptions(spRows, spValueFromRecord, (_location, value) => value),
+    [spRows],
+  );
   const buildingRows = useMemo(
-    () => activeLocations.filter((location) => !siteValue || location.site === siteValue),
-    [activeLocations, siteValue],
+    () => activeLocations.filter((location) => (!siteValue || location.site === siteValue) && (!spValue || spValueFromRecord(location) === spValue)),
+    [activeLocations, siteValue, spValue],
   );
   const buildingDropdownOptions = useMemo(
     () => uniqueLocationOptions(buildingRows, (location) => location.building, (location, value) => [value, location.description, location.locationClass].filter(Boolean).join(" - ")),
     [buildingRows],
   );
   const floorRows = useMemo(
-    () => activeLocations.filter((location) => (!siteValue || location.site === siteValue) && (!buildingValue || location.building === buildingValue)),
-    [activeLocations, siteValue, buildingValue],
+    () => activeLocations.filter((location) => (!siteValue || location.site === siteValue) && (!spValue || spValueFromRecord(location) === spValue) && (!buildingValue || location.building === buildingValue)),
+    [activeLocations, siteValue, spValue, buildingValue],
   );
   const floorDropdownOptions = useMemo(
     () => uniqueLocationOptions(floorRows, (location) => location.floor, (location, value) => [value, location.description, location.locationClass].filter(Boolean).join(" - ")),
@@ -5109,6 +5150,7 @@ function WorkOrderForm({ title, work, data, onSubmit, saving }: { title: string;
     setLocationCodeValue(location.code);
     setLocationSearchValue(locationSelectLabel(location));
     setSiteValue(location.site || "");
+    setSpValue(spValueFromRecord(location));
     setParentLocationValue(location.parentLocation || location.zone || location.code || "");
     setBuildingValue(location.building || "");
     setFloorValue(location.floor || "");
@@ -5127,10 +5169,11 @@ function WorkOrderForm({ title, work, data, onSubmit, saving }: { title: string;
         <input name="title" defaultValue={work?.title ?? ""} placeholder="Title" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
         <input name="type" defaultValue={work?.type ?? ""} placeholder="Work type" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
         <input type="hidden" name="sourceLocation" value={selectedLocationLabel} />
-        <div className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 md:grid-cols-3">
-          <SearchableDropdownField value={siteValue} placeholder="1. Site" options={siteDropdownOptions} onInput={(value) => { setSiteValue(value); setBuildingValue(""); setLocationCodeValue(""); setLocationSearchValue(""); }} onSelect={(option) => { setSiteValue(option.value); setBuildingValue(""); setLocationCodeValue(""); setLocationSearchValue(""); }} />
-          <SearchableDropdownField value={buildingValue} placeholder="2. Building" options={buildingDropdownOptions} disabled={!siteValue} onInput={(value) => { setBuildingValue(value); setLocationCodeValue(""); setLocationSearchValue(""); }} onSelect={(option) => { setBuildingValue(option.value); setLocationCodeValue(""); setLocationSearchValue(""); }} />
-          <SearchableDropdownField value={locationCodeValue} placeholder="3. Block / Room" options={blockLocationOptions} disabled={!siteValue || !buildingValue} onInput={(value) => { setLocationCodeValue(value); setLocationSearchValue(value); }} onSelect={(option) => {
+        <div className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 md:grid-cols-4">
+          <SearchableDropdownField value={siteValue} placeholder="1. Zone" options={siteDropdownOptions} onInput={(value) => { setSiteValue(value); setSpValue(""); setBuildingValue(""); setLocationCodeValue(""); setLocationSearchValue(""); }} onSelect={(option) => { setSiteValue(option.value); setSpValue(""); setBuildingValue(""); setLocationCodeValue(""); setLocationSearchValue(""); }} />
+          <SearchableDropdownField value={spValue} placeholder="2. SP" options={spDropdownOptions} disabled={!siteValue || !spDropdownOptions.length} onInput={(value) => { setSpValue(value); setBuildingValue(""); setLocationCodeValue(""); setLocationSearchValue(""); }} onSelect={(option) => { setSpValue(option.value); setBuildingValue(""); setLocationCodeValue(""); setLocationSearchValue(""); }} />
+          <SearchableDropdownField value={buildingValue} placeholder="3. Building" options={buildingDropdownOptions} disabled={!siteValue} onInput={(value) => { setBuildingValue(value); setLocationCodeValue(""); setLocationSearchValue(""); }} onSelect={(option) => { setBuildingValue(option.value); setLocationCodeValue(""); setLocationSearchValue(""); }} />
+          <SearchableDropdownField value={locationCodeValue} placeholder="4. Block / Room" options={blockLocationOptions} disabled={!siteValue || !buildingValue} onInput={(value) => { setLocationCodeValue(value); setLocationSearchValue(value); }} onSelect={(option) => {
             const selected = activeLocations.find((location) => location.code === option.value);
             if (selected) applyLocationSelection(selected);
           }} />
@@ -6824,7 +6867,7 @@ function TeamsServices({
         {showDepartments && (
           <Panel title="Department Codes" icon={MapPinned}>
             <ReportButtons type="departments" label="Departments report" />
-            <DataTable rows={departments} columns={[["code", "Code"], ["name", "Department"], ["siteLocation", "Site"], ["description", "Description"]]} bulkSelectable={isAdmin} bulkLabel="departments" onBulkDelete={async (rows) => { await Promise.all(rows.map((row) => deleteDepartment(row.id))); }} />
+            <DataTable rows={departments} columns={[["code", "Code"], ["name", "Department"], ["siteLocation", "Zone"], ["description", "Description"]]} bulkSelectable={isAdmin} bulkLabel="departments" onBulkDelete={async (rows) => { await Promise.all(rows.map((row) => deleteDepartment(row.id))); }} />
             <SetupActions rows={departments} labelKey="code" onEdit={setEditingDepartment} onDelete={deleteDepartment} saving={saving} isAdmin={isAdmin} />
           </Panel>
         )}
@@ -7025,22 +7068,22 @@ function AssetHierarchySetup({
       <div className="space-y-5">
         {showSites && (
           <Panel title="Sites" icon={MapPinned}>
-            <ScrollableRowsTable rows={siteRows} totalRows={setupTotals.sites} loading={setupLoading === "sites"} onLoadMore={loadMoreSetupRows} columns={[["name", "Site"], ["city", "City"], ["country", "Country"], ["type", "Type"], ["areaSqm", "Area sqm"], ["buildingCount", "Buildings"]]} />
+            <ScrollableRowsTable rows={siteRows} totalRows={setupTotals.sites} loading={setupLoading === "sites"} onLoadMore={loadMoreSetupRows} columns={[["name", "Zone"], ["city", "City"], ["country", "Country"], ["type", "Type"], ["areaSqm", "Area sqm"], ["buildingCount", "Buildings"]]} />
           </Panel>
         )}
         {showBuildings && (
           <Panel title="Buildings" icon={Building2}>
-            <ScrollableRowsTable rows={buildingRows} totalRows={setupTotals.buildings} loading={setupLoading === "buildings"} onLoadMore={loadMoreSetupRows} filters={setupFilters} setFilters={setSetupFilters} moduleOptions={["Housing", "Non Housing"]} columns={[["code", "Code"], ["name", "Building"], ["siteName", "Site"], ["locationScope", "Housing Type"], ["floors", "Floors"], ["areaSqm", "Area sqm"]]} />
+            <ScrollableRowsTable rows={buildingRows} totalRows={setupTotals.buildings} loading={setupLoading === "buildings"} onLoadMore={loadMoreSetupRows} filters={setupFilters} setFilters={setSetupFilters} moduleOptions={["Housing", "Non Housing"]} columns={[["code", "Code"], ["name", "Building"], ["siteName", "Zone"], ["locationScope", "Housing Type"], ["floors", "Floors"], ["areaSqm", "Area sqm"]]} />
           </Panel>
         )}
         {showSpaces && (
           <Panel title="Spaces" icon={Boxes}>
-            <ScrollableRowsTable rows={spaceRows} totalRows={setupTotals.spaces} loading={setupLoading === "spaces"} onLoadMore={loadMoreSetupRows} filters={setupFilters} setFilters={setSetupFilters} moduleOptions={["Housing", "Non Housing"]} columns={[["name", "Space"], ["buildingCode", "Building"], ["siteName", "Site"], ["floor", "Floor"], ["type", "Type"], ["locationScope", "Housing Type"], ["capacity", "Capacity"], ["areaSqm", "Area sqm"], ["occupancy", "Occupancy"]]} />
+            <ScrollableRowsTable rows={spaceRows} totalRows={setupTotals.spaces} loading={setupLoading === "spaces"} onLoadMore={loadMoreSetupRows} filters={setupFilters} setFilters={setSetupFilters} moduleOptions={["Housing", "Non Housing"]} columns={[["name", "Space"], ["buildingCode", "Building"], ["siteName", "Zone"], ["floor", "Floor"], ["type", "Type"], ["locationScope", "Housing Type"], ["capacity", "Capacity"], ["areaSqm", "Area sqm"], ["occupancy", "Occupancy"]]} />
           </Panel>
         )}
         {showDepartments && (
           <Panel title="Departments" icon={Users}>
-            <DataTable rows={departments} columns={[["code", "Code"], ["name", "Department"], ["siteLocation", "Site"], ["description", "Description"]]} />
+            <DataTable rows={departments} columns={[["code", "Code"], ["name", "Department"], ["siteLocation", "Zone"], ["description", "Description"]]} />
           </Panel>
         )}
         {showCategories && (
@@ -7070,14 +7113,14 @@ function SiteForm({ onSubmit, saving }: { onSubmit: (formData: FormData) => void
 
   return (
     <form onSubmit={handleSubmit} className="rounded-lg border border-white/80 bg-white p-5 shadow-lift">
-      <h3 className="text-xl font-black">Add Site</h3>
+      <h3 className="text-xl font-black">Add Zone</h3>
       <div className="mt-4 grid min-w-0 gap-3">
-        <input name="name" placeholder="1. Site name" className={FACILITY_FIELD_CLASS} />
+        <input name="name" placeholder="1. Zone name" className={FACILITY_FIELD_CLASS} />
         <input name="city" placeholder="2. City" className={FACILITY_FIELD_CLASS} />
         <input name="country" defaultValue="Saudi Arabia" placeholder="Country" className={FACILITY_FIELD_CLASS} />
-        <input name="type" placeholder="Site type" className={FACILITY_FIELD_CLASS} />
+        <input name="type" placeholder="Zone type" className={FACILITY_FIELD_CLASS} />
         <input name="areaSqm" type="number" min="0" placeholder="Area sqm" className={FACILITY_FIELD_CLASS} />
-        <button disabled={saving} className="h-11 rounded-lg bg-ink font-black text-white disabled:bg-slate-400">{saving ? "Saving..." : "Save Site"}</button>
+        <button disabled={saving} className="h-11 rounded-lg bg-ink font-black text-white disabled:bg-slate-400">{saving ? "Saving..." : "Save Zone"}</button>
       </div>
     </form>
   );
@@ -7153,7 +7196,7 @@ function DepartmentForm({ department, onSubmit, saving }: { department?: any; on
     <form onSubmit={handleSubmit} className="grid gap-3">
       <input name="code" defaultValue={department?.code ?? ""} placeholder="Department code" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
       <input name="name" defaultValue={department?.name ?? ""} placeholder="Department name" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
-      <input name="siteLocation" defaultValue={department?.siteLocation ?? ""} placeholder="Site location" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
+      <input name="siteLocation" defaultValue={department?.siteLocation ?? ""} placeholder="Zone location" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
       <textarea name="description" defaultValue={department?.description ?? ""} placeholder="Description" className="min-h-24 rounded-lg border border-slate-200 p-3 outline-none focus:border-lagoon" />
       <button disabled={saving} className="h-11 rounded-lg bg-ink font-black text-white disabled:bg-slate-400">{saving ? "Saving..." : "Save Department"}</button>
     </form>
@@ -7533,7 +7576,7 @@ function LocationCreateForm({ onSubmit, saving }: { onSubmit: (formData: FormDat
       <div className="mt-4 grid gap-3">
         <input name="location" value={generatedCode} readOnly placeholder="Combined location code" className={FACILITY_FIELD_CLASS} />
         <div className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 md:grid-cols-4">
-          <input value={site} onChange={(event) => setSite(event.target.value)} placeholder="1. Site" className={FACILITY_FIELD_CLASS} />
+          <input value={site} onChange={(event) => setSite(event.target.value)} placeholder="1. Zone" className={FACILITY_FIELD_CLASS} />
           <input value={building} onChange={(event) => setBuilding(event.target.value)} placeholder="2. Building" className={FACILITY_FIELD_CLASS} />
           <input value={floor} onChange={(event) => setFloor(event.target.value)} placeholder="3. Floor" className={FACILITY_FIELD_CLASS} />
           <input value={room} onChange={(event) => setRoom(event.target.value)} placeholder="4. Room" className={FACILITY_FIELD_CLASS} />
@@ -8413,7 +8456,7 @@ function ResourceManagement({
                 {nationalities.map((item) => <option key={item}>{item}</option>)}
               </select>
             </div>
-            <DataTable rows={filtered} columns={[["name", "Name"], ["email", "Email"], ["companyId", "Company ID"], ["nationalityType", "Nationality"], ["departmentCode", "Dept"], ["siteLocation", "Site"], ["shiftEligibility", "Shift Eligibility"], ["defaultShift", "Default Shift"], ["serviceTeamCode", "Service Team"], ["supervisor", "Supervisor"], ["workLocationZone", "Work Location / Zone"]]} bulkSelectable={isAdmin} bulkLabel="employees" />
+            <DataTable rows={filtered} columns={[["name", "Name"], ["email", "Email"], ["companyId", "Company ID"], ["nationalityType", "Nationality"], ["departmentCode", "Dept"], ["siteLocation", "Zone"], ["shiftEligibility", "Shift Eligibility"], ["defaultShift", "Default Shift"], ["serviceTeamCode", "Service Team"], ["supervisor", "Supervisor"], ["workLocationZone", "Work Location / Zone"]]} bulkSelectable={isAdmin} bulkLabel="employees" />
           </>
         )}
         {tab === "resource-shift-rotation" && (
@@ -8434,7 +8477,7 @@ function ResourceManagement({
             <option value="">Select department</option>
             {departments.map((department) => <option key={department.id} value={department.code}>{department.code} - {department.name}</option>)}
           </select>
-          <input name="siteLocation" placeholder="Site location" className={RESOURCE_EMPLOYEE_FIELD_CLASS} />
+          <input name="siteLocation" placeholder="Zone location" className={RESOURCE_EMPLOYEE_FIELD_CLASS} />
           <RequiredLabel label="Shift Eligibility">
             <select name="shiftEligibility" required className={RESOURCE_EMPLOYEE_FIELD_CLASS}>
               {SHIFT_ELIGIBILITY_OPTIONS.map((option) => <option key={option}>{option}</option>)}
@@ -9249,7 +9292,7 @@ function HousingOperations({
       optionMap.set(key, {
         key,
         value: space.id,
-        label: `${space.building?.site?.name || "Site"} / ${space.building?.code || space.building?.name || "Building"} / Floor ${space.floor || "-"} / ${space.roomNumber || space.name || space.code}`,
+        label: `${space.building?.site?.name || "Zone"} / ${space.building?.code || space.building?.name || "Building"} / Floor ${space.floor || "-"} / ${space.roomNumber || space.name || space.code}`,
         site: space.building?.site?.name || "",
         zone: "",
         building: space.building?.name || space.building?.code || "",
@@ -9472,7 +9515,7 @@ function HousingOperations({
               )}
             />
           </div>
-          {canManage && <HousingBookingForm rooms={rooms} beds={beds} residents={housingRecords.residents ?? []} locationOptions={fallbackLocationOptions} nationalityOptions={nationalityOptions} saving={saving} onSubmit={submitHousingAndRefresh} />}
+          {canManage && <HousingBookingForm rooms={rooms} beds={beds} bookings={bookings} residents={housingRecords.residents ?? []} locationOptions={fallbackLocationOptions} nationalityOptions={nationalityOptions} saving={saving} onSubmit={submitHousingAndRefresh} />}
         </section>
       )}
 
@@ -10070,7 +10113,7 @@ function HousingSetupForms({ properties, blocks, rooms, nationalityOptions, savi
           <div className="grid gap-3 md:grid-cols-2">
             <input name="code" placeholder="Property code" className={HOUSING_FIELD_CLASS} />
             <input name="name" placeholder="Property / camp name" className={HOUSING_FIELD_CLASS} />
-            <input name="site" placeholder="Site" className={HOUSING_FIELD_CLASS} />
+            <input name="site" placeholder="Zone" className={HOUSING_FIELD_CLASS} />
             <input name="city" placeholder="City" className={HOUSING_FIELD_CLASS} />
             <input name="manager" placeholder="Housing manager" className={HOUSING_FIELD_CLASS} />
           </div>
@@ -10160,6 +10203,10 @@ function shortHousingLocationLabel(option: HousingLocationOption) {
   return [code, detail].filter(Boolean).join(" - ");
 }
 
+function housingRoomLabel(room: any) {
+  return [room.property?.name, room.block?.name, room.floor ? `Floor ${room.floor}` : "", room.roomNumber ? `Room ${room.roomNumber}` : "", room.roomType, room.genderRestriction || "MIXED"].filter(Boolean).join(" / ");
+}
+
 function HousingLocationSelect({ options, className = HOUSING_FIELD_CLASS }: { options: HousingLocationOption[]; className?: string }) {
   const [selectedValue, setSelectedValue] = useState("");
   const [site, setSite] = useState("");
@@ -10189,7 +10236,7 @@ function HousingLocationSelect({ options, className = HOUSING_FIELD_CLASS }: { o
       <input type="hidden" name="facilityLocationCode" value={selectedValue} />
       <div className="grid gap-3 md:grid-cols-3">
         <select value={site} onChange={(event) => { setSite(event.target.value); setBuilding(""); setSelectedValue(""); }} className={className}>
-          <option value="">1. Site</option>
+          <option value="">1. Zone</option>
           {sites.map((item) => <option key={item} value={item}>{item}</option>)}
         </select>
         <select value={building} onChange={(event) => { setBuilding(event.target.value); setSelectedValue(""); }} className={className} disabled={!site}>
@@ -10214,17 +10261,39 @@ function NationalityInput({ options }: { options: string[] }) {
   );
 }
 
-function HousingBookingForm({ rooms, beds, residents, locationOptions, nationalityOptions, saving, onSubmit }: { rooms: any[]; beds: any[]; residents: any[]; locationOptions: HousingLocationOption[]; nationalityOptions: string[]; saving: boolean; onSubmit: (formData: FormData) => void }) {
+function HousingBookingForm({ rooms, beds, bookings, residents, locationOptions, nationalityOptions, saving, onSubmit }: { rooms: any[]; beds: any[]; bookings: any[]; residents: any[]; locationOptions: HousingLocationOption[]; nationalityOptions: string[]; saving: boolean; onSubmit: (formData: FormData) => void }) {
   const [contractorType, setContractorType] = useState("CONTRACTOR");
+  const [selectedRoomId, setSelectedRoomId] = useState("");
   const allocatableRooms = rooms.filter((room) => !["BLOCKED", "MAINTENANCE"].includes(room.status));
-  const allocatableBeds = beds.filter((bed) => bed.status === "AVAILABLE");
   const residentOptions = residents.slice(0, HOUSING_REFERENCE_LIMIT);
+  const activeBookingStatuses = new Set(["REQUESTED", "PENDING_APPROVAL", "APPROVED", "CHECKED_IN"]);
+  const activeRoomBookings = new Map<string, any[]>();
+  bookings
+    .filter((booking) => activeBookingStatuses.has(String(booking.status || "").toUpperCase()))
+    .forEach((booking) => {
+      const roomId = booking.roomId || booking.room?.id;
+      if (!roomId) return;
+      activeRoomBookings.set(roomId, [...(activeRoomBookings.get(roomId) ?? []), booking]);
+    });
+  const bookedBedIds = new Set(bookings.filter((booking) => activeBookingStatuses.has(String(booking.status || "").toUpperCase())).map((booking) => booking.bedId || booking.bed?.id).filter(Boolean));
   const bedOptionsByRoom = new Map<string, any[]>();
-  allocatableBeds.forEach((bed) => {
+  const roomEmbeddedBeds = rooms.flatMap((room) => (room.beds ?? []).map((bed: any) => ({ ...bed, roomId: bed.roomId || room.id, room: bed.room || room })));
+  Array.from(new Map([...beds, ...roomEmbeddedBeds].map((bed) => [bed.id, bed])).values()).forEach((bed) => {
     const roomId = bed.roomId || bed.room?.id;
     if (!roomId) return;
+    if (bookedBedIds.has(bed.id) || ["RESERVED", "OCCUPIED", "MAINTENANCE", "BLOCKED"].includes(String(bed.status || "").toUpperCase())) return;
     bedOptionsByRoom.set(roomId, [...(bedOptionsByRoom.get(roomId) ?? []), bed]);
   });
+  const roomAvailability = (room: any) => {
+    const capacity = Math.max(1, Number(room.capacity || 1));
+    const activeBookings = activeRoomBookings.get(room.id) ?? [];
+    const roomLevelBooked = activeBookings.some((booking) => !booking.bedId);
+    if (roomLevelBooked) return 0;
+    const bookedCount = new Set(activeBookings.map((booking) => booking.bedId).filter(Boolean)).size;
+    return Math.max(0, capacity - bookedCount);
+  };
+  const selectedRoom = allocatableRooms.find((room) => room.id === selectedRoomId);
+  const selectedRoomBeds = selectedRoomId ? bedOptionsByRoom.get(selectedRoomId) ?? [] : [];
   return (
     <HousingForm title="Accommodation & Booking Management" type="booking" saving={saving} onSubmit={onSubmit}>
       <HousingLocationDatalist id="housing-booking-locations" options={locationOptions} />
@@ -10274,24 +10343,16 @@ function HousingBookingForm({ rooms, beds, residents, locationOptions, nationali
           <option value="CHECKED_IN">Check-in now</option>
         </select>
       </div>
-      <select name="roomId" className={HOUSING_FIELD_CLASS}>
+      <select name="roomId" value={selectedRoomId} onChange={(event) => setSelectedRoomId(event.target.value)} className={HOUSING_FIELD_CLASS}>
         <option value="">Select room by company / building / floor</option>
         {allocatableRooms.map((room) => {
-          const availableBeds = bedOptionsByRoom.get(room.id)?.length ?? 0;
-          return <option key={room.id} value={room.id}>{room.property?.name} / {room.block?.name} / Floor {room.floor} / Room {room.roomNumber} / {room.roomType} / {room.genderRestriction || "MIXED"} / Beds {availableBeds} available of {room.capacity}</option>;
+          const availableBeds = roomAvailability(room);
+          return <option key={room.id} value={room.id} disabled={availableBeds <= 0}>{housingRoomLabel(room)} / Beds {availableBeds} available of {room.capacity || 1}</option>;
         })}
       </select>
       <select name="bedId" className={HOUSING_FIELD_CLASS}>
-        <option value="">Auto-assign available bed</option>
-        {allocatableRooms.map((room) => {
-          const roomBeds = bedOptionsByRoom.get(room.id) ?? [];
-          if (!roomBeds.length) return null;
-          return (
-            <optgroup key={room.id} label={`${room.property?.name || "Housing"} / ${room.block?.name || "Building"} / Floor ${room.floor} / Room ${room.roomNumber}`}>
-              {roomBeds.map((bed) => <option key={bed.id} value={bed.id}>{bed.label} / available</option>)}
-            </optgroup>
-          );
-        })}
+        <option value="">{selectedRoom ? `Auto-assign available bed (${roomAvailability(selectedRoom)} available)` : "Select room first"}</option>
+        {selectedRoomBeds.map((bed) => <option key={bed.id} value={bed.id}>{bed.label || bed.code} / available</option>)}
       </select>
       <div className="grid gap-3 md:grid-cols-2">
         <input name="buildingNumber" list="housing-booking-locations" placeholder="Building number / override" className={HOUSING_FIELD_CLASS} />
