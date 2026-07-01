@@ -300,9 +300,16 @@ const moduleGroups: ModuleGroup[] = [
 const healthColors = ["#35a852", "#0f8b8d", "#ffd166", "#f45d48"];
 const dashboardColors = ["#0f8b8d", "#f45d48", "#06d6a0", "#ffd166", "#0b1f3a", "#7c3aed", "#2563eb", "#db2777", "#64748b", "#16a34a"];
 const PAGE_SIZE = 100;
+const PAGE_SIZE_OPTIONS = [25, 50, 100, 200, "all"] as const;
+type PageSizeChoice = number | "all";
 const PAGINATION_WINDOW = 7;
 const HOUSING_REFERENCE_LIMIT = 2000;
 const HOUSING_LOCATION_OPTION_LIMIT = 120;
+
+function pageSizeParam(value: PageSizeChoice) {
+  return value === "all" ? "all" : String(value);
+}
+
 const DEFAULT_NATIONALITIES = [
   "Saudi Arabia",
   "India",
@@ -2032,7 +2039,7 @@ function Assets({
       try {
         const params = new URLSearchParams({
           page: String(page),
-          pageSize: String(PAGE_SIZE),
+          pageSize: "all",
           query,
           filterField,
           filterValue,
@@ -2808,7 +2815,7 @@ function WorkOrders({
       try {
         const params = new URLSearchParams({
           page: String(page),
-          pageSize: String(PAGE_SIZE),
+          pageSize: "all",
           query: search,
           status: statusFilter,
           priority: priorityFilter,
@@ -3308,10 +3315,12 @@ function Helpdesk({
   }, [requests, search, statusFilter, priorityFilter, categoryFilter, overdueOnly]);
   const selectedRequest = filteredRequests.find((request) => request.id === selectedRequestId) ?? filteredRequests[0] ?? requests[0];
   const [page, setPage] = useState(1);
-  const totalPages = Math.max(1, Math.ceil(filteredRequests.length / PAGE_SIZE));
+  const [pageSizeChoice, setPageSizeChoice] = useState<PageSizeChoice>(PAGE_SIZE);
+  const effectivePageSize = pageSizeChoice === "all" ? Math.max(1, filteredRequests.length) : pageSizeChoice;
+  const totalPages = Math.max(1, Math.ceil(filteredRequests.length / effectivePageSize));
   const currentPage = Math.min(page, totalPages);
-  const startIndex = (currentPage - 1) * PAGE_SIZE;
-  const visibleRequests = filteredRequests.slice(startIndex, startIndex + PAGE_SIZE);
+  const startIndex = (currentPage - 1) * effectivePageSize;
+  const visibleRequests = filteredRequests.slice(startIndex, startIndex + effectivePageSize);
   const selectedVisibleRequests = visibleRequests.filter((request) => selectedRequestIds.has(request.id));
   const allVisibleRequestsSelected = isAdmin && Boolean(visibleRequests.length) && selectedVisibleRequests.length === visibleRequests.length;
   const someVisibleRequestsSelected = isAdmin && selectedVisibleRequests.length > 0 && !allVisibleRequestsSelected;
@@ -3324,7 +3333,7 @@ function Helpdesk({
 
   useEffect(() => {
     setPage(1);
-  }, [search, statusFilter, priorityFilter, categoryFilter, overdueOnly, filteredRequests.length]);
+  }, [search, statusFilter, priorityFilter, categoryFilter, overdueOnly, filteredRequests.length, pageSizeChoice]);
 
   useEffect(() => {
     setSelectedRequestIds((current) => new Set(Array.from(current).filter((id) => requests.some((request) => request.id === id))));
@@ -3545,7 +3554,7 @@ function Helpdesk({
           </table>
         </div>
         <div className="mt-3">
-          <PaginationControls page={currentPage} totalPages={totalPages} onPageChange={setPage} totalItems={filteredRequests.length} />
+          <PaginationControls page={currentPage} totalPages={totalPages} onPageChange={setPage} totalItems={filteredRequests.length} pageSizeChoice={pageSizeChoice} onPageSizeChange={setPageSizeChoice} />
         </div>
 
         {selectedRequest && (
@@ -5528,7 +5537,7 @@ function Ppm({
       try {
         const params = new URLSearchParams({
           page: String(page),
-          pageSize: String(PAGE_SIZE),
+          pageSize: "all",
           query: search,
           status: statusFilter,
         });
@@ -6497,7 +6506,7 @@ function DocumentManagement({
     if (current.loading) return;
     const nextPage = reset ? 1 : current.page + 1;
     setDocumentPages((pages) => ({ ...pages, [category]: { ...(pages[category] ?? current), loading: true } }));
-    const response = await fetch(`/api/document-uploads?category=${encodeURIComponent(category)}&page=${nextPage}&pageSize=${PAGE_SIZE}`, { cache: "no-store" });
+    const response = await fetch(`/api/document-uploads?category=${encodeURIComponent(category)}&page=${nextPage}&pageSize=all`, { cache: "no-store" });
     if (!response.ok) {
       setDocumentPages((pages) => ({ ...pages, [category]: { ...(pages[category] ?? current), loading: false } }));
       return;
@@ -7122,7 +7131,7 @@ function AssetHierarchySetup({
     async function loadFirstPage() {
       setSetupLoading(setupKey);
       try {
-        const params = new URLSearchParams({ page: "1", pageSize: String(PAGE_SIZE) });
+        const params = new URLSearchParams({ page: "1", pageSize: "all" });
         if (setupFilters.keyword.trim()) params.set("query", setupFilters.keyword.trim());
         if (setupFilters.module !== "All") params.set("locationScope", setupFilters.module);
         const response = await fetch(`${setupEndpoint}?${params.toString()}`, { cache: "no-store", signal: controller.signal });
@@ -7154,7 +7163,7 @@ function AssetHierarchySetup({
     const nextPage = setupPages[setupKey as keyof typeof setupPages] + 1;
     setSetupLoading(setupKey);
     try {
-      const params = new URLSearchParams({ page: String(nextPage), pageSize: String(PAGE_SIZE) });
+      const params = new URLSearchParams({ page: String(nextPage), pageSize: "all" });
       if (setupFilters.keyword.trim()) params.set("query", setupFilters.keyword.trim());
       if (setupFilters.module !== "All") params.set("locationScope", setupFilters.module);
       const response = await fetch(`${setupEndpoint}?${params.toString()}`, { cache: "no-store" });
@@ -7494,7 +7503,7 @@ function Locations({ locations, submitLocation, deleteLocation, isAdmin, saving 
       try {
         const params = new URLSearchParams({
           page: String(page),
-          pageSize: String(PAGE_SIZE),
+          pageSize: "all",
           query,
           parentLocation: parentFilter,
           locationClass: classFilter,
@@ -7762,7 +7771,7 @@ function JobPlans({ jobPlans, jobPlansTotal, services, departments, submitJobPla
       try {
         const params = new URLSearchParams({
           page: String(page),
-          pageSize: String(PAGE_SIZE),
+          pageSize: "all",
         });
         const response = await fetch(`/api/job-plans?${params.toString()}`, { cache: "no-store", signal: controller.signal });
         if (response.ok) {
@@ -8161,7 +8170,7 @@ function UsersRoles({
       try {
         const params = new URLSearchParams({
           page: String(userPage),
-          pageSize: String(PAGE_SIZE),
+          pageSize: "all",
           query: userSearch,
         });
         const response = await fetch(`/api/users?${params.toString()}`, { cache: "no-store", signal: controller.signal });
@@ -8187,7 +8196,7 @@ function UsersRoles({
   async function refreshUserRows() {
     setUserLoading(true);
     try {
-      const params = new URLSearchParams({ page: "1", pageSize: String(Math.max(PAGE_SIZE, userRows.length || PAGE_SIZE)), query: userSearch });
+      const params = new URLSearchParams({ page: "1", pageSize: "all", query: userSearch });
       const response = await fetch(`/api/users?${params.toString()}`, { cache: "no-store" });
       if (response.ok) {
         const result = await response.json();
@@ -9501,7 +9510,7 @@ function HousingOperations({
         const params = new URLSearchParams({
           type: "assets",
           page: String(housingAssetPage),
-          pageSize: String(PAGE_SIZE),
+          pageSize: "all",
           query: search,
           status,
           assetGroup: housingAssetGroupFilter,
@@ -9901,13 +9910,15 @@ function HousingTable({
   onLoadMore?: () => void;
 }) {
   const [page, setPage] = useState(1);
+  const [pageSizeChoice, setPageSizeChoice] = useState<PageSizeChoice>(PAGE_SIZE);
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
   const [tableFilters, setTableFilters] = useState({ keyword: "", dateFrom: "", dateTo: "", module: "All" });
   const moduleOptions = useMemo(() => Array.from(new Set(rows.map(rowModuleValue).filter(Boolean))).sort(), [rows]);
   const filteredRows = useMemo(() => filterRowsByControls(rows, tableFilters), [rows, tableFilters]);
-  const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
+  const effectivePageSize = pageSizeChoice === "all" ? Math.max(1, filteredRows.length) : pageSizeChoice;
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / effectivePageSize));
   const safePage = Math.min(page, totalPages);
-  const visibleRows = scrollLoad ? filteredRows : filteredRows.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  const visibleRows = scrollLoad ? filteredRows : filteredRows.slice((safePage - 1) * effectivePageSize, safePage * effectivePageSize);
   const selectedVisibleRows = visibleRows.filter((row) => selectedRowIds.has(row.id));
   const selectedRows = filteredRows.filter((row) => selectedRowIds.has(row.id));
   const allVisibleSelected = bulkSelectable && Boolean(visibleRows.length) && selectedVisibleRows.length === visibleRows.length;
@@ -9917,7 +9928,7 @@ function HousingTable({
 
   useEffect(() => {
     setPage(1);
-  }, [rows.length, reportType, tableFilters]);
+  }, [rows.length, reportType, tableFilters, pageSizeChoice]);
 
   useEffect(() => {
     setSelectedRowIds((current) => new Set(Array.from(current).filter((id) => filteredRows.some((row) => row.id === id))));
@@ -10006,7 +10017,7 @@ function HousingTable({
                     />
                   </td>
                 )}
-                <td className="px-3 py-3 font-black text-slate-500">{scrollLoad ? index + 1 : (safePage - 1) * PAGE_SIZE + index + 1}</td>
+                <td className="px-3 py-3 font-black text-slate-500">{scrollLoad ? index + 1 : (safePage - 1) * effectivePageSize + index + 1}</td>
                 {columns.map(([key]) => <td key={key} className="max-w-[260px] px-3 py-3"><HousingCellValue field={key} value={key.includes("At") || key.includes("Date") || key === "dueAt" || key === "checkIn" ? formatDateCell(row[key]) : row[key]} /></td>)}
                 {actions && <td className="px-3 py-3">{actions(row)}</td>}
               </tr>
@@ -10023,8 +10034,11 @@ function HousingTable({
         </div>
       ) : (
         <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg bg-slate-50 p-3 text-sm font-bold text-slate-600">
-          <span>Page {safePage} of {totalPages} / {filteredRows.length} entries / {PAGE_SIZE} per page</span>
+          <span>Page {safePage} of {totalPages} / {filteredRows.length} entries / {pageSizeChoice === "all" ? "All" : pageSizeChoice} per page</span>
           <div className="flex flex-wrap gap-2">
+            <select value={String(pageSizeChoice)} onChange={(event) => { setPageSizeChoice(event.target.value === "all" ? "all" : Number(event.target.value)); setPage(1); }} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-black">
+              {PAGE_SIZE_OPTIONS.map((option) => <option key={String(option)} value={String(option)}>{option === "all" ? "All" : option}</option>)}
+            </select>
             <button type="button" disabled={safePage === 1} onClick={() => setPage((current) => Math.max(1, current - 1))} className="rounded-lg border border-slate-200 bg-white px-3 py-2 disabled:opacity-50">Previous</button>
             {Array.from({ length: Math.min(totalPages, 5) }, (_, index) => {
               const pageNumber = Math.min(totalPages, Math.max(1, safePage - 2) + index);
@@ -11343,14 +11357,16 @@ function DataTable({
   onBulkDelete?: (rows: any[]) => Promise<void> | void;
 }) {
   const [page, setPage] = useState(1);
+  const [pageSizeChoice, setPageSizeChoice] = useState<PageSizeChoice>(PAGE_SIZE);
   const [selectedRowKeys, setSelectedRowKeys] = useState<Set<string>>(new Set());
   const [tableFilters, setTableFilters] = useState({ keyword: "", dateFrom: "", dateTo: "", module: "All" });
   const moduleOptions = useMemo(() => Array.from(new Set(rows.map(rowModuleValue).filter(Boolean))).sort(), [rows]);
   const filteredRows = useMemo(() => filterRowsByControls(rows, tableFilters), [rows, tableFilters]);
-  const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
+  const effectivePageSize = pageSizeChoice === "all" ? Math.max(1, filteredRows.length) : pageSizeChoice;
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / effectivePageSize));
   const currentPage = Math.min(page, totalPages);
-  const startIndex = (currentPage - 1) * PAGE_SIZE;
-  const visibleRows = filteredRows.slice(startIndex, startIndex + PAGE_SIZE);
+  const startIndex = (currentPage - 1) * effectivePageSize;
+  const visibleRows = filteredRows.slice(startIndex, startIndex + effectivePageSize);
   const rowKey = (row: any, index: number) => String(row.id ?? row.code ?? row.name ?? row.reference ?? row.ticketNo ?? row.woNo ?? index);
   const visibleRowKeys = visibleRows.map((row, index) => rowKey(row, startIndex + index));
   const selectedRows = filteredRows.filter((row, index) => selectedRowKeys.has(rowKey(row, index)));
@@ -11360,7 +11376,7 @@ function DataTable({
 
   useEffect(() => {
     setPage(1);
-  }, [rows.length, tableFilters]);
+  }, [rows.length, tableFilters, pageSizeChoice]);
 
   useEffect(() => {
     const allKeys = new Set(filteredRows.map((row, index) => String(row.id ?? row.code ?? row.name ?? row.reference ?? row.ticketNo ?? row.woNo ?? index)));
@@ -11456,12 +11472,12 @@ function DataTable({
           </tbody>
         </table>
       </div>
-      <PaginationControls page={currentPage} totalPages={totalPages} onPageChange={setPage} totalItems={filteredRows.length} />
+      <PaginationControls page={currentPage} totalPages={totalPages} onPageChange={setPage} totalItems={filteredRows.length} pageSizeChoice={pageSizeChoice} onPageSizeChange={setPageSizeChoice} />
     </div>
   );
 }
 
-function PaginationControls({ page, totalPages, totalItems, onPageChange }: { page: number; totalPages: number; totalItems: number; onPageChange: (page: number) => void }) {
+function PaginationControls({ page, totalPages, totalItems, onPageChange, pageSizeChoice, onPageSizeChange }: { page: number; totalPages: number; totalItems: number; onPageChange: (page: number) => void; pageSizeChoice: PageSizeChoice; onPageSizeChange: (value: PageSizeChoice) => void }) {
   if (totalItems === 0) return <p className="text-sm font-bold text-slate-500">No entries found.</p>;
   const halfWindow = Math.floor(PAGINATION_WINDOW / 2);
   const windowStart = Math.max(1, Math.min(page - halfWindow, totalPages - PAGINATION_WINDOW + 1));
@@ -11471,9 +11487,12 @@ function PaginationControls({ page, totalPages, totalItems, onPageChange }: { pa
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-slate-50 p-3">
       <p className="text-sm font-bold text-slate-600">
-        Page {page} of {totalPages} / {totalItems} entries / {PAGE_SIZE} per page
+        Page {page} of {totalPages} / {totalItems} entries / {pageSizeChoice === "all" ? "All" : pageSizeChoice} per page
       </p>
       <div className="flex flex-wrap gap-2">
+        <select value={String(pageSizeChoice)} onChange={(event) => { onPageSizeChange(event.target.value === "all" ? "all" : Number(event.target.value)); onPageChange(1); }} className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm font-black text-slate-700">
+          {PAGE_SIZE_OPTIONS.map((option) => <option key={String(option)} value={String(option)}>{option === "all" ? "All" : option}</option>)}
+        </select>
         <button
           type="button"
           disabled={page === 1}

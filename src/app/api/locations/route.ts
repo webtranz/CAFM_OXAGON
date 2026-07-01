@@ -3,6 +3,7 @@ import { z } from "zod";
 import { apiError } from "@/lib/api-response";
 import { requirePermission } from "@/lib/api-auth";
 import { auditAction } from "@/lib/audit";
+import { paginationMeta, readPagination } from "@/lib/pagination";
 import { prisma } from "@/lib/prisma";
 
 const boolInput = z.preprocess((value) => {
@@ -40,10 +41,7 @@ export async function GET(request: Request) {
   const locationClass = url.searchParams.get("locationClass")?.trim() || "";
   const residential = url.searchParams.get("residential")?.trim() || "";
   const locationScope = url.searchParams.get("locationScope")?.trim() || "";
-  const pageInput = Number(url.searchParams.get("page") || 1);
-  const pageSizeInput = Number(url.searchParams.get("pageSize") || 100);
-  const page = Number.isFinite(pageInput) ? Math.max(1, Math.floor(pageInput)) : 1;
-  const pageSize = Number.isFinite(pageSizeInput) ? Math.min(200, Math.max(25, Math.floor(pageSizeInput))) : 100;
+  const pagination = readPagination(url);
   const where: any = {
     ...(parentLocation ? { parentLocation } : {}),
     ...(locationClass ? { locationClass } : {}),
@@ -99,12 +97,12 @@ export async function GET(request: Request) {
     prisma.location.count({ where }),
     prisma.location.findMany({
       where,
-      skip: (page - 1) * pageSize,
-      take: pageSize,
+      skip: pagination.skip,
+      take: pagination.take,
       orderBy: [{ code: "asc" }],
     }),
   ]);
-  return NextResponse.json({ locations, total, page, pageSize, totalPages: Math.max(1, Math.ceil(total / pageSize)) });
+  return NextResponse.json({ locations, total, ...paginationMeta(total, pagination) });
 }
 
 export async function POST(request: Request) {

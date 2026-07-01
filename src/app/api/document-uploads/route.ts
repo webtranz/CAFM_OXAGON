@@ -4,6 +4,7 @@ import path from "path";
 import { NextResponse } from "next/server";
 import { requireAdmin, requireUser } from "@/lib/api-auth";
 import { auditAction } from "@/lib/audit";
+import { paginationMeta, readPagination } from "@/lib/pagination";
 import { privateFileUrl, privateUploadRoot, resolvePrivateUploadPath } from "@/lib/private-files";
 import { prisma } from "@/lib/prisma";
 
@@ -46,13 +47,12 @@ export async function GET(request: Request) {
     if (error) return error;
     const searchParams = new URL(request.url).searchParams;
     const category = searchParams.get("category") || undefined;
-    const page = Math.max(1, Number(searchParams.get("page") || 1));
-    const pageSize = Math.min(100, Math.max(1, Number(searchParams.get("pageSize") || 100)));
-    const skip = (page - 1) * pageSize;
+    const url = new URL(request.url);
+    const pagination = readPagination(url, { min: 1, max: 200 });
     const where = category ? { category } : {};
 
     const [documents, total] = await Promise.all([
-      prisma.documentUpload.findMany({ where, orderBy: { createdAt: "desc" }, skip, take: pageSize }),
+      prisma.documentUpload.findMany({ where, orderBy: { createdAt: "desc" }, skip: pagination.skip, take: pagination.take }),
       prisma.documentUpload.count({ where }),
     ]);
     const assetTags = Array.from(new Set(documents.map((document) => document.assetTag).filter(Boolean)));
@@ -102,7 +102,7 @@ export async function GET(request: Request) {
       };
     }));
 
-    return NextResponse.json({ rows, total, page, pageSize });
+    return NextResponse.json({ rows, total, ...paginationMeta(total, pagination) });
   } catch {
     return NextResponse.json({ message: "Unable to load documents." }, { status: 500 });
   }

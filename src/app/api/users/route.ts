@@ -5,6 +5,7 @@ import { z } from "zod";
 import { apiError } from "@/lib/api-response";
 import { requireAnyPermission, requirePermission } from "@/lib/api-auth";
 import { auditAction } from "@/lib/audit";
+import { paginationMeta, readPagination } from "@/lib/pagination";
 import { prisma } from "@/lib/prisma";
 
 const schema = z.object({
@@ -26,10 +27,7 @@ export async function GET(request: Request) {
   if (error) return error;
   const url = new URL(request.url);
   const query = url.searchParams.get("query")?.trim() || "";
-  const pageInput = Number(url.searchParams.get("page") || 1);
-  const pageSizeInput = Number(url.searchParams.get("pageSize") || 100);
-  const page = Number.isFinite(pageInput) ? Math.max(1, Math.floor(pageInput)) : 1;
-  const pageSize = Number.isFinite(pageSizeInput) ? Math.min(200, Math.max(25, Math.floor(pageSizeInput))) : 100;
+  const pagination = readPagination(url);
   const where = query
     ? {
         OR: [
@@ -46,11 +44,11 @@ export async function GET(request: Request) {
       where,
       include: { team: true },
       orderBy: { name: "asc" },
-      skip: (page - 1) * pageSize,
-      take: pageSize,
+      skip: pagination.skip,
+      take: pagination.take,
     }),
   ]);
-  return NextResponse.json({ users, total, page, pageSize, totalPages: Math.max(1, Math.ceil(total / pageSize)) });
+  return NextResponse.json({ users, total, ...paginationMeta(total, pagination) });
 }
 
 export async function POST(request: Request) {

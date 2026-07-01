@@ -4,6 +4,7 @@ import { apiError } from "@/lib/api-response";
 import { auditAction } from "@/lib/audit";
 import { getCurrentUser } from "@/lib/auth";
 import { ensureHousingNotificationSettings } from "@/lib/housing-alerts";
+import { paginationMeta, readPagination } from "@/lib/pagination";
 import { prisma } from "@/lib/prisma";
 
 const HOUSING_REFERENCE_LIMIT = 2000;
@@ -250,10 +251,7 @@ export async function GET(request: Request) {
   }
 
   if (url.searchParams.get("type") === "assets") {
-    const pageInput = Number(url.searchParams.get("page") || 1);
-    const pageSizeInput = Number(url.searchParams.get("pageSize") || 100);
-    const page = Number.isFinite(pageInput) ? Math.max(1, Math.floor(pageInput)) : 1;
-    const pageSize = Number.isFinite(pageSizeInput) ? Math.min(200, Math.max(25, Math.floor(pageSizeInput))) : 100;
+    const pagination = readPagination(url);
     const query = url.searchParams.get("query")?.trim() || "";
     const status = url.searchParams.get("status")?.trim() || "";
     const assetGroup = url.searchParams.get("assetGroup")?.trim() || "";
@@ -286,11 +284,11 @@ export async function GET(request: Request) {
         where,
         include: { room: { include: { property: true, block: true } } },
         orderBy: { tag: "asc" },
-        skip: (page - 1) * pageSize,
-        take: pageSize,
+        skip: pagination.skip,
+        take: pagination.take,
       }),
     ]);
-    return NextResponse.json({ assets, total, page, pageSize, totalPages: Math.max(1, Math.ceil(total / pageSize)) });
+    return NextResponse.json({ assets, total, ...paginationMeta(total, pagination) });
   }
 
   const [

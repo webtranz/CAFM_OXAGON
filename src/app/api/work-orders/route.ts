@@ -5,6 +5,7 @@ import { accessRole } from "@/lib/access-control";
 import { auditAction } from "@/lib/audit";
 import { requireUser } from "@/lib/api-auth";
 import { getCurrentUser } from "@/lib/auth";
+import { paginationMeta, readPagination } from "@/lib/pagination";
 import { prisma } from "@/lib/prisma";
 
 const booleanInput = z.preprocess((value) => {
@@ -63,10 +64,7 @@ export async function GET(request: Request) {
   const assigned = url.searchParams.get("assigned")?.trim() || "";
   const overdueOnly = url.searchParams.get("overdueOnly") === "true";
   const delayedOnly = url.searchParams.get("delayedOnly") === "true";
-  const pageInput = Number(url.searchParams.get("page") || 1);
-  const pageSizeInput = Number(url.searchParams.get("pageSize") || 100);
-  const page = Number.isFinite(pageInput) ? Math.max(1, Math.floor(pageInput)) : 1;
-  const pageSize = Number.isFinite(pageSizeInput) ? Math.min(200, Math.max(25, Math.floor(pageSizeInput))) : 100;
+  const pagination = readPagination(url);
   const where: any = {
     ...visibleWorkWhere(user),
     ...(status && status !== "All" ? { status } : {}),
@@ -121,8 +119,8 @@ export async function GET(request: Request) {
     prisma.workOrder.count({ where }),
     prisma.workOrder.findMany({
       where,
-      skip: (page - 1) * pageSize,
-      take: pageSize,
+      skip: pagination.skip,
+      take: pagination.take,
       orderBy: { dueAt: "asc" },
       include: {
         assignedTo: { select: { name: true, email: true } },
@@ -132,7 +130,7 @@ export async function GET(request: Request) {
       },
     }),
   ]);
-  return NextResponse.json({ workOrders, total, page, pageSize, totalPages: Math.max(1, Math.ceil(total / pageSize)) });
+  return NextResponse.json({ workOrders, total, ...paginationMeta(total, pagination) });
 }
 
 export async function POST(request: Request) {
