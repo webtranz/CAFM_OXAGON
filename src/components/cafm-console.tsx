@@ -2112,6 +2112,10 @@ function Assets({
     });
   }
 
+  function selectAllAssets() {
+    setSelectedAssetIds(new Set(assetRows.map((asset) => asset.id).filter(Boolean)));
+  }
+
   async function bulkDeleteSelectedAssets() {
     const ids = Array.from(selectedAssetIds);
     if (!ids.length) return;
@@ -2127,14 +2131,17 @@ function Assets({
           <div className="flex flex-wrap items-center gap-2">
             <button type="button" onClick={() => setFilterOpen((current) => !current)} className="rounded-lg bg-lagoon px-4 py-3 text-sm font-black text-white">Filters</button>
             {isAdmin && (
-              <button
-                type="button"
-                disabled={saving || !selectedAssetIds.size}
-                onClick={bulkDeleteSelectedAssets}
-                className="rounded-lg bg-coral px-4 py-3 text-sm font-black text-white disabled:bg-slate-300"
-              >
-                Delete All
-              </button>
+              <>
+                <button type="button" onClick={selectAllAssets} disabled={!assetRows.length} className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm font-black text-lagoon disabled:opacity-50">Select All</button>
+                <button
+                  type="button"
+                  disabled={saving || !selectedAssetIds.size}
+                  onClick={bulkDeleteSelectedAssets}
+                  className="rounded-lg bg-coral px-4 py-3 text-sm font-black text-white disabled:bg-slate-300"
+                >
+                  Delete Selected
+                </button>
+              </>
             )}
           </div>
           <div className="flex min-w-[280px] flex-1 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 lg:max-w-md">
@@ -2897,6 +2904,10 @@ function WorkOrders({
     });
   }
 
+  function selectAllWorks() {
+    setSelectedWorkIds(new Set(visibleWorks.map((work) => work.id).filter(Boolean)));
+  }
+
   async function bulkDeleteSelectedWorks() {
     const ids = Array.from(selectedWorkIds);
     if (!ids.length) return;
@@ -2913,14 +2924,17 @@ function WorkOrders({
             <button type="button" onClick={() => setView("list")} className={`h-10 rounded-lg px-4 text-sm font-black ${view === "list" ? "bg-lagoon text-white" : "bg-slate-50 text-slate-600"}`}>List</button>
             <button type="button" onClick={() => setView("calendar")} className={`h-10 rounded-lg px-4 text-sm font-black ${view === "calendar" ? "bg-lagoon text-white" : "bg-slate-50 text-slate-600"}`}>Calendar</button>
             {isAdmin && view === "list" && (
-              <button
-                type="button"
-                disabled={saving || !selectedWorkIds.size}
-                onClick={bulkDeleteSelectedWorks}
-                className="h-10 rounded-lg bg-coral px-4 text-sm font-black text-white disabled:bg-slate-300"
-              >
-                Delete All
-              </button>
+              <>
+                <button type="button" onClick={selectAllWorks} disabled={!visibleWorks.length} className="h-10 rounded-lg border border-slate-200 bg-white px-4 text-sm font-black text-lagoon disabled:opacity-50">Select All</button>
+                <button
+                  type="button"
+                  disabled={saving || !selectedWorkIds.size}
+                  onClick={bulkDeleteSelectedWorks}
+                  className="h-10 rounded-lg bg-coral px-4 text-sm font-black text-white disabled:bg-slate-300"
+                >
+                  Delete Selected
+                </button>
+              </>
             )}
           </div>
           <div className="flex min-w-[280px] flex-1 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 lg:max-w-md">
@@ -3359,6 +3373,10 @@ function Helpdesk({
     });
   }
 
+  function selectAllRequests() {
+    setSelectedRequestIds(new Set(filteredRequests.map((request) => request.id).filter(Boolean)));
+  }
+
   async function bulkDeleteSelectedRequests() {
     const ids = Array.from(selectedRequestIds);
     if (!ids.length) return;
@@ -3443,8 +3461,9 @@ function Helpdesk({
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm font-black text-slate-600">
             <span>Selected {selectedRequestIds.size.toLocaleString()} service requests</span>
             <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={selectAllRequests} disabled={!filteredRequests.length} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-black text-lagoon disabled:opacity-50">Select All</button>
               <button type="button" onClick={() => toggleVisibleRequests(true)} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-black text-lagoon">Select Visible</button>
-              <button type="button" disabled={!selectedRequestIds.size} onClick={bulkDeleteSelectedRequests} className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white disabled:bg-slate-300">Delete All</button>
+              <button type="button" disabled={!selectedRequestIds.size} onClick={bulkDeleteSelectedRequests} className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white disabled:bg-slate-300">Delete Selected</button>
               <button type="button" disabled={!selectedRequestIds.size} onClick={() => setSelectedRequestIds(new Set())} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-600 disabled:opacity-50">Clear Selection</button>
             </div>
           </div>
@@ -5590,6 +5609,10 @@ function Ppm({
     });
   }
 
+  function selectAllPpms() {
+    setSelectedPpmIds(new Set(ppmRowsSource.map((ppm) => ppm.id).filter(Boolean)));
+  }
+
   async function bulkDeleteSelectedPpms() {
     const ids = Array.from(selectedPpmIds);
     if (!ids.length) return;
@@ -5622,8 +5645,9 @@ function Ppm({
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm font-black text-slate-600">
                 <span>Selected {selectedPpmIds.size.toLocaleString()} PPM plans</span>
                 <div className="flex flex-wrap gap-2">
+                  <button type="button" onClick={selectAllPpms} disabled={!ppmRowsSource.length} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-black text-lagoon disabled:opacity-50">Select All</button>
                   <button type="button" onClick={() => toggleVisiblePpms(true)} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-black text-lagoon">Select Visible</button>
-                  <button type="button" disabled={!selectedPpmIds.size} onClick={bulkDeleteSelectedPpms} className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white disabled:bg-slate-300">Delete All</button>
+                  <button type="button" disabled={!selectedPpmIds.size} onClick={bulkDeleteSelectedPpms} className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white disabled:bg-slate-300">Delete Selected</button>
                   <button type="button" disabled={!selectedPpmIds.size} onClick={() => setSelectedPpmIds(new Set())} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-600 disabled:opacity-50">Clear Selection</button>
                 </div>
               </div>
@@ -6750,6 +6774,10 @@ function ScrollableRowsTable({
     });
   }
 
+  function selectAllRows() {
+    setSelectedRowKeys(new Set(filteredRows.map((row, index) => rowKey(row, index))));
+  }
+
   function toggleRow(key: string, checked: boolean) {
     setSelectedRowKeys((current) => {
       const next = new Set(current);
@@ -6772,8 +6800,9 @@ function ScrollableRowsTable({
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm font-black text-slate-600">
           <span>Selected {selectedRowKeys.size.toLocaleString()} {bulkLabel}</span>
           <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={selectAllRows} disabled={!filteredRows.length} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-black text-lagoon disabled:opacity-50">Select All</button>
             <button type="button" onClick={() => toggleVisibleRows(true)} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-black text-lagoon">Select Visible</button>
-            <button type="button" disabled={!selectedRowKeys.size || !onBulkDelete} onClick={deleteSelectedRows} className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white disabled:bg-slate-300">Delete All</button>
+            <button type="button" disabled={!selectedRowKeys.size || !onBulkDelete} onClick={deleteSelectedRows} className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white disabled:bg-slate-300">Delete Selected</button>
             <button type="button" disabled={!selectedRowKeys.size} onClick={() => setSelectedRowKeys(new Set())} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-600 disabled:opacity-50">Clear Selection</button>
           </div>
         </div>
@@ -7559,6 +7588,10 @@ function Locations({ locations, submitLocation, deleteLocation, isAdmin, saving 
     });
   }
 
+  function selectAllLocations() {
+    setSelectedLocationIds(new Set(locationRows.map((location) => location.id).filter(Boolean)));
+  }
+
   async function bulkDeleteSelectedLocations() {
     const ids = Array.from(selectedLocationIds);
     if (!ids.length) return;
@@ -7606,8 +7639,9 @@ function Locations({ locations, submitLocation, deleteLocation, isAdmin, saving 
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm font-black text-slate-600">
             <span>Selected {selectedLocationIds.size.toLocaleString()} locations</span>
             <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={selectAllLocations} disabled={!locationRows.length} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-black text-lagoon disabled:opacity-50">Select All</button>
               <button type="button" onClick={() => toggleVisibleLocations(true)} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-black text-lagoon">Select Visible</button>
-              <button type="button" disabled={!selectedLocationIds.size} onClick={bulkDeleteSelectedLocations} className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white disabled:bg-slate-300">Delete All</button>
+              <button type="button" disabled={!selectedLocationIds.size} onClick={bulkDeleteSelectedLocations} className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white disabled:bg-slate-300">Delete Selected</button>
               <button type="button" disabled={!selectedLocationIds.size} onClick={() => setSelectedLocationIds(new Set())} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-600 disabled:opacity-50">Clear Selection</button>
             </div>
           </div>
@@ -7822,6 +7856,10 @@ function JobPlans({ jobPlans, jobPlansTotal, services, departments, submitJobPla
     });
   }
 
+  function selectAllJobPlans() {
+    setSelectedJobPlanIds(new Set(jobPlanRowsSource.map((jobPlan) => jobPlan.id).filter(Boolean)));
+  }
+
   async function bulkDeleteSelectedJobPlans() {
     const ids = Array.from(selectedJobPlanIds);
     if (!ids.length) return;
@@ -7848,8 +7886,9 @@ function JobPlans({ jobPlans, jobPlansTotal, services, departments, submitJobPla
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm font-black text-slate-600">
             <span>Selected {selectedJobPlanIds.size.toLocaleString()} job plans</span>
             <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={selectAllJobPlans} disabled={!jobPlanRowsSource.length} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-black text-lagoon disabled:opacity-50">Select All</button>
               <button type="button" onClick={() => toggleVisibleJobPlans(true)} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-black text-lagoon">Select Visible</button>
-              <button type="button" disabled={!selectedJobPlanIds.size} onClick={bulkDeleteSelectedJobPlans} className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white disabled:bg-slate-300">Delete All</button>
+              <button type="button" disabled={!selectedJobPlanIds.size} onClick={bulkDeleteSelectedJobPlans} className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white disabled:bg-slate-300">Delete Selected</button>
               <button type="button" disabled={!selectedJobPlanIds.size} onClick={() => setSelectedJobPlanIds(new Set())} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-600 disabled:opacity-50">Clear Selection</button>
             </div>
           </div>
@@ -9945,6 +9984,10 @@ function HousingTable({
     });
   }
 
+  function selectAllRows() {
+    setSelectedRowIds(new Set(filteredRows.map((row) => row.id).filter(Boolean)));
+  }
+
   function toggleRow(id: string, checked: boolean) {
     setSelectedRowIds((current) => {
       const next = new Set(current);
@@ -9977,8 +10020,9 @@ function HousingTable({
         <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm font-black text-slate-600">
           <span>Selected {selectedRowIds.size.toLocaleString()} records</span>
           <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={selectAllRows} disabled={!filteredRows.length} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-black text-lagoon disabled:opacity-50">Select All</button>
             <button type="button" onClick={() => toggleVisibleRows(true)} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-black text-lagoon">Select Visible</button>
-            <button type="button" disabled={!selectedRowIds.size || !onBulkDelete} onClick={deleteSelectedRows} className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white disabled:bg-slate-300">Delete All</button>
+            <button type="button" disabled={!selectedRowIds.size || !onBulkDelete} onClick={deleteSelectedRows} className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white disabled:bg-slate-300">Delete Selected</button>
             <button type="button" disabled={!selectedRowIds.size} onClick={() => setSelectedRowIds(new Set())} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-600 disabled:opacity-50">Clear Selection</button>
           </div>
         </div>
@@ -11395,6 +11439,10 @@ function DataTable({
     });
   }
 
+  function selectAllRows() {
+    setSelectedRowKeys(new Set(filteredRows.map((row, index) => rowKey(row, index))));
+  }
+
   function toggleRow(key: string, checked: boolean) {
     setSelectedRowKeys((current) => {
       const next = new Set(current);
@@ -11417,8 +11465,9 @@ function DataTable({
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm font-black text-slate-600">
           <span>Selected {selectedRowKeys.size.toLocaleString()} {bulkLabel}</span>
           <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={selectAllRows} disabled={!filteredRows.length} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-black text-lagoon disabled:opacity-50">Select All</button>
             <button type="button" onClick={() => toggleVisibleRows(true)} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-black text-lagoon">Select Visible</button>
-            <button type="button" disabled={!selectedRowKeys.size || !onBulkDelete} onClick={deleteSelectedRows} className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white disabled:bg-slate-300">Delete All</button>
+            <button type="button" disabled={!selectedRowKeys.size || !onBulkDelete} onClick={deleteSelectedRows} className="rounded-lg bg-coral px-3 py-2 text-xs font-black text-white disabled:bg-slate-300">Delete Selected</button>
             <button type="button" disabled={!selectedRowKeys.size} onClick={() => setSelectedRowKeys(new Set())} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-600 disabled:opacity-50">Clear Selection</button>
           </div>
         </div>
