@@ -4305,7 +4305,8 @@ function ServiceRequestForm({ title, request, services, categories, departments,
           ))}
         </div>
         <input type="hidden" name="priority" value={priority} />
-        <input type="hidden" name="location" value={locationValue} />
+        <input type="hidden" name="location" value={locationCodeValue} />
+        <input type="hidden" name="sourceLocation" value={locationValue} />
         <div className={`grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 md:grid-cols-4 ${compact ? "xl:col-span-2" : ""}`}>
           <SearchableDropdownField
             value={siteValue}
@@ -5328,6 +5329,7 @@ function WorkOrderForm({ title, work, data, onSubmit, saving }: { title: string;
         </label>
         <input name="title" defaultValue={work?.title ?? ""} placeholder="Title" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
         <input name="type" defaultValue={work?.type ?? ""} placeholder="Work type" className="h-11 rounded-lg border border-slate-200 px-3 outline-none focus:border-lagoon" />
+        <input type="hidden" name="locationCode" value={locationCodeValue} />
         <input type="hidden" name="sourceLocation" value={selectedLocationLabel} />
         <div className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 md:grid-cols-4">
           <SearchableDropdownField value={siteValue} placeholder="1. Zone" options={siteDropdownOptions} onInput={(value) => { setSiteValue(value); setSpValue(""); setBuildingValue(""); setLocationCodeValue(""); setLocationSearchValue(""); }} onSelect={(option) => { setSiteValue(option.value); setSpValue(""); setBuildingValue(""); setLocationCodeValue(""); setLocationSearchValue(""); }} />
@@ -7762,28 +7764,38 @@ function locationCodePart(value: string) {
 
 function LocationCreateForm({ onSubmit, saving }: { onSubmit: (formData: FormData) => void; saving: boolean }) {
   const [site, setSite] = useState("");
+  const [sp, setSp] = useState("");
+  const [region, setRegion] = useState("");
+  const [block, setBlock] = useState("");
   const [building, setBuilding] = useState("");
   const [floor, setFloor] = useState("");
   const [room, setRoom] = useState("");
-  const generatedCode = [site, building, floor, room].map(locationCodePart).filter(Boolean).join("-");
+  const generatedCode = [site, sp, region, block, building, floor, room].map(locationCodePart).filter(Boolean).join("-");
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
     const formData = new FormData(form);
     const code = String(formData.get("location") ?? "").trim() || generatedCode;
-    const description = String(formData.get("description") ?? "").trim() || [site, building, floor, room].filter(Boolean).join(" / ");
+    const description = String(formData.get("description") ?? "").trim() || [site, sp, region, block, building, floor, room].filter(Boolean).join(" / ");
     formData.set("location", code);
     formData.set("code", code);
     formData.set("site", site);
+    formData.set("sp", sp);
+    formData.set("region", region);
+    formData.set("block", block);
     formData.set("building", building);
     formData.set("floor", floor);
     formData.set("room", room);
-    formData.set("parentLocation", [site, building].filter(Boolean).join(" / "));
+    formData.set("zone", region);
+    formData.set("parentLocation", [site, sp, region, block, building].filter(Boolean).join(" / "));
     formData.set("description", description);
     await onSubmit(formData);
     form.reset();
     setSite("");
+    setSp("");
+    setRegion("");
+    setBlock("");
     setBuilding("");
     setFloor("");
     setRoom("");
@@ -7795,10 +7807,13 @@ function LocationCreateForm({ onSubmit, saving }: { onSubmit: (formData: FormDat
       <div className="mt-4 grid gap-3">
         <input name="location" value={generatedCode} readOnly placeholder="Combined location code" className={FACILITY_FIELD_CLASS} />
         <div className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 md:grid-cols-4">
-          <input value={site} onChange={(event) => setSite(event.target.value)} placeholder="1. Zone" className={FACILITY_FIELD_CLASS} />
-          <input value={building} onChange={(event) => setBuilding(event.target.value)} placeholder="2. Building" className={FACILITY_FIELD_CLASS} />
-          <input value={floor} onChange={(event) => setFloor(event.target.value)} placeholder="3. Floor" className={FACILITY_FIELD_CLASS} />
-          <input value={room} onChange={(event) => setRoom(event.target.value)} placeholder="4. Room" className={FACILITY_FIELD_CLASS} />
+          <input value={site} onChange={(event) => setSite(event.target.value)} placeholder="1. Site" className={FACILITY_FIELD_CLASS} />
+          <input value={sp} onChange={(event) => setSp(event.target.value)} placeholder="2. SP" className={FACILITY_FIELD_CLASS} />
+          <input value={region} onChange={(event) => setRegion(event.target.value)} placeholder="3. Region" className={FACILITY_FIELD_CLASS} />
+          <input value={block} onChange={(event) => setBlock(event.target.value)} placeholder="4. Block" className={FACILITY_FIELD_CLASS} />
+          <input value={building} onChange={(event) => setBuilding(event.target.value)} placeholder="5. Building" className={FACILITY_FIELD_CLASS} />
+          <input value={floor} onChange={(event) => setFloor(event.target.value)} placeholder="6. Floor" className={FACILITY_FIELD_CLASS} />
+          <input value={room} onChange={(event) => setRoom(event.target.value)} placeholder="7. Room" className={FACILITY_FIELD_CLASS} />
         </div>
         <input name="description" placeholder="Description" className={FACILITY_FIELD_CLASS} />
         <select name="locationClass" defaultValue="Facility Location" className={FACILITY_FIELD_CLASS}>

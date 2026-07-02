@@ -5,6 +5,7 @@ import { accessRole } from "@/lib/access-control";
 import { auditAction } from "@/lib/audit";
 import { requireUser } from "@/lib/api-auth";
 import { getCurrentUser } from "@/lib/auth";
+import { locationHierarchyForCode } from "@/lib/location-hierarchy";
 import { paginationMeta, readPagination } from "@/lib/pagination";
 import { prisma } from "@/lib/prisma";
 
@@ -25,6 +26,7 @@ const schema = z.object({
   jobPlanCode: z.string().optional(),
   priority: z.string().optional(),
   assetTag: z.string().optional(),
+  locationCode: z.string().optional(),
   jobPlan: z.string().optional(),
   photoUrls: z.string().optional(),
   isIncidentCase: booleanInput,
@@ -108,8 +110,12 @@ export async function GET(request: Request) {
         { serviceCode: { contains: query, mode: "insensitive" } },
         { assignedTeamCode: { contains: query, mode: "insensitive" } },
         { jobPlan: { contains: query, mode: "insensitive" } },
+        { combinedLocationCode: { contains: query, mode: "insensitive" } },
+        { fullLocationPath: { contains: query, mode: "insensitive" } },
         { asset: { is: { tag: { contains: query, mode: "insensitive" } } } },
         { asset: { is: { name: { contains: query, mode: "insensitive" } } } },
+        { locationRef: { is: { code: { contains: query, mode: "insensitive" } } } },
+        { locationRef: { is: { combinedLocationCode: { contains: query, mode: "insensitive" } } } },
         { request: { is: { ticketNo: { contains: query, mode: "insensitive" } } } },
       ],
     });
@@ -124,7 +130,8 @@ export async function GET(request: Request) {
       orderBy: { dueAt: "asc" },
       include: {
         assignedTo: { select: { name: true, email: true } },
-        asset: { select: { tag: true, name: true, assetDescription: true, buildingCode: true, floor: true, room: true } },
+        asset: { select: { tag: true, name: true, assetDescription: true, buildingCode: true, floor: true, room: true, combinedLocationCode: true, fullLocationPath: true } },
+        locationRef: { select: { code: true, combinedLocationCode: true, fullLocationPath: true, site: true, sp: true, region: true, block: true, building: true, floor: true, room: true } },
         inventoryIssues: { include: { item: { select: { sku: true, name: true, unit: true } } }, orderBy: { issuedAt: "desc" } },
         request: { select: { ticketNo: true, title: true, description: true, requester: true, attachmentUrls: true, location: true, category: true, createdAt: true } },
       },
@@ -147,6 +154,8 @@ export async function POST(request: Request) {
       input.assetTag ? prisma.asset.findUnique({ where: { tag: input.assetTag } }) : null,
       input.assignedTeamCode ? prisma.team.findUnique({ where: { code: input.assignedTeamCode } }) : null,
     ]);
+    const selectedLocationCode = input.locationCode || asset?.locationCode || asset?.room;
+    const { location, hierarchy } = await locationHierarchyForCode(selectedLocationCode, asset?.tag);
 
     const created = await prisma.workOrder.create({
       data: {
@@ -161,6 +170,9 @@ export async function POST(request: Request) {
         priority,
         status: input.assignedTeamCode ? "ASSIGNED" : "PENDING_ASSIGNMENT",
         assetId: asset?.id,
+        locationId: location.id,
+        combinedLocationCode: hierarchy.combinedLocationCode,
+        fullLocationPath: hierarchy.fullLocationPath,
         assignedToId: null,
         plannedStart: new Date(),
         dueAt: addHours(new Date(), dueHours[priority]),

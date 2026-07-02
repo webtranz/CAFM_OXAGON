@@ -354,10 +354,14 @@ model Asset {
   floor                   String?
   room                    String?
   qrCode                  String?
+  locationId              String?
+  combinedLocationCode    String         @default("")
+  fullLocationPath        String         @default("")
   siteId                  String
   buildingId              String?
   site                    Site           @relation(fields: [siteId], references: [id], onDelete: Cascade)
   building                Building?      @relation(fields: [buildingId], references: [id])
+  locationRef             Location?      @relation("AssetLocation", fields: [locationId], references: [id])
   workOrders              WorkOrder[]
   meters                  Meter[]
   history                 AssetHistory[]
@@ -367,6 +371,8 @@ model Asset {
   @@index([departmentCode, tag])
   @@index([buildingCode, floor, room])
   @@index([locationCode])
+  @@index([combinedLocationCode])
+  @@index([locationId])
 }
 
 model AssetHistory {
@@ -410,6 +416,9 @@ model ServiceRequest {
   priority                Priority
   status                  WorkStatus @default(NEW)
   location                String
+  locationId              String?
+  combinedLocationCode    String     @default("")
+  fullLocationPath        String     @default("")
   attachmentUrls          String?
   rejectionReason         String?
   reviewedAt              DateTime?
@@ -419,12 +428,15 @@ model ServiceRequest {
   description             String
   isIncidentCase          Boolean    @default(false)
   workOrder               WorkOrder?
+  locationRef             Location?  @relation("ServiceRequestLocation", fields: [locationId], references: [id])
   createdAt               DateTime   @default(now())
   updatedAt               DateTime   @updatedAt
 
   @@index([departmentCode, createdAt])
   @@index([assignedTeamCode, createdAt])
   @@index([status, createdAt])
+  @@index([combinedLocationCode])
+  @@index([locationId])
 }
 
 model WorkOrder {
@@ -452,6 +464,9 @@ model WorkOrder {
   priority           Priority
   status             WorkStatus       @default(NEW)
   assetId            String?
+  locationId         String?
+  combinedLocationCode String   @default("")
+  fullLocationPath   String     @default("")
   requestId          String?          @unique
   assignedToId       String?
   plannedStart       DateTime
@@ -463,6 +478,7 @@ model WorkOrder {
   safetyNotes        String
   isIncidentCase     Boolean          @default(false)
   asset              Asset?           @relation(fields: [assetId], references: [id])
+  locationRef        Location?        @relation("WorkOrderLocation", fields: [locationId], references: [id])
   request            ServiceRequest?  @relation(fields: [requestId], references: [id])
   assignedTo         User?            @relation(fields: [assignedToId], references: [id])
   inventoryIssues    InventoryIssue[]
@@ -473,16 +489,23 @@ model WorkOrder {
   @@index([departmentCode, dueAt])
   @@index([assignedTeamCode, dueAt])
   @@index([assignedToId, dueAt])
+  @@index([combinedLocationCode])
+  @@index([locationId])
 }
 
 model Location {
   id             String   @id @default(cuid())
   code           String   @unique
   site           String
+  sp             String   @default("")
+  region         String   @default("")
   zone           String
+  block          String   @default("")
   building       String
   floor          String
   room           String
+  combinedLocationCode String @default("")
+  fullLocationPath String @default("")
   type           String
   parentLocation String   @default("")
   locationClass  String   @default("Facility Location")
@@ -491,10 +514,15 @@ model Location {
   description    String
   active         Boolean  @default(true)
   createdAt      DateTime @default(now())
+  assets         Asset[]  @relation("AssetLocation")
+  serviceRequests ServiceRequest[] @relation("ServiceRequestLocation")
+  workOrders     WorkOrder[] @relation("WorkOrderLocation")
 
   @@index([parentLocation])
   @@index([locationClass])
   @@index([residential])
+  @@index([site, sp, region, block, building, floor, room])
+  @@index([combinedLocationCode])
 }
 
 model JobPlan {
@@ -520,6 +548,8 @@ model PreventiveMaintenance {
   name           String
   assetTag       String
   locationCode   String   @default("")
+  combinedLocationCode String @default("")
+  fullLocationPath String @default("")
   departmentCode String   @default("")
   priority       Priority @default(MEDIUM)
   frequency      String
@@ -542,6 +572,8 @@ model InventoryItem {
   unitCost     Decimal          @db.Decimal(10, 2)
   vendor       String
   location     String
+  combinedLocationCode String @default("")
+  fullLocationPath String @default("")
   issues       InventoryIssue[]
 }
 
@@ -724,6 +756,8 @@ model HousingRoom {
   occupancy         Int                    @default(0)
   status            HousingOccupancyStatus @default(AVAILABLE)
   qrCode            String?
+  combinedLocationCode String              @default("")
+  fullLocationPath String                  @default("")
   remarks           String?
   property          HousingProperty        @relation(fields: [propertyId], references: [id], onDelete: Cascade)
   block             HousingBlock?          @relation(fields: [blockId], references: [id])
@@ -783,6 +817,8 @@ model HousingBooking {
   floorNumber        String?
   roomNumber         String?
   bedNumber          String?
+  combinedLocationCode String                @default("")
+  fullLocationPath String                    @default("")
   bookingType        String                @default("TEMPORARY")
   allocationType     String                @default("STANDARD")
   roomId             String
@@ -831,6 +867,8 @@ model HousingInspection {
   occupantName                 String?
   assetId                      String?
   workOrderRef                 String?
+  combinedLocationCode         String                  @default("")
+  fullLocationPath             String                  @default("")
   inspector                    String
   inspectionType               String
   status                       HousingInspectionStatus @default(SCHEDULED)
@@ -910,6 +948,8 @@ model HousingAsset {
   serialNumber     String?
   warrantyExpiry   DateTime?
   qrCode           String?
+  combinedLocationCode String           @default("")
+  fullLocationPath String               @default("")
   photoUrls        String?
   room             HousingRoom?     @relation(fields: [roomId], references: [id])
   histories        HousingHistory[]
@@ -952,6 +992,8 @@ model HousingInventory {
   purchaseRequestNo     String?
   purchaseRequestStatus String?
   qrCode                String?
+  combinedLocationCode  String           @default("")
+  fullLocationPath      String           @default("")
   room                  HousingRoom?     @relation(fields: [roomId], references: [id])
   histories             HousingHistory[]
   createdAt             DateTime         @default(now())

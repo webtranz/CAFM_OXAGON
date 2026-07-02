@@ -3,6 +3,7 @@ import { z } from "zod";
 import { addHours } from "date-fns";
 import { auditAction } from "@/lib/audit";
 import { getCurrentUser } from "@/lib/auth";
+import { locationHierarchyForCode } from "@/lib/location-hierarchy";
 import { prisma } from "@/lib/prisma";
 
 const booleanInput = z.preprocess((value) => {
@@ -39,6 +40,7 @@ export async function POST(request: Request) {
     const count = await prisma.serviceRequest.count();
     const priority = ["LOW", "MEDIUM", "HIGH", "CRITICAL"].includes(input.priority || "") ? input.priority as keyof typeof slaByPriority : "MEDIUM";
     const slaHours = slaByPriority[priority];
+    const { location, hierarchy } = await locationHierarchyForCode(input.location);
     const department = input.departmentCode ? await prisma.department.findUnique({ where: { code: input.departmentCode } }) : null;
     const supervisor = input.departmentCode
       ? await prisma.user.findFirst({
@@ -58,7 +60,10 @@ export async function POST(request: Request) {
         assignedTeamCode: input.assignedTeamCode || null,
         requester: input.requester || user?.name || user?.email || "Requester",
         priority,
-        location: input.location || "Unassigned",
+        location: location.code,
+        locationId: location.id,
+        combinedLocationCode: hierarchy.combinedLocationCode,
+        fullLocationPath: hierarchy.fullLocationPath,
         attachmentUrls: input.attachmentUrls || null,
         description: input.description || input.title || "No description provided.",
         isIncidentCase: input.isIncidentCase ?? false,

@@ -4,6 +4,7 @@ import { z } from "zod";
 import { apiError } from "@/lib/api-response";
 import { requireAdmin, requirePermission } from "@/lib/api-auth";
 import { auditAction } from "@/lib/audit";
+import { locationHierarchyForCode } from "@/lib/location-hierarchy";
 import { paginationMeta, readPagination } from "@/lib/pagination";
 import { prisma } from "@/lib/prisma";
 
@@ -82,11 +83,15 @@ export async function POST(request: Request) {
     const input = schema.parse(await request.json());
     const count = await prisma.preventiveMaintenance.count();
     const code = input.code || `PPM-${String(count + 1).padStart(4, "0")}`;
+    const asset = input.assetTag ? await prisma.asset.findUnique({ where: { tag: input.assetTag } }) : null;
+    const { hierarchy } = await locationHierarchyForCode(input.locationCode || asset?.locationCode || asset?.room, asset?.tag || input.assetTag);
     const data = {
       code,
       name: input.name || `PPM ${count + 1}`,
       assetTag: input.assetTag || "Unassigned",
-      locationCode: input.locationCode || "",
+      locationCode: input.locationCode || asset?.locationCode || asset?.room || "",
+      combinedLocationCode: hierarchy.combinedLocationCode,
+      fullLocationPath: hierarchy.fullLocationPath,
       departmentCode: input.departmentCode || "",
       priority: input.priority || "MEDIUM",
       frequency: input.frequency || "Monthly",
@@ -117,10 +122,15 @@ export async function PATCH(request: Request) {
     if (!id && !code) throw new Error("PPM id or code is required");
     const current = await prisma.preventiveMaintenance.findUnique({ where: id ? { id } : { code: code! } });
     if (!current) throw new Error("PPM not found");
+    const asset = input.assetTag ? await prisma.asset.findUnique({ where: { tag: input.assetTag } }) : null;
+    const selectedLocationCode = input.locationCode ?? current.locationCode ?? asset?.locationCode ?? asset?.room;
+    const locationDetails = selectedLocationCode ? await locationHierarchyForCode(selectedLocationCode, asset?.tag || input.assetTag || current.assetTag) : null;
     const data = {
       name: input.name,
       assetTag: input.assetTag,
       locationCode: input.locationCode,
+      combinedLocationCode: locationDetails?.hierarchy.combinedLocationCode,
+      fullLocationPath: locationDetails?.hierarchy.fullLocationPath,
       departmentCode: input.departmentCode,
       priority: input.priority,
       frequency: input.frequency,

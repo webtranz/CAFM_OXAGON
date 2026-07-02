@@ -4,6 +4,7 @@ import { z } from "zod";
 import { apiError } from "@/lib/api-response";
 import { requirePermission } from "@/lib/api-auth";
 import { auditAction } from "@/lib/audit";
+import { locationHierarchyForCode } from "@/lib/location-hierarchy";
 import { prisma } from "@/lib/prisma";
 
 const boolInput = z.preprocess((value) => {
@@ -81,7 +82,7 @@ export async function POST(request: Request) {
     const input = schema.parse(await request.json());
     const count = await prisma.asset.count();
     const tag = input.tag || input.equipmentNo || `AST-${String(count + 1).padStart(5, "0")}`;
-    const location = input.locationCode ? await prisma.location.findUnique({ where: { code: input.locationCode } }) : null;
+    const { location, hierarchy } = await locationHierarchyForCode(input.locationCode, tag);
     const name = input.name || input.equipmentDesc || input.assetDescription || `Asset ${count + 1}`;
     const category = input.category || input.categoryDesc || input.assetGroup || input.classCode || "General";
     const criticality = ["LOW", "MEDIUM", "HIGH", "CRITICAL"].includes(input.criticality || "") ? input.criticality as "LOW" | "MEDIUM" | "HIGH" | "CRITICAL" : "MEDIUM";
@@ -147,7 +148,10 @@ export async function POST(request: Request) {
         conditionScore: input.conditionScore ?? 85,
         floor: input.floor || location?.floor || "Unassigned",
         room: input.locationCode || input.room || location?.code || "Unassigned",
-        qrCode: input.qrCode || `CAFM-ASSET:${tag}`,
+        qrCode: input.qrCode || `CAFM-ASSET:${hierarchy.combinedLocationCode}`,
+        locationId: location.id,
+        combinedLocationCode: hierarchy.combinedLocationCode,
+        fullLocationPath: hierarchy.fullLocationPath,
         siteId: site.id,
         buildingId: site.buildings[0]?.id,
       },
